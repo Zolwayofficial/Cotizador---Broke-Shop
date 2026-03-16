@@ -1,0 +1,24 @@
+{
+  "name": "cotizador-peru",
+  "version": "2.0.0",
+  "description": "Cotizador de Importación Perú — Self-hosted",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "update-nandina": "node scripts/update-nandina.js",
+    "setup": "bash scripts/setup.sh",
+    "build-client": "cd client && npm run build"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^11.0.0",
+    "node-cron": "^3.0.3",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "dotenv": "^16.4.5",
+    "iconv-lite": "^0.6.3",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1"
+  }
+}
