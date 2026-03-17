@@ -9,16 +9,15 @@
 //   6. Modo simplificado DSI (FOB < $2,000 → 4% AV flat)
 //   7. Alertas de cambio normativo
 
-const aiProxy = require("./ai-proxy");
-const clasificador = require("./clasificador");
-const autoRepair = require("./auto-repair"); // Auto-corrección
+const aiProxy = require('./ai-proxy');
+const clasificador = require('./clasificador');
 
-const nandinaService = require("./nandina");
-const permisos = require("./permisos");
-const valoracion = require("./valoracion");
-const flete = require("./flete");
+const nandinaService = require('./nandina');
+const permisos = require('./permisos');
+const valoracion = require('./valoracion');
+const flete = require('./flete');
+const { normalizarCodigoPais, normalizarPaisParaRuta } = require('./paises');
 
-const IGV_RATE = 0.16;
 const IPM_RATE = 0.02;
 const SEGURO_DEFAULT = 0.015;
 
@@ -36,49 +35,49 @@ const SEGURO_DEFAULT = 0.015;
 //   D (DAP/DPU/DDP) → Entregado en destino. Ya incluye casi todo.
 
 const INCOTERM_INFO = {
-  EXW: { grupo: "E", incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: false,
-    ajusteDesc: "Precio en fábrica. Se suman: transporte a puerto origen, despacho exportación, flete internacional, seguro.",
+  EXW: { grupo: 'E', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: false,
+    ajusteDesc: 'Precio en fábrica. Se suman: transporte a puerto origen, despacho exportación, flete internacional, seguro.',
     costoExtraEstimado: 0.08 }, // ~8% del valor para transporte local + despacho export
-  FCA: { grupo: "F", incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado al transportista. Se suman: flete internacional, seguro.",
+  FCA: { grupo: 'F', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado al transportista. Se suman: flete internacional, seguro.',
     costoExtraEstimado: 0.03 },
-  FAS: { grupo: "F", incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado al costado del buque. Se suman: carga al buque, flete internacional, seguro.",
+  FAS: { grupo: 'F', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado al costado del buque. Se suman: carga al buque, flete internacional, seguro.',
     costoExtraEstimado: 0.02 },
-  FOB: { grupo: "F", incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado a bordo. Se suman: flete internacional, seguro.",
+  FOB: { grupo: 'F', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado a bordo. Se suman: flete internacional, seguro.',
     costoExtraEstimado: 0 },
-  CFR: { grupo: "C", incluyeFlete: true, incluyeSeguro: false, incluyeDespachoExport: true,
-    ajusteDesc: "Costo y flete incluidos. Se suma: seguro.",
+  CFR: { grupo: 'C', incluyeFlete: true, incluyeSeguro: false, incluyeDespachoExport: true,
+    ajusteDesc: 'Costo y flete incluidos. Se suma: seguro.',
     costoExtraEstimado: 0 },
-  CIF: { grupo: "C", incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
-    ajusteDesc: "Costo, seguro y flete incluidos. No se suma nada adicional.",
+  CIF: { grupo: 'C', incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
+    ajusteDesc: 'Costo, seguro y flete incluidos. No se suma nada adicional.',
     costoExtraEstimado: 0 },
-  CPT: { grupo: "C", incluyeFlete: true, incluyeSeguro: false, incluyeDespachoExport: true,
-    ajusteDesc: "Transporte pagado hasta destino. Se suma: seguro.",
+  CPT: { grupo: 'C', incluyeFlete: true, incluyeSeguro: false, incluyeDespachoExport: true,
+    ajusteDesc: 'Transporte pagado hasta destino. Se suma: seguro.',
     costoExtraEstimado: 0 },
-  CIP: { grupo: "C", incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
-    ajusteDesc: "Transporte y seguro pagados hasta destino. No se suma nada adicional.",
+  CIP: { grupo: 'C', incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
+    ajusteDesc: 'Transporte y seguro pagados hasta destino. No se suma nada adicional.',
     costoExtraEstimado: 0 },
-  DAP: { grupo: "D", incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado en lugar convenido (sin despacho import). Flete y seguro incluidos.",
+  DAP: { grupo: 'D', incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado en lugar convenido (sin despacho import). Flete y seguro incluidos.',
     costoExtraEstimado: 0 },
-  DPU: { grupo: "D", incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado en lugar de destino descargado. Flete y seguro incluidos.",
+  DPU: { grupo: 'D', incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado en lugar de destino descargado. Flete y seguro incluidos.',
     costoExtraEstimado: 0 },
-  DDP: { grupo: "D", incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
-    ajusteDesc: "Entregado con derechos pagados. Precio incluye TODOS los costos y tributos.",
+  DDP: { grupo: 'D', incluyeFlete: true, incluyeSeguro: true, incluyeDespachoExport: true,
+    ajusteDesc: 'Entregado con derechos pagados. Precio incluye TODOS los costos y tributos.',
     costoExtraEstimado: 0, incluyeTributos: true },
 };
 
 // Adjust prices from any Incoterm to FOB equivalent
-function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, fobTotal) {
-  const info = INCOTERM_INFO[(incoterm || "FOB").toUpperCase()];
-  if (!info) return { fob: precioUnitario, flete: fleteTotal, seguro: seguroTotal, ajuste: "Incoterm no reconocido, tratado como FOB" };
+function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fobTotal) {
+  const info = INCOTERM_INFO[(incoterm || 'FOB').toUpperCase()];
+  if (!info) return { fob: precioUnitario, flete: fleteTotal, seguro: seguroTotal, ajuste: 'Incoterm no reconocido, tratado como FOB' };
 
-  const inc = incoterm.toUpperCase();
+  const inc = (incoterm || 'FOB').toUpperCase();
 
-  if (inc === "FOB" || inc === "FCA" || inc === "FAS") {
+  if (inc === 'FOB' || inc === 'FCA' || inc === 'FAS') {
     // Precio ya es ~FOB (o cercano). Flete y seguro se suman aparte.
     const extraCost = precioUnitario * info.costoExtraEstimado;
     return {
@@ -90,7 +89,7 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, fobT
     };
   }
 
-  if (inc === "EXW") {
+  if (inc === 'EXW') {
     // EXW = precio en fábrica. Hay que sumar transporte al puerto + despacho export
     const extraCost = precioUnitario * info.costoExtraEstimado; // ~8%
     return {
@@ -102,53 +101,53 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, fobT
     };
   }
 
-  if (inc === "CFR" || inc === "CPT") {
+  if (inc === 'CFR' || inc === 'CPT') {
     // Precio INCLUYE flete pero NO seguro
     // FOB = Precio - Flete (si conocemos el flete)
     if (fleteTotal > 0) {
       const fobEstimado = precioUnitario - fleteTotal;
-      return { fob: Math.max(0, fobEstimado), flete: fleteTotal, seguro: seguroTotal || (fobEstimado * SEGURO_DEFAULT), ajuste: info.ajusteDesc + " FOB = precio - flete." };
+      return { fob: Math.max(0, fobEstimado), flete: fleteTotal, seguro: seguroTotal || (fobEstimado * SEGURO_DEFAULT), ajuste: info.ajusteDesc + ' FOB = precio - flete.' };
     }
     // If no flete known, estimate flete as ~10% of price
     const fleteEst = precioUnitario * 0.10;
-    return { fob: precioUnitario - fleteEst, flete: fleteEst, seguro: seguroTotal || ((precioUnitario - fleteEst) * SEGURO_DEFAULT), ajuste: info.ajusteDesc + " Flete estimado ~10% del precio." };
+    return { fob: precioUnitario - fleteEst, flete: fleteEst, seguro: seguroTotal || ((precioUnitario - fleteEst) * SEGURO_DEFAULT), ajuste: info.ajusteDesc + ' Flete estimado ~10% del precio.' };
   }
 
-  if (inc === "CIF" || inc === "CIP") {
+  if (inc === 'CIF' || inc === 'CIP') {
     // Precio INCLUYE flete Y seguro
     // CIF = FOB + Flete + Seguro → FOB = CIF - Flete - Seguro
     if (fleteTotal > 0 && seguroTotal > 0) {
-      return { fob: Math.max(0, precioUnitario - fleteTotal - seguroTotal), flete: fleteTotal, seguro: seguroTotal, ajuste: info.ajusteDesc + " FOB = precio - flete - seguro." };
+      return { fob: Math.max(0, precioUnitario - fleteTotal - seguroTotal), flete: fleteTotal, seguro: seguroTotal, ajuste: info.ajusteDesc + ' FOB = precio - flete - seguro.' };
     }
     if (fleteTotal > 0) {
       const segEst = (precioUnitario - fleteTotal) * SEGURO_DEFAULT;
-      return { fob: Math.max(0, precioUnitario - fleteTotal - segEst), flete: fleteTotal, seguro: segEst, ajuste: info.ajusteDesc + " Seguro estimado." };
+      return { fob: Math.max(0, precioUnitario - fleteTotal - segEst), flete: fleteTotal, seguro: segEst, ajuste: info.ajusteDesc + ' Seguro estimado.' };
     }
     // No flete/seguro known: estimate
     const fleteEst = precioUnitario * 0.08;
     const segEst = precioUnitario * 0.015;
-    return { fob: precioUnitario - fleteEst - segEst, flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + " Flete ~8%, seguro ~1.5% estimados. Ingresar valores reales para mayor precisión." };
+    return { fob: precioUnitario - fleteEst - segEst, flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + ' Flete ~8%, seguro ~1.5% estimados. Ingresar valores reales para mayor precisión.' };
   }
 
-  if (inc === "DAP" || inc === "DPU") {
+  if (inc === 'DAP' || inc === 'DPU') {
     // Incluye todo hasta destino. Similar a CIF pero puede incluir costos de descarga.
     const fleteEst = fleteTotal || precioUnitario * 0.10;
     const segEst = seguroTotal || precioUnitario * 0.015;
-    return { fob: Math.max(0, precioUnitario - fleteEst - segEst), flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + " FOB estimado descontando flete y seguro." };
+    return { fob: Math.max(0, precioUnitario - fleteEst - segEst), flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + ' FOB estimado descontando flete y seguro.' };
   }
 
-  if (inc === "DDP") {
+  if (inc === 'DDP') {
     // DDP incluye TRIBUTOS. El precio ya tiene todo. Difícil desglosar sin datos.
     return {
       fob: precioUnitario * 0.65, // Rough estimate: tributos+flete ~35% del DDP
       flete: precioUnitario * 0.08,
       seguro: precioUnitario * 0.015,
-      ajuste: "⚠ DDP incluye tributos en el precio. Desglose es estimado (~65% FOB). Para precisión, solicita precio FOB al proveedor.",
+      ajuste: '⚠ DDP incluye tributos en el precio. Desglose es estimado (~65% FOB). Para precisión, solicita precio FOB al proveedor.',
       advertencia: true,
     };
   }
 
-  return { fob: precioUnitario, flete: fleteTotal, seguro: seguroTotal, ajuste: "Tratado como FOB" };
+  return { fob: precioUnitario, flete: fleteTotal, seguro: seguroTotal, ajuste: 'Tratado como FOB' };
 }
 
 // ══════════════════════════════════════════
@@ -162,7 +161,7 @@ function calcularSensibilidadTC(totalUSD, tcBase, variaciones) {
     const totalPEN = totalUSD * tcAjustado;
     const diferencia = totalPEN - (totalUSD * tcBase);
     return {
-      variacion: `${pct >= 0 ? "+" : ""}${pct}%`,
+      variacion: `${pct >= 0 ? '+' : ''}${pct}%`,
       tc: parseFloat(tcAjustado.toFixed(4)),
       totalPEN: parseFloat(totalPEN.toFixed(2)),
       diferenciaPEN: parseFloat(diferencia.toFixed(2)),
@@ -177,27 +176,27 @@ function calcularSensibilidadTC(totalUSD, tcBase, variaciones) {
 // Se deben actualizar cuando INDECOPI emite nuevas resoluciones
 // ══════════════════════════════════════════
 const ANTIDUMPING_MEDIDAS = [
-  { hs: "6109", pais: "CN", tasa: 5.51, desc: "Camisetas de algodón", resolucion: "025-2019/CDB-INDECOPI", vigenciaHasta: "2029" },
-  { hs: "6105", pais: "CN", tasa: 3.73, desc: "Camisas de punto algodón", resolucion: "025-2019/CDB-INDECOPI", vigenciaHasta: "2029" },
-  { hs: "6205", pais: "CN", tasa: 1.98, desc: "Camisas tejido plano algodón", resolucion: "134-2019/CDB-INDECOPI", vigenciaHasta: "2029" },
-  { hs: "5407", pais: "CN", tasa: 0.18, desc: "Tejidos de filamentos sintéticos (por kg)", resolucion: "044-2014/CFD-INDECOPI", vigenciaHasta: "2025", porKg: true },
-  { hs: "5516", pais: "CN", tasa: 0.66, desc: "Tejidos de fibras artificiales discontinuas (por kg)", resolucion: "044-2014/CFD-INDECOPI", vigenciaHasta: "2025", porKg: true },
-  { hs: "7213", pais: "CN", tasa: 12.00, desc: "Barras de hierro/acero sin alear", resolucion: "023-2021/CDB-INDECOPI", vigenciaHasta: "2026" },
-  { hs: "7306", pais: "CN", tasa: 11.00, desc: "Tubos y perfiles huecos de acero", resolucion: "015-2018/CDB-INDECOPI", vigenciaHasta: "2028" },
-  { hs: "6402", pais: "CN", tasa: 2.97, desc: "Calzado de caucho/plástico", resolucion: "060-2020/CDB-INDECOPI", vigenciaHasta: "2030" },
-  { hs: "6403", pais: "CN", tasa: 1.82, desc: "Calzado con suela de caucho/plástico y parte superior de cuero", resolucion: "060-2020/CDB-INDECOPI", vigenciaHasta: "2030" },
-  { hs: "6404", pais: "CN", tasa: 3.41, desc: "Calzado con suela de caucho/plástico y parte superior textil", resolucion: "060-2020/CDB-INDECOPI", vigenciaHasta: "2030" },
-  { hs: "3920", pais: "CN", tasa: 19.30, desc: "Cierres y tapas de plástico", resolucion: "003-2023/CDB-INDECOPI", vigenciaHasta: "2028" },
-  { hs: "7304", pais: "CN", tasa: 15.00, desc: "Tubos de acero sin costura", resolucion: "080-2017/CDB-INDECOPI", vigenciaHasta: "2027" },
+  { hs: '6109', pais: 'CN', tasa: 5.51, desc: 'Camisetas de algodón', resolucion: '025-2019/CDB-INDECOPI', vigenciaHasta: '2029' },
+  { hs: '6105', pais: 'CN', tasa: 3.73, desc: 'Camisas de punto algodón', resolucion: '025-2019/CDB-INDECOPI', vigenciaHasta: '2029' },
+  { hs: '6205', pais: 'CN', tasa: 1.98, desc: 'Camisas tejido plano algodón', resolucion: '134-2019/CDB-INDECOPI', vigenciaHasta: '2029' },
+  { hs: '5407', pais: 'CN', tasa: 0.18, desc: 'Tejidos de filamentos sintéticos (por kg)', resolucion: '044-2014/CFD-INDECOPI', vigenciaHasta: '2025', porKg: true },
+  { hs: '5516', pais: 'CN', tasa: 0.66, desc: 'Tejidos de fibras artificiales discontinuas (por kg)', resolucion: '044-2014/CFD-INDECOPI', vigenciaHasta: '2025', porKg: true },
+  { hs: '7213', pais: 'CN', tasa: 12.00, desc: 'Barras de hierro/acero sin alear', resolucion: '023-2021/CDB-INDECOPI', vigenciaHasta: '2026' },
+  { hs: '7306', pais: 'CN', tasa: 11.00, desc: 'Tubos y perfiles huecos de acero', resolucion: '015-2018/CDB-INDECOPI', vigenciaHasta: '2028' },
+  { hs: '6402', pais: 'CN', tasa: 2.97, desc: 'Calzado de caucho/plástico', resolucion: '060-2020/CDB-INDECOPI', vigenciaHasta: '2030' },
+  { hs: '6403', pais: 'CN', tasa: 1.82, desc: 'Calzado con suela de caucho/plástico y parte superior de cuero', resolucion: '060-2020/CDB-INDECOPI', vigenciaHasta: '2030' },
+  { hs: '6404', pais: 'CN', tasa: 3.41, desc: 'Calzado con suela de caucho/plástico y parte superior textil', resolucion: '060-2020/CDB-INDECOPI', vigenciaHasta: '2030' },
+  { hs: '3920', pais: 'CN', tasa: 19.30, desc: 'Cierres y tapas de plástico', resolucion: '003-2023/CDB-INDECOPI', vigenciaHasta: '2028' },
+  { hs: '7304', pais: 'CN', tasa: 15.00, desc: 'Tubos de acero sin costura', resolucion: '080-2017/CDB-INDECOPI', vigenciaHasta: '2027' },
 ];
 
 function buscarAntidumping(hs, pais) {
   if (!hs || !pais) return null;
-  const hsClean = hs.replace(/\./g, "");
-  const paisUpper = pais.toUpperCase();
+  const hsClean = hs.replace(/\./g, '');
+  const paisUpper = normalizarCodigoPais(pais);
   // Match by HS prefix (4 or 6 digits) and country
   for (const m of ANTIDUMPING_MEDIDAS) {
-    if (hsClean.startsWith(m.hs) && (m.pais === paisUpper || m.pais === paisUpper.substring(0, 2))) {
+    if (hsClean.startsWith(m.hs) && paisUpper && m.pais === paisUpper) {
       // Check vigencia
       const year = new Date().getFullYear();
       if (parseInt(m.vigenciaHasta) >= year) {
@@ -218,7 +217,7 @@ const TASAS_CAMBIO_FALLBACK = {
 };
 
 function convertirAUSD(monto, moneda, tcCustom) {
-  if (!moneda || moneda === "USD") return monto;
+  if (!moneda || moneda === 'USD') return monto;
   if (tcCustom && tcCustom > 0) return monto * tcCustom;
   const tasa = TASAS_CAMBIO_FALLBACK[moneda.toUpperCase()];
   if (tasa) return monto * tasa;
@@ -228,23 +227,23 @@ function convertirAUSD(monto, moneda, tcCustom) {
 // ══════════════════════════════════════════
 // COSTOS OPERATIVOS
 // ══════════════════════════════════════════
-function calcularCostosOperativos(canal, cif, pesoTotal) {
+function calcularCostosOperativos(canal, cif, _pesoTotal) {
   const costos = {};
 
-  if (canal === "DEFINITIVA" || canal === "MARITIMO" || canal === "AEREO") {
+  if (canal === 'DEFINITIVA' || canal === 'MARITIMO' || canal === 'AEREO') {
     costos.agenteAduanas = Math.max(200, cif * 0.015); // ~1.5% del CIF, mín $200
-    costos.almacenaje = canal === "MARITIMO" ? 120 : 80; // Marítimo más caro
-    costos.transporteLocal = canal === "MARITIMO" ? 200 : 100; // Callao → Lima
+    costos.almacenaje = canal === 'MARITIMO' ? 120 : 80; // Marítimo más caro
+    costos.transporteLocal = canal === 'MARITIMO' ? 200 : 100; // Callao → Lima
     costos.comisionBancaria = 40;
     costos.gastosOperativos = 50; // handling, visto bueno, etc.
     costos.aforo = 0; // Solo si sale a aforo físico (~30% de DUAs)
-  } else if (canal === "COURIER") {
+  } else if (canal === 'COURIER') {
     costos.agenteAduanas = 0; // Courier lo incluye
     costos.almacenaje = 0;
     costos.transporteLocal = 0;
     costos.comisionBancaria = 0;
     costos.gastosOperativos = 0;
-  } else if (canal === "POSTAL") {
+  } else if (canal === 'POSTAL') {
     costos.agenteAduanas = 0;
     costos.almacenaje = 0;
     costos.transporteLocal = 15; // Serpost cobra envío
@@ -270,8 +269,8 @@ function calcularDSI(fob, fleteTotal, seguroTotal) {
   const ipm = baseIGV * 0.02;
   const totalTributos = adValorem + igv + ipm;
   return {
-    modo: "DSI",
-    nota: "Despacho Simplificado de Importación (FOB ≤ US$2,000). Partida 9810.00.00.20. AV flat 4%.",
+    modo: 'DSI',
+    nota: 'Despacho Simplificado de Importación (FOB ≤ US$2,000). Partida 9810.00.00.20. AV flat 4%.',
     fob, flete: fleteTotal, seguro, cif,
     adValorem, advRate: 4,
     igv, ipm,
@@ -310,8 +309,8 @@ function verificarAlertas(items, pais) {
   // Ley 32387 (2025): IGV 15% + IPM 2% → efectivo desde julio 2025
   // Verificar si hay cambios programados
   alertas.push({
-    tipo: "normativo", nivel: "info",
-    mensaje: "ℹ Tasas calculadas según Ley 32387 (IGV 16% + IPM 2% = 18% total). Vigente desde Jul 2025.",
+    tipo: 'normativo', nivel: 'info',
+    mensaje: 'ℹ Tasas calculadas según Ley 32387 (IGV 16% + IPM 2% = 18% total). Vigente desde Jul 2025.',
   });
 
   // Check antidumping vigencia
@@ -323,7 +322,7 @@ function verificarAlertas(items, pais) {
       const monthsLeft = (parseInt(ad.vigenciaHasta) - yearNow) * 12;
       if (monthsLeft <= 6) {
         alertas.push({
-          tipo: "antidumping_expira", nivel: "medio",
+          tipo: 'antidumping_expira', nivel: 'medio',
           mensaje: `⏰ Antidumping ${ad.desc} (Res. ${ad.resolucion}) vence en ${ad.vigenciaHasta}. INDECOPI puede renovar o eliminar.`,
         });
       }
@@ -334,8 +333,8 @@ function verificarAlertas(items, pais) {
   items.forEach(item => {
     if (item.tlc && item.ahorroTLC > 0) {
       alertas.push({
-        tipo: "tlc_activo", nivel: "info",
-        mensaje: `🤝 TLC activo: ${item.desc} — ahorro AV de ${item.ahorroTLC}% (${item.tlc.acuerdo || "acuerdo comercial"})`,
+        tipo: 'tlc_activo', nivel: 'info',
+        mensaje: `🤝 TLC activo: ${item.desc} — ahorro AV de ${item.ahorroTLC}% (${item.tlc.acuerdo || 'acuerdo comercial'})`,
       });
     }
   });
@@ -347,12 +346,12 @@ function verificarAlertas(items, pais) {
 // PASO 1: EXTRAER (devuelve borrador para revisión)
 // ══════════════════════════════════════════
 async function extraer(contenido, tipo) {
-  if (tipo === "json") return { ok: true, data: contenido, confianza: 100, advertencias: [] };
+  if (tipo === 'json') return { ok: true, data: contenido, confianza: 100, advertencias: [] };
 
   const advertencias = [];
   let data = null;
 
-  const result = await aiProxy.extract(contenido, tipo === "image" ? "image" : "document");
+  const result = await aiProxy.extract(contenido, tipo === 'image' ? 'image' : 'document');
   if (result.ok && result.data) {
     data = result.data;
   } else {
@@ -361,49 +360,49 @@ async function extraer(contenido, tipo) {
   }
 
   if (!data || !data.items || data.items.length === 0) {
-    return { ok: false, error: "No se pudieron extraer items. ¿Es una cotización de proveedor?", advertencias };
+    return { ok: false, error: 'No se pudieron extraer items. ¿Es una cotización de proveedor?', advertencias };
   }
 
   let confianza = 85;
 
   data.items.forEach((item, i) => {
-    if (item.unit > 100000) { advertencias.push({ item: i, campo: "unit", mensaje: `Precio unitario muy alto: $${item.unit.toLocaleString()}. ¿Es correcto?`, nivel: "alto" }); confianza -= 10; }
-    if (item.unit > 0 && item.unit < 0.01) { advertencias.push({ item: i, campo: "unit", mensaje: `Precio unitario muy bajo: $${item.unit}. ¿Falta un decimal?`, nivel: "alto" }); confianza -= 10; }
-    if (item.qty > 100000) { advertencias.push({ item: i, campo: "qty", mensaje: `Cantidad muy alta: ${item.qty.toLocaleString()}`, nivel: "medio" }); confianza -= 5; }
-    if (!item.desc || item.desc.length < 3) { advertencias.push({ item: i, campo: "desc", mensaje: "Descripción vacía o muy corta", nivel: "alto" }); confianza -= 10; }
+    if (item.unit > 100000) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy alto: $${item.unit.toLocaleString()}. ¿Es correcto?`, nivel: 'alto' }); confianza -= 10; }
+    if (item.unit > 0 && item.unit < 0.01) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy bajo: $${item.unit}. ¿Falta un decimal?`, nivel: 'alto' }); confianza -= 10; }
+    if (item.qty > 100000) { advertencias.push({ item: i, campo: 'qty', mensaje: `Cantidad muy alta: ${item.qty.toLocaleString()}`, nivel: 'medio' }); confianza -= 5; }
+    if (!item.desc || item.desc.length < 3) { advertencias.push({ item: i, campo: 'desc', mensaje: 'Descripción vacía o muy corta', nivel: 'alto' }); confianza -= 10; }
   });
 
   // Moneda no USD
-  if (data.currency && data.currency !== "USD") {
+  if (data.currency && data.currency !== 'USD') {
     const tasa = TASAS_CAMBIO_FALLBACK[data.currency.toUpperCase()];
     advertencias.push({
-      campo: "currency", nivel: "medio",
-      mensaje: `Cotización en ${data.currency}. Se convertirá a USD (tasa ref: 1 ${data.currency} ≈ ${tasa || "?"} USD). Verifica el tipo de cambio.`,
+      campo: 'currency', nivel: 'medio',
+      mensaje: `Cotización en ${data.currency}. Se convertirá a USD (tasa ref: 1 ${data.currency} ≈ ${tasa || '?'} USD). Verifica el tipo de cambio.`,
     });
   }
 
   if (data.items.length === 1 && contenido.length > 500) {
-    advertencias.push({ campo: "items", mensaje: "Solo se extrajo 1 item. ¿El documento tiene más productos?", nivel: "medio" });
+    advertencias.push({ campo: 'items', mensaje: 'Solo se extrajo 1 item. ¿El documento tiene más productos?', nivel: 'medio' });
   }
 
   const sumItems = data.items.reduce((s, it) => s + (it.qty || 1) * (it.unit || 0), 0);
   if (data.total && Math.abs(data.total - sumItems) / data.total > 0.05) {
-    advertencias.push({ campo: "total", mensaje: `Total ($${data.total}) ≠ suma items ($${sumItems.toFixed(2)})`, nivel: "alto" }); confianza -= 15;
+    advertencias.push({ campo: 'total', mensaje: `Total ($${data.total}) ≠ suma items ($${sumItems.toFixed(2)})`, nivel: 'alto' }); confianza -= 15;
   }
 
   return {
     ok: true, data, confianza: Math.max(10, confianza), advertencias,
     mensaje: advertencias.length > 0
       ? `⚠ ${advertencias.length} punto(s) requieren verificación.`
-      : "✅ Datos extraídos. Verifica y confirma.",
+      : '✅ Datos extraídos. Verifica y confirma.',
     paraRevisar: {
       items: data.items.map((it, i) => ({
-        index: i, desc: it.desc || "", qty: it.qty || 1, unit: it.unit || 0,
-        sku: it.sku || "", pesoKg: it.pesoKg || null, bienUsado: false,
+        index: i, desc: it.desc || '', qty: it.qty || 1, unit: it.unit || 0,
+        sku: it.sku || '', pesoKg: it.pesoKg || null, bienUsado: false,
         tieneAdvertencia: advertencias.some(a => a.item === i),
       })),
-      proveedor: data.supplier || "", pais: data.country || "",
-      moneda: data.currency || "USD", incoterm: data.incoterm || "FOB",
+      proveedor: data.supplier || '', pais: data.country || '',
+      moneda: data.currency || 'USD', incoterm: data.incoterm || 'FOB',
       flete: data.freight || null, seguro: data.insurance || null,
     },
   };
@@ -411,19 +410,19 @@ async function extraer(contenido, tipo) {
 
 async function extraerConReintento(contenido, tipo) {
   const messages = [
-    { role: "system", content: `Extrae TODOS los items de esta cotización. Responde SOLO JSON:
+    { role: 'system', content: `Extrae TODOS los items de esta cotización. Responde SOLO JSON:
 {"items":[{"desc":"...","qty":N,"unit":N,"sku":"..."}],"total":N,"freight":N,"insurance":N,"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","payment_terms":"...","validity":"..."}
 qty y unit DEBEN ser números.` },
-    { role: "user", content: tipo === "image"
-      ? [{ type: "image_url", image_url: { url: contenido } }, { type: "text", text: "Extrae datos de esta cotización." }]
+    { role: 'user', content: tipo === 'image'
+      ? [{ type: 'image_url', image_url: { url: contenido } }, { type: 'text', text: 'Extrae datos de esta cotización.' }]
       : `Extrae datos:\n\n${contenido}` },
   ];
   try {
-    const resp = await aiProxy.call(messages, "groq");
-    const clean = resp.text.replace(/```json|```/g, "").trim();
-    const s = clean.indexOf("{"), e = clean.lastIndexOf("}");
+    const resp = await aiProxy.call(messages, 'groq');
+    const clean = resp.text.replace(/```json|```/g, '').trim();
+    const s = clean.indexOf('{'), e = clean.lastIndexOf('}');
     if (s >= 0 && e > s) return JSON.parse(clean.substring(s, e + 1));
-  } catch {}
+  } catch (error) { /* AI extraction fallback */ }
   return null;
 }
 
@@ -436,22 +435,28 @@ async function calcular(input) {
   const resultado = { exito: false, items: [], totales: {}, alertas: [], etapas: {}, tiempoMs: 0 };
 
   try {
-    let {
-      items, pais, canal, incoterm, fleteManual, seguroManual, tc, proveedor,
-      moneda, tcMoneda, tipoImportador, margenVenta,
+    const {
+      items,
+      pais,
+      canal,
+      incoterm,
+      tc,
+      proveedor,
+      moneda,
+      tcMoneda,
+      tipoImportador,
+      margenVenta,
     } = input;
-    // Ensure mutable defaults
-    fleteManual = fleteManual || 0;
-    seguroManual = seguroManual || 0;
+    let { fleteManual = 0, seguroManual = 0 } = input;
 
-    if (!items?.length) { resultado.error = "No hay items para calcular"; return resultado; }
+    if (!items?.length) { resultado.error = 'No hay items para calcular'; return resultado; }
 
-    const country = (pais || "").toUpperCase();
-    const canalUpper = (canal || "DEFINITIVA").toUpperCase();
-    const monedaUpper = (moneda || "USD").toUpperCase();
+    const country = normalizarCodigoPais(pais) || (pais || '').toUpperCase();
+    const canalUpper = (canal || 'DEFINITIVA').toUpperCase();
+    const monedaUpper = (moneda || 'USD').toUpperCase();
 
     // ── CONVERTIR MONEDA ──
-    if (monedaUpper !== "USD") {
+    if (monedaUpper !== 'USD') {
       log.push(`Convirtiendo ${monedaUpper} → USD...`);
       items.forEach(item => {
         if (item.unit) {
@@ -462,34 +467,34 @@ async function calcular(input) {
         }
       });
       const tasa = tcMoneda || TASAS_CAMBIO_FALLBACK[monedaUpper] || 1;
-      resultado.etapas.conversion = { moneda: monedaUpper, tasaUsada: tasa, nota: "Precios convertidos a USD" };
+      resultado.etapas.conversion = { moneda: monedaUpper, tasaUsada: tasa, nota: 'Precios convertidos a USD' };
       log.push(`✓ Convertido a USD (1 ${monedaUpper} = ${tasa} USD)`);
     }
 
     // ── CHECK DSI (< $2,000 FOB) ──
     const fobTotal = items.reduce((s, i) => s + ((i.qty || 1) * (i.unit || 0)), 0);
 
-    if (fobTotal <= 2000 && (canalUpper === "POSTAL" || canalUpper === "COURIER" || canalUpper === "DSI")) {
-      log.push("Modo DSI: FOB ≤ $2,000 — cálculo simplificado");
+    if (fobTotal <= 2000 && (canalUpper === 'POSTAL' || canalUpper === 'COURIER' || canalUpper === 'DSI')) {
+      log.push('Modo DSI: FOB ≤ $2,000 — cálculo simplificado');
       const fleteT = fleteManual || 0;
       const seguroT = seguroManual || 0;
       const dsi = calcularDSI(fobTotal, fleteT, seguroT);
       const costosOp = calcularCostosOperativos(canalUpper, dsi.cif, 0);
 
       resultado.exito = true;
-      resultado.modo = "DSI";
+      resultado.modo = 'DSI';
       resultado.totales = { ...dsi, costosOperativos: costosOp, totalReal: dsi.totalLanded + costosOp.totalOperativo };
       if (tc > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tc;
       resultado.items = items;
       resultado.metadata = { proveedor, pais: country, incoterm, canal: canalUpper, tc, moneda: monedaUpper };
-      resultado.alertas = [{ tipo: "dsi", nivel: "info", mensaje: "📦 Importación simplificada (DSI). AV 4% flat, sin percepción ni antidumping." }];
+      resultado.alertas = [{ tipo: 'dsi', nivel: 'info', mensaje: '📦 Importación simplificada (DSI). AV 4% flat, sin percepción ni antidumping.' }];
       resultado.log = log;
       resultado.tiempoMs = Date.now() - startTime;
       return resultado;
     }
 
     // ── CLASIFICAR HS ──
-    log.push("Clasificando partidas arancelarias...");
+    log.push('Clasificando partidas arancelarias...');
     let itemsClasificados = await clasificarItems(items);
     const clasificados = itemsClasificados.filter(i => i.hs);
     resultado.etapas.clasificacion = {
@@ -500,7 +505,7 @@ async function calcular(input) {
     log.push(`✓ ${clasificados.length}/${items.length} clasificados`);
 
     // ── ENRIQUECER (NANDINA + TLC + permisos + antidumping) ──
-    log.push("Consultando NANDINA, TLCs, permisos, antidumping...");
+    log.push('Consultando NANDINA, TLCs, permisos, antidumping...');
     itemsClasificados = enriquecerConNandina(itemsClasificados, country);
 
     // Apply antidumping
@@ -524,20 +529,20 @@ async function calcular(input) {
       conAntidumping: antidumpingCount,
     };
 
-    if (prohibidos.length > 0) resultado.alertas.push({ tipo: "prohibida", nivel: "critico", mensaje: `⛔ ${prohibidos.length} item(s) PROHIBIDOS: ${prohibidos.map(i => i.desc).join(", ")}` });
+    if (prohibidos.length > 0) resultado.alertas.push({ tipo: 'prohibida', nivel: 'critico', mensaje: `⛔ ${prohibidos.length} item(s) PROHIBIDOS: ${prohibidos.map(i => i.desc).join(', ')}` });
     if (conPermisos.length > 0) {
       const ents = [...new Set(conPermisos.flatMap(i => i.permisos?.permisos?.map(p => p.entidad) || []))];
-      resultado.alertas.push({ tipo: "restringida", nivel: "alto", mensaje: `⚠ ${conPermisos.length} item(s) requieren permisos de: ${ents.join(", ")}`, entidades: ents });
+      resultado.alertas.push({ tipo: 'restringida', nivel: 'alto', mensaje: `⚠ ${conPermisos.length} item(s) requieren permisos de: ${ents.join(', ')}`, entidades: ents });
     }
     if (antidumpingCount > 0) {
-      resultado.alertas.push({ tipo: "antidumping", nivel: "alto", mensaje: `🛡 ${antidumpingCount} item(s) con derechos antidumping INDECOPI` });
+      resultado.alertas.push({ tipo: 'antidumping', nivel: 'alto', mensaje: `🛡 ${antidumpingCount} item(s) con derechos antidumping INDECOPI` });
     }
     log.push(`✓ Regulatorio: ${resultado.etapas.regulatorio.conTLC} TLC, ${conPermisos.length} permisos, ${antidumpingCount} antidumping`);
 
     // ── INCOTERM ADJUSTMENT ──
-    const incotermUpper = (incoterm || "FOB").toUpperCase();
+    const incotermUpper = (incoterm || 'FOB').toUpperCase();
     const incInfo = INCOTERM_INFO[incotermUpper];
-    if (incInfo && incotermUpper !== "FOB") {
+    if (incInfo && incotermUpper !== 'FOB') {
       log.push(`Ajustando precios de ${incotermUpper} → FOB...`);
       const ajuste = ajustarIncoterm(fobTotal, incotermUpper, fleteManual, seguroManual, fobTotal);
       resultado.etapas.incoterm = {
@@ -573,27 +578,32 @@ async function calcular(input) {
       }
 
       if (ajuste.advertencia) {
-        resultado.alertas.push({ tipo: "incoterm", nivel: "medio", mensaje: ajuste.ajuste });
+        resultado.alertas.push({ tipo: 'incoterm', nivel: 'medio', mensaje: ajuste.ajuste });
       }
     }
     const fobAjustado = itemsClasificados.reduce((s, i) => s + ((i.qty || 1) * (i.unit || 0)), 0);
 
     // ── FLETE ──
     let fleteTotal = fleteManual || 0;
-    let seguroTotal = seguroManual || 0;
+    const seguroTotal = seguroManual || 0;
     if (fleteTotal === 0 && country) {
       const pesoTotal = itemsClasificados.reduce((s, i) => s + ((i.pesoKg || 1) * (i.qty || 1)), 0);
       try {
-        const est = flete.estimarFlete({ origen: country.substring(0, 2), canal: canalUpper === "DEFINITIVA" ? "maritimo" : canalUpper.toLowerCase(), pesoRealKg: pesoTotal, valorFOB: fobAjustado });
+        const est = flete.estimarFlete({
+          origen: normalizarPaisParaRuta(country),
+          canal: canalUpper === 'DEFINITIVA' ? 'maritimo' : canalUpper.toLowerCase(),
+          pesoRealKg: pesoTotal,
+          valorFOB: fobAjustado
+        });
         fleteTotal = est.flete || 0;
         resultado.etapas.flete = { estimado: true, monto: fleteTotal, transit: est.tiempoTransito, desglose: est.desglose };
         log.push(`✓ Flete estimado: $${fleteTotal.toFixed(2)}`);
-      } catch {}
+      } catch (error) { /* freight estimator fallback */ }
     }
 
     // ── TRIBUTOS POR ITEM ──
-    log.push("Calculando tributos...");
-    const percepcionTipo = tipoImportador || "general";
+    log.push('Calculando tributos...');
+    const percepcionTipo = tipoImportador || 'general';
 
     itemsClasificados = itemsClasificados.map(item => {
       const itemFOB = (item.qty || 1) * (item.unit || 0);
@@ -608,7 +618,7 @@ async function calcular(input) {
     const totales = { fob: 0, flete: fleteTotal, seguro: 0, cif: 0, adValorem: 0, isc: 0, igv: 0, ipm: 0, percepcion: 0, antidumping: 0, totalTributos: 0, totalLanded: 0 };
     itemsClasificados.forEach(it => {
       if (!it.tributos) return;
-      for (const k of ["fob","seguro","cif","adValorem","isc","igv","ipm","percepcion","antidumping","totalTributos","totalLanded"]) {
+      for (const k of ['fob','seguro','cif','adValorem','isc','igv','ipm','percepcion','antidumping','totalTributos','totalLanded']) {
         totales[k] += it.tributos[k] || 0;
       }
     });
@@ -624,7 +634,7 @@ async function calcular(input) {
 
       // TC SENSITIVITY ANALYSIS
       totales.sensibilidadTC = calcularSensibilidadTC(totales.totalReal, tc);
-      log.push(`✓ Sensibilidad TC calculada (±3%, ±5%, ±10%)`);
+      log.push('✓ Sensibilidad TC calculada (±3%, ±5%, ±10%)');
     }
     log.push(`✓ Total landed: $${totales.totalLanded.toFixed(2)} + operativos: $${totales.costosOperativos.totalOperativo.toFixed(2)} = $${totales.totalReal.toFixed(2)}`);
 
@@ -650,11 +660,11 @@ async function calcular(input) {
 
     // ── DUDA RAZONABLE ──
     try {
-      log.push("Verificando duda razonable...");
+      log.push('Verificando duda razonable...');
       const dudas = await verificarDudaRazonable(itemsClasificados, country);
-      const riesgosos = dudas.filter(d => d?.riesgo === "alto" || d?.riesgo === "critico");
+      const riesgosos = dudas.filter(d => d?.riesgo === 'alto' || d?.riesgo === 'critico');
       if (riesgosos.length > 0) {
-        resultado.alertas.push({ tipo: "duda_razonable", nivel: "alto",
+        resultado.alertas.push({ tipo: 'duda_razonable', nivel: 'alto',
           mensaje: `🔶 ${riesgosos.length} item(s) con riesgo de duda razonable SUNAT`,
           items: riesgosos.map(d => ({ hs: d.hs, desc: d.desc, riesgo: d.riesgo, mensaje: d.mensaje })),
         });
@@ -687,7 +697,7 @@ function calcularTributos(item, fleteItem, seguroItem, canal, tipoImportador) {
   // ISC
   let iscRate = (item.iscRate || 0) / 100;
   let iscAdvertencia = null;
-  if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscAdvertencia = "⚠ ISC sistema especial — consultar SUNAT"; }
+  if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscAdvertencia = '⚠ ISC sistema especial — consultar SUNAT'; }
 
   const adValorem = cif * advRate;
   const isc = (cif + adValorem) * (iscRate > 0 ? iscRate : 0);
@@ -704,16 +714,16 @@ function calcularTributos(item, fleteItem, seguroItem, canal, tipoImportador) {
 
   // PERCEPCIÓN DIFERENCIADA
   let percRate = 0;
-  let percTipo = "no_aplica";
-  if (canal !== "POSTAL" && canal !== "COURIER") {
-    if (tipoImportador === "nuevo" || tipoImportador === "primera_vez") {
-      percRate = 0.10; percTipo = "10% (importador nuevo)";
+  let percTipo = 'no_aplica';
+  if (canal !== 'POSTAL' && canal !== 'COURIER') {
+    if (tipoImportador === 'nuevo' || tipoImportador === 'primera_vez') {
+      percRate = 0.10; percTipo = '10% (importador nuevo)';
     } else if (item.bienUsado) {
-      percRate = 0.05; percTipo = "5% (bien usado)";
-    } else if (tipoImportador === "buen_contribuyente") {
-      percRate = 0.035; percTipo = "3.5% (buen contribuyente)";
+      percRate = 0.05; percTipo = '5% (bien usado)';
+    } else if (tipoImportador === 'buen_contribuyente') {
+      percRate = 0.035; percTipo = '3.5% (buen contribuyente)';
     } else {
-      percRate = 0.035; percTipo = "3.5% (general)";
+      percRate = 0.035; percTipo = '3.5% (general)';
     }
   }
   const percepcion = (cif + adValorem + isc + igv + ipm) * percRate;
@@ -743,30 +753,30 @@ async function clasificarItems(items) {
   const results = await Promise.allSettled(
     items.map(async (item) => {
       if (item.hs && item.hs.length >= 8) {
-        const clean = item.hs.replace(/\./g, "").padEnd(10, "0");
+        const clean = item.hs.replace(/\./g, '').padEnd(10, '0');
         const match = nandinaService.getData().find(h => h.p === clean);
-        if (match) return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: match.a, confianza: 100, descripcionOficial: match.d, metodoClasificacion: "manual" };
+        if (match) return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: match.a, confianza: 100, descripcionOficial: match.d, metodoClasificacion: 'manual' };
       }
       try {
         const result = await clasificador.clasificarMultiAgente(item.desc);
         if (result.consenso?.hs) {
-          const clean = result.consenso.hs.replace(/\./g, "").padEnd(10, "0");
-          return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: result.consenso.advalorem ?? 0, confianza: result.consenso.confianza ?? 0, descripcionOficial: result.consenso.descripcionOficial || "", metodoClasificacion: result.consenso.metodo, advertencia: result.consenso.advertencia || null };
+          const clean = result.consenso.hs.replace(/\./g, '').padEnd(10, '0');
+          return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: result.consenso.advalorem ?? 0, confianza: result.consenso.confianza ?? 0, descripcionOficial: result.consenso.descripcionOficial || '', metodoClasificacion: result.consenso.metodo, advertencia: result.consenso.advertencia || null };
         }
       } catch (e) { console.log(`[AUTO] HS failed for "${item.desc}": ${e.message}`); }
       try {
-        const simple = await aiProxy.classify([{ role: "user", content: `Clasifica: ${item.desc}` }], "groq");
-        const hsMatch = simple.text?.match(/\d{4}[\.\s]?\d{2}[\.\s]?\d{2}[\.\s]?\d{2}/);
+        const simple = await aiProxy.classify([{ role: 'user', content: `Clasifica: ${item.desc}` }], 'groq');
+        const hsMatch = simple.text?.match(/\d{4}[.\s]?\d{2}[.\s]?\d{2}[.\s]?\d{2}/);
         if (hsMatch) {
-          const clean = hsMatch[0].replace(/[\.\s]/g, "").padEnd(10, "0");
+          const clean = hsMatch[0].replace(/[.\s]/g, '').padEnd(10, '0');
           const nandina = nandinaService.getData().find(h => h.p === clean);
-          return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: nandina?.a ?? 0, confianza: 60, metodoClasificacion: "simple" };
+          return { ...item, hs: clean, hsFormatted: formatHS(clean), adv: nandina?.a ?? 0, confianza: 60, metodoClasificacion: 'simple' };
         }
-      } catch {}
-      return { ...item, hs: null, adv: 0, confianza: 0, error: "No se pudo clasificar" };
+      } catch (error) { /* simple classifier fallback */ }
+      return { ...item, hs: null, adv: 0, confianza: 0, error: 'No se pudo clasificar' };
     })
   );
-  return results.map(r => r.status === "fulfilled" ? r.value : { error: "Error" });
+  return results.map(r => r.status === 'fulfilled' ? r.value : { error: 'Error' });
 }
 
 function enriquecerConNandina(items, country) {
@@ -795,7 +805,7 @@ async function verificarDudaRazonable(items, country) {
       } catch { return null; }
     })
   );
-  return checks.map(c => c.status === "fulfilled" ? c.value : null).filter(Boolean);
+  return checks.map(c => c.status === 'fulfilled' ? c.value : null).filter(Boolean);
 }
 
 function formatHS(hs) {

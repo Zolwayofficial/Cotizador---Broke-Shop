@@ -9,8 +9,7 @@
 // - Aprende fechas de vencimiento
 // - Alertas 30 días antes de vencimiento
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorINDECOPI {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorINDECOPI {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`antidumping_${producto}_${pais}`);
     if (aprendizaje) {
-      console.log(`🧠 INDECOPI: Usando aprendizaje previo`);
+      console.log('🧠 INDECOPI: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 

@@ -7,13 +7,11 @@
 // El sistema usa TrackingMore primero, y si falla o se acaba el crédito,
 // automáticamente usa las tarifas referenciales.
 
-const https = require("https");
-const autoRepair = require("./auto-repair"); // Auto-corrección
+const autoRepair = require('./auto-repair'); // Auto-corrección
 
 // Cache de cotizaciones
 const _cache = {};
 const CACHE_TTL = 3600000; // 1 hora
-const CACHE_MAX = 100;
 
 // Contador de requests diarias (para monitoreo)
 let _dailyUsage = { count: 0, date: new Date().toISOString().split('T')[0] };
@@ -23,7 +21,7 @@ const TRACKINGMORE_API_KEY = process.env.TRACKINGMORE_API_KEY || null;
 const SEARATES_API_KEY = process.env.SEARATES_API_KEY || null;
 
 // Resetear contador diario automáticamente
-setInterval(() => {
+const dailyUsageResetInterval = setInterval(() => {
   const today = new Date().toISOString().split('T')[0];
   if (_dailyUsage.date !== today) {
     console.log(`[FLETE] Reset diario de TrackingMore: ${_dailyUsage.count} requests ayer`);
@@ -31,73 +29,43 @@ setInterval(() => {
   }
 }, 60000); // Verificar cada minuto
 
+dailyUsageResetInterval.unref?.();
+
 // Fallback hardcoded (tarifas de mercado referenciales)
 const FALLBACK_TARIFAS = {
   aereo: {
-    "CN-PE": { perKg: 3.80, min: 120, transit: "5-8 días" },
-    "US-PE": { perKg: 2.50, min: 85, transit: "3-5 días" },
-    "DE-PE": { perKg: 4.20, min: 150, transit: "5-10 días" },
-    "JP-PE": { perKg: 4.50, min: 160, transit: "5-8 días" },
-    "KR-PE": { perKg: 3.90, min: 130, transit: "5-8 días" },
-    "BR-PE": { perKg: 3.00, min: 90, transit: "3-5 días" },
-    "MX-PE": { perKg: 2.80, min: 85, transit: "3-5 días" },
-    "IT-PE": { perKg: 4.00, min: 140, transit: "7-12 días" },
-    "ES-PE": { perKg: 3.80, min: 135, transit: "7-12 días" },
-    "IN-PE": { perKg: 4.00, min: 140, transit: "7-10 días" },
-    "TH-PE": { perKg: 4.20, min: 150, transit: "7-10 días" },
-    "TW-PE": { perKg: 3.50, min: 120, transit: "5-8 días" },
-    default: { perKg: 4.50, min: 150, transit: "7-14 días" },
+    'CN-PE': { perKg: 3.80, min: 120, transit: '5-8 días' },
+    'US-PE': { perKg: 2.50, min: 85, transit: '3-5 días' },
+    'DE-PE': { perKg: 4.20, min: 150, transit: '5-10 días' },
+    'JP-PE': { perKg: 4.50, min: 160, transit: '5-8 días' },
+    'KR-PE': { perKg: 3.90, min: 130, transit: '5-8 días' },
+    'BR-PE': { perKg: 3.00, min: 90, transit: '3-5 días' },
+    'MX-PE': { perKg: 2.80, min: 85, transit: '3-5 días' },
+    'IT-PE': { perKg: 4.00, min: 140, transit: '7-12 días' },
+    'ES-PE': { perKg: 3.80, min: 135, transit: '7-12 días' },
+    'IN-PE': { perKg: 4.00, min: 140, transit: '7-10 días' },
+    'TH-PE': { perKg: 4.20, min: 150, transit: '7-10 días' },
+    'TW-PE': { perKg: 3.50, min: 120, transit: '5-8 días' },
+    default: { perKg: 4.50, min: 150, transit: '7-14 días' },
   },
   maritimo: {
-    "CN-PE": { perCBM: 55, min20ft: 1200, min40ft: 2200, transit: "28-35 días" },
-    "US-PE": { perCBM: 65, min20ft: 1000, min40ft: 1800, transit: "15-22 días" },
-    "DE-PE": { perCBM: 70, min20ft: 1400, min40ft: 2600, transit: "30-40 días" },
-    "JP-PE": { perCBM: 50, min20ft: 1100, min40ft: 2000, transit: "25-32 días" },
-    "KR-PE": { perCBM: 48, min20ft: 1000, min40ft: 1900, transit: "25-30 días" },
-    "BR-PE": { perCBM: 45, min20ft: 800, min40ft: 1500, transit: "12-18 días" },
-    "IN-PE": { perCBM: 52, min20ft: 1300, min40ft: 2400, transit: "30-40 días" },
-    default: { perCBM: 65, min20ft: 1400, min40ft: 2600, transit: "30-45 días" },
+    'CN-PE': { perCBM: 55, min20ft: 1200, min40ft: 2200, transit: '28-35 días' },
+    'US-PE': { perCBM: 65, min20ft: 1000, min40ft: 1800, transit: '15-22 días' },
+    'DE-PE': { perCBM: 70, min20ft: 1400, min40ft: 2600, transit: '30-40 días' },
+    'JP-PE': { perCBM: 50, min20ft: 1100, min40ft: 2000, transit: '25-32 días' },
+    'KR-PE': { perCBM: 48, min20ft: 1000, min40ft: 1900, transit: '25-30 días' },
+    'BR-PE': { perCBM: 45, min20ft: 800, min40ft: 1500, transit: '12-18 días' },
+    'IN-PE': { perCBM: 52, min20ft: 1300, min40ft: 2400, transit: '30-40 días' },
+    default: { perCBM: 65, min20ft: 1400, min40ft: 2600, transit: '30-45 días' },
   },
   courier: {
-    "CN-PE": { perKg: 8.50, min: 35, transit: "3-7 días" },
-    "US-PE": { perKg: 6.00, min: 25, transit: "2-5 días" },
-    "DE-PE": { perKg: 9.00, min: 40, transit: "3-7 días" },
-    "JP-PE": { perKg: 9.50, min: 40, transit: "3-7 días" },
-    default: { perKg: 10.00, min: 45, transit: "5-10 días" },
+    'CN-PE': { perKg: 8.50, min: 35, transit: '3-7 días' },
+    'US-PE': { perKg: 6.00, min: 25, transit: '2-5 días' },
+    'DE-PE': { perKg: 9.00, min: 40, transit: '3-7 días' },
+    'JP-PE': { perKg: 9.50, min: 40, transit: '3-7 días' },
+    default: { perKg: 10.00, min: 45, transit: '5-10 días' },
   },
 };
-
-// Prune cache
-function pruneCache() {
-  const keys = Object.keys(_cache);
-  if (keys.length <= CACHE_MAX) return;
-  const now = Date.now();
-  for (const k of keys) {
-    if (now - _cache[k].ts > CACHE_TTL) delete _cache[k];
-  }
-  const remaining = Object.entries(_cache).sort((a, b) => a[1].ts - b[1].ts);
-  while (remaining.length > CACHE_MAX) {
-    delete _cache[remaining.shift()[0]];
-  }
-}
-
-// HTTPS GET helper
-function httpsGet(url, headers = {}) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers, timeout: 15000 }, res => {
-      const chunks = [];
-      res.on("data", d => chunks.push(d));
-      res.on("end", () => {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString()));
-        } catch {
-          resolve(null);
-        }
-      });
-      res.on("error", reject);
-    }).on("error", reject);
-  });
-}
 
 // Opción 1: TrackingMore API (gratis 100/day)
 async function getTrackingMoreRate(origen, destino, pesoKg, canal) {
@@ -108,13 +76,9 @@ async function getTrackingMoreRate(origen, destino, pesoKg, canal) {
     return _cache[cacheKey].data;
   }
 
-  try {
-    // TrackingMore tiene API de tracking, no de rates
-    // Usamos como fallback de información
-    return null;
-  } catch {
-    return null;
-  }
+  // TrackingMore tiene API de tracking, no de rates.
+  // Este módulo conserva la puerta para una integración futura.
+  return null;
 }
 
 // Opción 2: Searates API (requiere registro)
@@ -126,30 +90,26 @@ async function getSearatesRate(origen, destino, pesoKg, canal) {
     return _cache[cacheKey].data;
   }
 
-  try {
-    // Searates requiere autenticación y tiene endpoints complejos
-    // Por ahora retornamos null para usar fallback
-    return null;
-  } catch {
-    return null;
-  }
+  // Searates requiere autenticación y tiene endpoints complejos.
+  // Por ahora retornamos null para usar el fallback referencial.
+  return null;
 }
 
 // Opción 3: Fallback hardcoded (referencial)
-function getFallbackRate(origen, destino, pesoKg, canal, valorFOB) {
+function getFallbackRate(origen, destino, pesoKg, canal, _valorFOB) {
   const ruta = `${origen}-${destino}`;
 
-  const tarifas = canal === "aereo" ? FALLBACK_TARIFAS.aereo :
-    canal === "maritimo" ? FALLBACK_TARIFAS.maritimo :
+  const tarifas = canal === 'aereo' ? FALLBACK_TARIFAS.aereo :
+    canal === 'maritimo' ? FALLBACK_TARIFAS.maritimo :
       FALLBACK_TARIFAS.courier;
 
   const tarifa = tarifas[ruta] || tarifas.default;
 
   let flete = 0;
 
-  if (canal === "aereo" || canal === "courier") {
+  if (canal === 'aereo' || canal === 'courier') {
     flete = Math.max(pesoKg * tarifa.perKg, tarifa.min);
-  } else if (canal === "maritimo") {
+  } else if (canal === 'maritimo') {
     // Estimado CBM (asumiendo 1 CBM = 1000kg)
     const cbm = pesoKg / 1000;
     if (cbm < 15) {
@@ -169,18 +129,18 @@ function getFallbackRate(origen, destino, pesoKg, canal, valorFOB) {
     canal,
     pesoKg,
     transit: tarifa.transit,
-    source: "referencial",
-    nota: "Tarifa referencial de mercado. Solicitar cotización formal a freight forwarder.",
+    source: 'referencial',
+    nota: 'Tarifa referencial de mercado. Solicitar cotización formal a freight forwarder.',
   };
 }
 
 // Función principal con fallback automático y AUTO-REPAIR
 async function cotizarFlete(params) {
-  return await autoRepair.ejecutarConAutoReparacion(
-    "flete-api",
-    async () => {
-      const { origen, destino = "PE", canal, pesoKg, valorFOB } = params;
+  const { origen, destino = 'PE', canal, pesoKg, valorFOB } = params;
 
+  return await autoRepair.ejecutarConAutoReparacion(
+    'flete-api',
+    async () => {
       // Verificar si es un nuevo día para resetear contador
       const today = new Date().toISOString().split('T')[0];
       if (_dailyUsage.date !== today) {
@@ -201,12 +161,25 @@ async function cotizarFlete(params) {
               return tmRate;
             }
 
-            console.log(`[FLETE] TrackingMore no devolvió tarifa, usando fallback referencial`);
+            console.log('[FLETE] TrackingMore no devolvió tarifa, usando fallback referencial');
           } catch (e) {
             console.log(`[FLETE] Error en TrackingMore: ${e.message}, usando fallback`);
           }
         } else {
-          console.log(`[FLETE] Límite diario de TrackingMore alcanzado (100/100), usando fallback referencial`);
+          console.log('[FLETE] Límite diario de TrackingMore alcanzado (100/100), usando fallback referencial');
+        }
+      }
+
+      if (SEARATES_API_KEY) {
+        try {
+          console.log('[FLETE] Intentando Searates antes del fallback referencial...');
+          const srRate = await getSearatesRate(origen, destino, pesoKg, canal);
+          if (srRate) {
+            console.log(`[FLETE] Searates exitoso: $${srRate.flete}`);
+            return srRate;
+          }
+        } catch (e) {
+          console.log(`[FLETE] Error en Searates: ${e.message}, usando fallback`);
         }
       }
 
@@ -217,7 +190,7 @@ async function cotizarFlete(params) {
       return {
         ...fallback,
         advertencia: _dailyUsage.count >= 100
-          ? "Límite diario de API alcanzado. Se usaron tarifas referenciales. El contador se resetea a medianoche."
+          ? 'Límite diario de API alcanzado. Se usaron tarifas referenciales. El contador se resetea a medianoche.'
           : null
       };
     },

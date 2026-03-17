@@ -6,20 +6,15 @@ const request = require('supertest');
 
 describe('API REST Integration Tests', () => {
   let app;
-  let server;
 
   beforeAll(async () => {
-    // Cargar app
     app = require('../../server/index');
-    
-    // Iniciar server en puerto de test
-    server = app.listen(3001);
+    await app.init();
   });
 
   afterAll(async () => {
-    // Cerrar server
-    if (server) {
-      await new Promise(resolve => server.close(resolve));
+    if (app?.stopServer) {
+      await app.stopServer();
     }
   });
 
@@ -39,6 +34,26 @@ describe('API REST Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.body).toBeDefined();
       expect(response.body.kpis).toBeDefined();
+    });
+  });
+
+  describe('POST /api/agente/calcular', () => {
+    it('debería calcular una cotización simple sin romper el rate limiter', async () => {
+      const response = await request(app)
+        .post('/api/agente/calcular')
+        .send({
+          items: [{ desc: 'camisetas de algodon', qty: 500, unit: 3.5 }],
+          pais: 'CN',
+          canal: 'COURIER',
+          incoterm: 'FOB',
+          tipoImportador: 'general',
+          margenVenta: 30,
+          moneda: 'USD'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.exito).toBe(true);
+      expect(response.body.totales.totalReal).toBeGreaterThan(0);
     });
   });
 

@@ -23,7 +23,7 @@ class CourierBase {
     this.activo = true;
   }
 
-  async cotizar(datos) {
+  async cotizar(_datos) {
     throw new Error('Método cotizar() debe ser implementado');
   }
 
@@ -42,7 +42,7 @@ class CourierBase {
 
 class ShippoCourier extends CourierBase {
   constructor(apiToken) {
-    super('Shippo (Multi-Courier)', 'courier');
+    super('Shippo', 'courier');
     this.apiToken = apiToken;
     this.baseUrl = 'https://api.goshippo.com';
   }
@@ -145,7 +145,7 @@ class ShippoCourier extends CourierBase {
 
 class EasyPostCourier extends CourierBase {
   constructor(apiToken) {
-    super('EasyPost (Multi-Courier)', 'courier');
+    super('EasyPost', 'courier');
     this.apiToken = apiToken;
     this.baseUrl = 'https://api.easypost.com/api/v2';
   }
@@ -296,7 +296,7 @@ class CourierPersonalizado extends CourierBase {
 
 class AfterShipCourier extends CourierBase {
   constructor(apiKey) {
-    super('AfterShip (700+ Couriers)', 'courier');
+    super('AfterShip', 'courier');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.aftership.com/v4';
   }
@@ -351,7 +351,7 @@ class AfterShipCourier extends CourierBase {
 
 class PackSendCourier extends CourierBase {
   constructor(apiKey) {
-    super('Pack & Send (15+ Couriers)', 'courier');
+    super('Pack & Send', 'courier');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.packsend.com.au/v1';
   }
@@ -426,7 +426,7 @@ class PackSendCourier extends CourierBase {
 
 class InterparcelCourier extends CourierBase {
   constructor(apiKey) {
-    super('Interparcel (25+ Couriers)', 'courier');
+    super('Interparcel', 'courier');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.interparcel.com/v2';
   }
@@ -507,7 +507,7 @@ class InterparcelCourier extends CourierBase {
 
 class ParcelMonkeyCourier extends CourierBase {
   constructor(apiKey) {
-    super('Parcel Monkey (Unlimited)', 'courier');
+    super('Parcel Monkey', 'courier');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.parcelmonkey.com/v1';
   }
@@ -555,7 +555,7 @@ class ParcelMonkeyCourier extends CourierBase {
 
 class MaerskNaviera extends CourierBase {
   constructor(apiKey) {
-    super('Maersk Spot API', 'naviera');
+    super('Maersk', 'naviera');
     this.apiKey = apiKey;
     this.baseUrl = 'https://api.maersk.com/spot';
   }
@@ -676,7 +676,7 @@ class MaerskNaviera extends CourierBase {
 
 class MSCNaviera extends CourierBase {
   constructor(apiKey) {
-    super('MSC Spot API', 'naviera');
+    super('MSC', 'naviera');
     this.apiKey = apiKey;
     this.baseUrl = 'https://spot.msc.com/api';
   }
@@ -905,6 +905,10 @@ class IntegradorLogistica {
 
   // Agregar naviera personalizada
   agregarNaviera(config) {
+    if (config instanceof CourierBase) {
+      this.navieras.push(config);
+      return;
+    }
     const naviera = new NavieraPersonalizada(config);
     this.navieras.push(naviera);
   }

@@ -9,8 +9,7 @@
 // - Detecta productos que requieren registro sanitario
 // - Alertas de vencimiento de registros
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorDIGESA {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorDIGESA {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`registro_${producto}`);
     if (aprendizaje) {
-      console.log(`🧠 DIGESA: Usando aprendizaje previo`);
+      console.log('🧠 DIGESA: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 

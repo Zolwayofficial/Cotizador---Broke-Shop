@@ -9,8 +9,7 @@
 // - Detecta nuevos permisos requeridos
 // - Alertas de cambios normativos
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorVUCE {
   constructor() {
@@ -58,13 +57,13 @@ class AgenteNavegadorVUCE {
   // DETECTAR NUEVOS PERMISOS REQUERIDOS
   // ═══════════════════════════════════════════════════
   async detectarNuevosPermisos() {
-    console.log("🔍 VUCE: Buscando nuevos permisos...");
+    console.log('🔍 VUCE: Buscando nuevos permisos...');
 
     // Comparar con aprendizaje previo
     const permisosActuales = this.memoria.obtenerAprendizaje('permisos_vigente');
 
     if (!permisosActuales) {
-      console.log("⚠️ VUCE: No hay registro previo de permisos");
+      console.log('⚠️ VUCE: No hay registro previo de permisos');
       return [];
     }
 

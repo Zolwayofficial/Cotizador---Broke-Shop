@@ -109,14 +109,16 @@ class CotizadorPersonalizado {
     }
     
     // Guardar contactos default
-    this._guardarContactos();
-    return CONTACTOS_DEFAULT;
+    const contactos = { ...CONTACTOS_DEFAULT };
+    this._guardarContactos(contactos);
+    return contactos;
   }
 
-  _guardarContactos() {
+  _guardarContactos(contactos = this.contactos) {
     try {
+      if (!contactos) return;
       fs.mkdirSync(path.dirname(CONTACTOS_PATH), { recursive: true });
-      fs.writeFileSync(CONTACTOS_PATH, JSON.stringify(this.contactos, null, 2));
+      fs.writeFileSync(CONTACTOS_PATH, JSON.stringify(contactos, null, 2));
     } catch (e) {
       console.error('[COTIZADOR] Error guardando contactos:', e.message);
     }
@@ -421,7 +423,7 @@ class CotizadorPersonalizado {
   // MÉTODOS AUXILIARES
   // ═══════════════════════════════════════════════════
 
-  _generarEmailHTML(cotizacionId, datos, contacto) {
+  _generarEmailHTML(cotizacionId, datos, _contacto) {
     return `
       <html>
         <body style="font-family: Arial, sans-serif;">

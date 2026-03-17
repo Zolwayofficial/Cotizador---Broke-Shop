@@ -62,11 +62,11 @@ chmod +x deploy-vps.sh
 │  [6/8] Configurar Nginx                                    │
 │    - Instala Nginx                                         │
 │    - Configura proxy inverso                               │
-│    - Configura puertos 3000, 3001, 3002                    │
+│    - Configura puertos 3000 y 3002                         │
 │                                                             │
 │  [7/8] Verificar servicio                                  │
 │    - pm2 status                                            │
-│    - curl http://localhost:3001/api/monitor/health         │
+│    - curl http://localhost:3000/api/monitor/health         │
 │    - Verifica puertos                                      │
 │                                                             │
 │  [8/8] Reporte final                                       │
@@ -81,24 +81,32 @@ chmod +x deploy-vps.sh
 
 ## 🔧 CONFIGURACIÓN PERSONALIZADA
 
-### **EDITAR .env.production ANTES DE DESPLEGAR:**
+### **PREPARAR .env.production ANTES DE DESPLEGAR:**
 
 ```bash
+cp .env.production.example .env.production
 nano .env.production
 ```
 
-**CAMBIAR ESTO:**
-```env
-GROQ_API_KEY=COLOCA_TU_API_KEY_DE_GROQ_AQUI
-EMAIL_USER=tu_email@gmail.com
-EMAIL_PASSWORD=tu_password_de_aplicacion
+### **VALIDAR LA CONFIGURACION ANTES DE SUBIR:**
+
+```bash
+npm run production:check
 ```
 
-**POR ESTO:**
+### **MINIMO RECOMENDADO EN PRODUCCION**
+
 ```env
+NODE_ENV=production
+PORT=3000
+JWT_SECRET=secreto-real-de-32-caracteres-o-mas
+DB_PATH=./data/cotizador.db
+DATA_DIR=./data
+DOMAIN=cotizador.tudominio.com
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 EMAIL_USER=tu_correo_real@gmail.com
-EMAIL_PASSWORD=xxxx xxxx xxxx xxxx  # App password de Gmail
+EMAIL_PASSWORD=xxxx xxxx xxxx xxxx
+EMAIL_FROM=tu_correo_real@gmail.com
 ```
 
 ---
@@ -118,10 +126,10 @@ pm2 status
 pm2 logs cotizador --lines 20
 
 # 4. Probar API
-curl http://localhost:3001/api/monitor/health
+curl http://localhost:3000/api/monitor/health
 
 # 5. Ver puertos
-netstat -tulpn | grep -E '3000|3001|3002'
+netstat -tulpn | grep -E '3000|3002'
 ```
 
 ### **ACCEDER AL DASHBOARD:**
@@ -173,7 +181,7 @@ git pull origin main
 cd /var/www/cotizador
 
 # Ver membresías
-curl http://localhost:3001/api/membresias/estadisticas
+curl http://localhost:3000/api/membresias/estadisticas
 
 # Ver uso del sistema
 pm2 monit
@@ -221,7 +229,7 @@ chmod -R 755 /var/www/cotizador
 
 ```bash
 # Ver qué está usando el puerto
-sudo lsof -i :3001
+sudo lsof -i :3000
 
 # Matar el proceso
 sudo kill -9 PID
@@ -242,7 +250,7 @@ pm2 restart cotizador
 pm2 status
 
 # Si no está, iniciar
-pm2 start server/index.js --name cotizador
+pm2 start ecosystem.config.js --env production
 pm2 save
 
 # Recargar Nginx
@@ -256,14 +264,14 @@ systemctl reload nginx
 ### **VER MIEMBROS:**
 
 ```bash
-curl http://localhost:3001/api/membresias/miembros \
+curl http://localhost:3000/api/membresias/miembros \
   -H "Authorization: Bearer TOKEN_ADMIN"
 ```
 
 ### **VER ESTADÍSTICAS:**
 
 ```bash
-curl http://localhost:3001/api/membresias/estadisticas \
+curl http://localhost:3000/api/membresias/estadisticas \
   -H "Authorization: Bearer TOKEN_ADMIN"
 ```
 
@@ -272,7 +280,7 @@ curl http://localhost:3001/api/membresias/estadisticas \
 ## 🎯 CHECKLIST POST-DESPLEGUE
 
 - [ ] 1. Verificar que el servicio está corriendo (`pm2 status`)
-- [ ] 2. Probar la API (`curl http://localhost:3001/api/monitor/health`)
+- [ ] 2. Probar la API (`curl http://localhost:3000/api/monitor/health`)
 - [ ] 3. Acceder al dashboard (`http://tu-dominio.com`)
 - [ ] 4. Editar .env con GROQ_API_KEY real
 - [ ] 5. Configurar SSL con Certbot

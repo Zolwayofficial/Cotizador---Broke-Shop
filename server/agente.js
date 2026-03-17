@@ -18,16 +18,16 @@
 // Cada sub-agente tiene funciones específicas y opera independientemente.
 // El orquestador decide QUÉ agentes activar según el input.
 
-const clasificador = require("./clasificador");
-const nandinaService = require("./nandina");
-const permisos = require("./permisos");
-const valoracion = require("./valoracion");
-const flete = require("./flete");
-const sanciones = require("./sanciones");
-const regimenes = require("./regimenes");
-const aiProxy = require("./ai-proxy");
+const clasificador = require('./clasificador');
+const nandinaService = require('./nandina');
+const permisos = require('./permisos');
+const valoracion = require('./valoracion');
+const flete = require('./flete');
+const sanciones = require('./sanciones');
+const regimenes = require('./regimenes');
+const aiProxy = require('./ai-proxy');
+const { normalizarCodigoPais, normalizarPaisParaRuta } = require('./paises');
 
-const IGV_RATE = 0.16;
 const IPM_RATE = 0.02;
 const SEGURO_DEFAULT = 0.015;
 
@@ -40,61 +40,61 @@ const TC_FALLBACK = {
 
 // Antidumping INDECOPI vigentes
 const ANTIDUMPING = [
-  { hs:"6109", pais:"CN", tasa:5.51, desc:"Camisetas algodón", res:"025-2019" },
-  { hs:"6105", pais:"CN", tasa:3.73, desc:"Camisas punto algodón", res:"025-2019" },
-  { hs:"6205", pais:"CN", tasa:1.98, desc:"Camisas tejido plano", res:"134-2019" },
-  { hs:"5407", pais:"CN", tasa:0.18, desc:"Tejidos filamentos sintéticos", res:"044-2014", porKg:true },
-  { hs:"5516", pais:"CN", tasa:0.66, desc:"Tejidos fibras artificiales", res:"044-2014", porKg:true },
-  { hs:"7213", pais:"CN", tasa:12.0, desc:"Barras acero", res:"023-2021" },
-  { hs:"7306", pais:"CN", tasa:11.0, desc:"Tubos perfiles acero", res:"015-2018" },
-  { hs:"6402", pais:"CN", tasa:2.97, desc:"Calzado caucho/plástico", res:"060-2020" },
-  { hs:"6403", pais:"CN", tasa:1.82, desc:"Calzado cuero", res:"060-2020" },
-  { hs:"6404", pais:"CN", tasa:3.41, desc:"Calzado textil", res:"060-2020" },
-  { hs:"3920", pais:"CN", tasa:19.3, desc:"Cierres tapas plástico", res:"003-2023" },
-  { hs:"7304", pais:"CN", tasa:15.0, desc:"Tubos acero sin costura", res:"080-2017" },
+  { hs:'6109', pais:'CN', tasa:5.51, desc:'Camisetas algodón', res:'025-2019' },
+  { hs:'6105', pais:'CN', tasa:3.73, desc:'Camisas punto algodón', res:'025-2019' },
+  { hs:'6205', pais:'CN', tasa:1.98, desc:'Camisas tejido plano', res:'134-2019' },
+  { hs:'5407', pais:'CN', tasa:0.18, desc:'Tejidos filamentos sintéticos', res:'044-2014', porKg:true },
+  { hs:'5516', pais:'CN', tasa:0.66, desc:'Tejidos fibras artificiales', res:'044-2014', porKg:true },
+  { hs:'7213', pais:'CN', tasa:12.0, desc:'Barras acero', res:'023-2021' },
+  { hs:'7306', pais:'CN', tasa:11.0, desc:'Tubos perfiles acero', res:'015-2018' },
+  { hs:'6402', pais:'CN', tasa:2.97, desc:'Calzado caucho/plástico', res:'060-2020' },
+  { hs:'6403', pais:'CN', tasa:1.82, desc:'Calzado cuero', res:'060-2020' },
+  { hs:'6404', pais:'CN', tasa:3.41, desc:'Calzado textil', res:'060-2020' },
+  { hs:'3920', pais:'CN', tasa:19.3, desc:'Cierres tapas plástico', res:'003-2023' },
+  { hs:'7304', pais:'CN', tasa:15.0, desc:'Tubos acero sin costura', res:'080-2017' },
 ];
 
 // Incoterms info
 const INCOTERMS = {
-  EXW: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.08, desc:"Precio en fábrica" },
-  FCA: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.03, desc:"Entregado al transportista" },
-  FAS: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.02, desc:"Al costado del buque" },
-  FOB: { incluyeFlete:false, incluyeSeguro:false, extraPct:0,    desc:"A bordo del buque" },
-  CFR: { incluyeFlete:true,  incluyeSeguro:false, extraPct:0,    desc:"Costo + flete" },
-  CIF: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:"Costo + seguro + flete" },
-  CPT: { incluyeFlete:true,  incluyeSeguro:false, extraPct:0,    desc:"Transporte pagado" },
-  CIP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:"Transporte + seguro pagados" },
-  DAP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:"Entregado en destino" },
-  DPU: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:"Entregado descargado" },
-  DDP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:"Entregado con derechos pagados", incluyeTributos:true },
+  EXW: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.08, desc:'Precio en fábrica' },
+  FCA: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.03, desc:'Entregado al transportista' },
+  FAS: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.02, desc:'Al costado del buque' },
+  FOB: { incluyeFlete:false, incluyeSeguro:false, extraPct:0,    desc:'A bordo del buque' },
+  CFR: { incluyeFlete:true,  incluyeSeguro:false, extraPct:0,    desc:'Costo + flete' },
+  CIF: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Costo + seguro + flete' },
+  CPT: { incluyeFlete:true,  incluyeSeguro:false, extraPct:0,    desc:'Transporte pagado' },
+  CIP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Transporte + seguro pagados' },
+  DAP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Entregado en destino' },
+  DPU: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Entregado descargado' },
+  DDP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Entregado con derechos pagados', incluyeTributos:true },
 };
 
 // ══════════════════════════════════════════════════════
 // SUB-AGENTE 1: CLASIFICADOR (2+ modelos debaten)
 // ══════════════════════════════════════════════════════
 const agenteClasificador = {
-  nombre: "Clasificador HS",
+  nombre: 'Clasificador HS',
   
   async clasificar(items) {
     const resultados = await Promise.allSettled(
       items.map(async (item) => {
         // Si ya viene con HS manual, validar contra NANDINA
         if (item.hs && item.hs.length >= 8) {
-          const clean = item.hs.replace(/\./g,"").padEnd(10,"0");
+          const clean = item.hs.replace(/\./g,'').padEnd(10,'0');
           const match = nandinaService.getData().find(h => h.p === clean);
-          if (match) return { ...item, hs:clean, adv:match.a, igvRate:match.g||16, iscRate:match.i||0, seguroRate:match.s||1.5, descOficial:match.d, confianza:100, metodo:"manual" };
+          if (match) return { ...item, hs:clean, adv:match.a, igvRate:match.g||16, iscRate:match.i||0, seguroRate:match.s||1.5, descOficial:match.d, confianza:100, metodo:'manual' };
         }
         // Multi-agente: 2 modelos + árbitro + validación NANDINA
         try {
           const r = await clasificador.clasificarMultiAgente(item.desc);
           if (r.consenso?.hs) {
-            const clean = r.consenso.hs.replace(/\./g,"").padEnd(10,"0");
+            const clean = r.consenso.hs.replace(/\./g,'').padEnd(10,'0');
             const match = nandinaService.getData().find(h => h.p === clean);
             return {
               ...item, hs:clean,
               adv: match?.a ?? r.consenso.advalorem ?? 0,
               igvRate: match?.g || 16, iscRate: match?.i || 0, seguroRate: match?.s || 1.5,
-              descOficial: match?.d || r.consenso.descripcionOficial || "",
+              descOficial: match?.d || r.consenso.descripcionOficial || '',
               confianza: r.consenso.confianza || 0,
               metodo: r.consenso.metodo,
               advertencia: r.consenso.advertencia,
@@ -103,18 +103,18 @@ const agenteClasificador = {
         } catch(e) { /* fallthrough */ }
         // Fallback simple
         try {
-          const s = await aiProxy.classify([{role:"user",content:`Clasifica: ${item.desc}`}],"groq");
-          const m = s.text?.match(/\d{4}[\.\s]?\d{2}[\.\s]?\d{2}[\.\s]?\d{2}/);
+          const s = await aiProxy.classify([{role:'user',content:`Clasifica: ${item.desc}`}],'groq');
+          const m = s.text?.match(/\d{4}[.\s]?\d{2}[.\s]?\d{2}[.\s]?\d{2}/);
           if (m) {
-            const clean = m[0].replace(/[\.\s]/g,"").padEnd(10,"0");
+            const clean = m[0].replace(/[.\s]/g,'').padEnd(10,'0');
             const match = nandinaService.getData().find(h => h.p === clean);
-            return { ...item, hs:clean, adv:match?.a||0, igvRate:match?.g||16, iscRate:match?.i||0, confianza:55, metodo:"simple" };
+            return { ...item, hs:clean, adv:match?.a||0, igvRate:match?.g||16, iscRate:match?.i||0, confianza:55, metodo:'simple' };
           }
-        } catch{}
-        return { ...item, hs:null, adv:0, confianza:0, error:"Sin clasificación" };
+        } catch (error) { /* fallback simple */ }
+        return { ...item, hs:null, adv:0, confianza:0, error:'Sin clasificación' };
       })
     );
-    return resultados.map(r => r.status==="fulfilled" ? r.value : {error:"Fallo"});
+    return resultados.map(r => r.status==='fulfilled' ? r.value : {error:'Fallo'});
   },
 };
 
@@ -122,7 +122,7 @@ const agenteClasificador = {
 // SUB-AGENTE 2: REGULATORIO (SUNAT, VUCE, ministerios)
 // ══════════════════════════════════════════════════════
 const agenteRegulatorio = {
-  nombre: "Regulatorio",
+  nombre: 'Regulatorio',
 
   analizar(items, pais) {
     const alertas = [];
@@ -135,7 +135,7 @@ const agenteRegulatorio = {
       const prohib = nandinaService.isProhibida(item.hs);
       if (prohib) {
         item.prohibida = true;
-        alertas.push({ nivel:"critico", tipo:"prohibida", mensaje:`⛔ ${item.desc}: MERCANCÍA PROHIBIDA — ${prohib.desc}` });
+        alertas.push({ nivel:'critico', tipo:'prohibida', mensaje:`⛔ ${item.desc}: MERCANCÍA PROHIBIDA — ${prohib.desc}` });
       }
 
       // Restringida (permisos)
@@ -147,7 +147,7 @@ const agenteRegulatorio = {
             detallePermisos.push(p);
           }
         });
-        alertas.push({ nivel:"alto", tipo:"restringida", mensaje:`⚠ ${item.desc}: requiere permiso de ${perm.permisos.map(p=>p.entidad).join(", ")}` });
+        alertas.push({ nivel:'alto', tipo:'restringida', mensaje:`⚠ ${item.desc}: requiere permiso de ${perm.permisos.map(p=>p.entidad).join(', ')}` });
       }
 
       // TLC
@@ -161,13 +161,13 @@ const agenteRegulatorio = {
       }
 
       // Antidumping
-      const hsClean = item.hs.replace(/\./g,"");
-      const paisUp = (pais||"").toUpperCase();
+      const hsClean = item.hs.replace(/\./g,'');
+      const paisUp = normalizarCodigoPais(pais);
       for (const ad of ANTIDUMPING) {
-        if (hsClean.startsWith(ad.hs) && (ad.pais === paisUp || ad.pais === paisUp.substring(0,2))) {
+        if (hsClean.startsWith(ad.hs) && paisUp && ad.pais === paisUp) {
           item.antidumpingRate = ad.tasa / 100;
           item.antidumpingInfo = ad;
-          alertas.push({ nivel:"alto", tipo:"antidumping", mensaje:`🛡 ${item.desc}: antidumping ${ad.tasa}% (Res. ${ad.res})` });
+          alertas.push({ nivel:'alto', tipo:'antidumping', mensaje:`🛡 ${item.desc}: antidumping ${ad.tasa}% (Res. ${ad.res})` });
           break;
         }
       }
@@ -181,12 +181,12 @@ const agenteRegulatorio = {
 // SUB-AGENTE 3: CALCULISTA (motor tributario)
 // ══════════════════════════════════════════════════════
 const agenteCalculista = {
-  nombre: "Calculista",
+  nombre: 'Calculista',
 
   // Ajustar de cualquier Incoterm → FOB
   ajustarIncoterm(items, incoterm, fleteManual, seguroManual) {
-    const inc = INCOTERMS[(incoterm||"FOB").toUpperCase()];
-    if (!inc || incoterm === "FOB") return { items, flete:fleteManual, seguro:seguroManual, ajuste:null };
+    const inc = INCOTERMS[(incoterm||'FOB').toUpperCase()];
+    if (!inc || incoterm === 'FOB') return { items, flete:fleteManual, seguro:seguroManual, ajuste:null };
 
     const fobTotal = items.reduce((s,i) => s + (i.qty||1)*(i.unit||0), 0);
     let fobAjustado = fobTotal;
@@ -229,7 +229,7 @@ const agenteCalculista = {
 
   // Convertir moneda
   convertirMoneda(items, moneda, tcCustom) {
-    if (!moneda || moneda === "USD") return { items, conversion: null };
+    if (!moneda || moneda === 'USD') return { items, conversion: null };
     const tasa = tcCustom || TC_FALLBACK[moneda.toUpperCase()] || 1;
     items.forEach(item => {
       if (item.unit) { item.unitMonedaOriginal = item.unit; item.unit *= tasa; }
@@ -247,7 +247,7 @@ const agenteCalculista = {
     const advRate = (item.advConTLC ?? item.adv ?? 0) / 100;
     let iscRate = (item.iscRate||0) / 100;
     let iscNota = null;
-    if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscNota = "ISC sistema especial"; }
+    if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscNota = 'ISC sistema especial'; }
 
     const adValorem = cif * advRate;
     const isc = (cif + adValorem) * (iscRate > 0 ? iscRate : 0);
@@ -259,11 +259,11 @@ const agenteCalculista = {
     const ipm = baseIGV * IPM_RATE;
 
     // Percepción diferenciada
-    let percRate = 0, percTipo = "no aplica";
-    if (canal !== "POSTAL" && canal !== "COURIER") {
-      if (tipoImportador === "nuevo") { percRate = 0.10; percTipo = "10% (nuevo)"; }
-      else if (item.bienUsado) { percRate = 0.05; percTipo = "5% (usado)"; }
-      else { percRate = 0.035; percTipo = "3.5% (general)"; }
+    let percRate = 0, percTipo = 'no aplica';
+    if (canal !== 'POSTAL' && canal !== 'COURIER') {
+      if (tipoImportador === 'nuevo') { percRate = 0.10; percTipo = '10% (nuevo)'; }
+      else if (item.bienUsado) { percRate = 0.05; percTipo = '5% (usado)'; }
+      else { percRate = 0.035; percTipo = '3.5% (general)'; }
     }
     const percepcion = (cif + adValorem + isc + igv + ipm) * percRate;
 
@@ -288,16 +288,16 @@ const agenteCalculista = {
     const cif = fob + fleteT + seguro;
     const av = cif * 0.04;
     const base = cif + av;
-    return { modo:"DSI", fob, flete:fleteT, seguro, cif, adValorem:av, igv:base*0.16, ipm:base*0.02, totalTributos:av+base*0.18, totalLanded:cif+av+base*0.18 };
+    return { modo:'DSI', fob, flete:fleteT, seguro, cif, adValorem:av, igv:base*0.16, ipm:base*0.02, totalTributos:av+base*0.18, totalLanded:cif+av+base*0.18 };
   },
 
   // Costos operativos
   calcularOperativos(canal, cif) {
-    if (canal === "COURIER" || canal === "POSTAL") return { totalOperativo: canal === "POSTAL" ? 15 : 0 };
+    if (canal === 'COURIER' || canal === 'POSTAL') return { totalOperativo: canal === 'POSTAL' ? 15 : 0 };
     return {
       agenteAduanas: Math.max(200, cif * 0.015),
-      almacenaje: canal === "MARITIMO" ? 120 : 80,
-      transporteLocal: canal === "MARITIMO" ? 200 : 100,
+      almacenaje: canal === 'MARITIMO' ? 120 : 80,
+      transporteLocal: canal === 'MARITIMO' ? 200 : 100,
       comisionBancaria: 40,
       gastosOperativos: 50,
       get totalOperativo() { return this.agenteAduanas + this.almacenaje + this.transporteLocal + this.comisionBancaria + this.gastosOperativos; },
@@ -317,7 +317,7 @@ const agenteCalculista = {
     if (!tc || tc <= 0) return null;
     return [-10,-5,-3,0,3,5,10].map(pct => {
       const tcA = tc * (1 + pct/100);
-      return { variacion:`${pct>=0?"+":""}${pct}%`, tc:+tcA.toFixed(4), totalPEN:+(totalUSD*tcA).toFixed(2), dif:+((totalUSD*tcA)-(totalUSD*tc)).toFixed(2) };
+      return { variacion:`${pct>=0?'+':''}${pct}%`, tc:+tcA.toFixed(4), totalPEN:+(totalUSD*tcA).toFixed(2), dif:+((totalUSD*tcA)-(totalUSD*tc)).toFixed(2) };
     });
   },
 };
@@ -326,7 +326,7 @@ const agenteCalculista = {
 // SUB-AGENTE 4: VALORACIÓN (duda razonable)
 // ══════════════════════════════════════════════════════
 const agenteValoracion = {
-  nombre: "Valoración",
+  nombre: 'Valoración',
 
   async verificar(items, pais) {
     const resultados = await Promise.allSettled(
@@ -337,7 +337,7 @@ const agenteValoracion = {
         } catch { return null; }
       })
     );
-    return resultados.map(r => r.status==="fulfilled"?r.value:null).filter(Boolean);
+    return resultados.map(r => r.status==='fulfilled'?r.value:null).filter(Boolean);
   },
 };
 
@@ -345,13 +345,13 @@ const agenteValoracion = {
 // SUB-AGENTE 5: LOGÍSTICO (flete + tracking)
 // ══════════════════════════════════════════════════════
 const agenteLogistico = {
-  nombre: "Logístico",
+  nombre: 'Logístico',
 
   estimarFlete(pais, canal, pesoKg, fobTotal) {
     try {
       return flete.estimarFlete({
-        origen: (pais||"").substring(0,2),
-        canal: canal === "DEFINITIVA" ? "maritimo" : (canal||"maritimo").toLowerCase(),
+        origen: normalizarPaisParaRuta(pais),
+        canal: canal === 'DEFINITIVA' ? 'maritimo' : (canal||'maritimo').toLowerCase(),
         pesoRealKg: pesoKg, valorFOB: fobTotal,
       });
     } catch { return null; }
@@ -362,12 +362,12 @@ const agenteLogistico = {
 // SUB-AGENTE 6: COMPLIANCE (OFAC + sanciones)
 // ══════════════════════════════════════════════════════
 const agenteCompliance = {
-  nombre: "Compliance",
+  nombre: 'Compliance',
 
   async verificarProveedor(nombre, pais) {
     if (!nombre || nombre.length < 3) return null;
     try {
-      return await sanciones.verificar(nombre, pais, "empresa");
+      return await sanciones.verificar(nombre, pais, 'empresa');
     } catch { return null; }
   },
 };
@@ -376,21 +376,21 @@ const agenteCompliance = {
 // SUB-AGENTE 7: LEGAL (leyes, regímenes, alertas)
 // ══════════════════════════════════════════════════════
 const agenteLegal = {
-  nombre: "Legal",
+  nombre: 'Legal',
 
-  generarAlertas(items, pais) {
+  generarAlertas(items, _pais) {
     const alertas = [];
-    alertas.push({ tipo:"normativo", nivel:"info", mensaje:"ℹ Ley 32387: IGV 16% + IPM 2% = 18%. Vigente Jul 2025." });
+    alertas.push({ tipo:'normativo', nivel:'info', mensaje:'ℹ Ley 32387: IGV 16% + IPM 2% = 18%. Vigente Jul 2025.' });
 
     items.forEach(item => {
       if (item.antidumpingInfo) {
         const year = new Date().getFullYear();
-        if (parseInt(item.antidumpingInfo.vigenciaHasta || "2099") - year <= 1) {
-          alertas.push({ tipo:"antidumping_expira", nivel:"medio", mensaje:`⏰ Antidumping ${item.antidumpingInfo.desc} por vencer. Verificar con INDECOPI.` });
+        if (parseInt(item.antidumpingInfo.vigenciaHasta || '2099') - year <= 1) {
+          alertas.push({ tipo:'antidumping_expira', nivel:'medio', mensaje:`⏰ Antidumping ${item.antidumpingInfo.desc} por vencer. Verificar con INDECOPI.` });
         }
       }
       if (item.tlc?.preferencia > 0) {
-        alertas.push({ tipo:"tlc", nivel:"info", mensaje:`🤝 ${item.desc}: TLC ahorra ${item.ahorroTLC}% AV` });
+        alertas.push({ tipo:'tlc', nivel:'info', mensaje:`🤝 ${item.desc}: TLC ahorra ${item.ahorroTLC}% AV` });
       }
     });
 
@@ -406,36 +406,36 @@ const agenteLegal = {
 // SUB-AGENTE 8: EXTRACTOR (lee documentos)
 // ══════════════════════════════════════════════════════
 const agenteExtractor = {
-  nombre: "Extractor",
+  nombre: 'Extractor',
 
   async extraer(contenido, tipo) {
-    if (tipo === "json") return { ok:true, data:contenido };
+    if (tipo === 'json') return { ok:true, data:contenido };
 
-    const result = await aiProxy.extract(contenido, tipo === "image" ? "image" : "document");
+    const result = await aiProxy.extract(contenido, tipo === 'image' ? 'image' : 'document');
     if (result.ok && result.data) return { ok:true, data:result.data };
 
     // Retry
     try {
       const msgs = [
-        { role:"system", content:'Extrae items de esta cotización. SOLO JSON: {"items":[{"desc":"...","qty":N,"unit":N}],"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","freight":N}' },
-        { role:"user", content: tipo==="image" ? [{type:"image_url",image_url:{url:contenido}},{type:"text",text:"Extrae datos."}] : contenido },
+        { role:'system', content:'Extrae items de esta cotización. SOLO JSON: {"items":[{"desc":"...","qty":N,"unit":N}],"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","freight":N}' },
+        { role:'user', content: tipo==='image' ? [{type:'image_url',image_url:{url:contenido}},{type:'text',text:'Extrae datos.'}] : contenido },
       ];
-      const r = await aiProxy.call(msgs, "groq");
-      const c = r.text.replace(/```json|```/g,"").trim();
-      const s = c.indexOf("{"), e = c.lastIndexOf("}");
+      const r = await aiProxy.call(msgs, 'groq');
+      const c = r.text.replace(/```json|```/g,'').trim();
+      const s = c.indexOf('{'), e = c.lastIndexOf('}');
       if (s>=0 && e>s) return { ok:true, data:JSON.parse(c.substring(s,e+1)) };
-    } catch{}
-    return { ok:false, error:"No se pudieron extraer datos" };
+    } catch (error) { /* extraction fallback */ }
+    return { ok:false, error:'No se pudieron extraer datos' };
   },
 
   validar(data) {
     const warnings = [];
-    if (!data?.items?.length) return { ok:false, error:"Sin items" };
+    if (!data?.items?.length) return { ok:false, error:'Sin items' };
     data.items.forEach((it,i) => {
       if (it.unit > 100000) warnings.push({ item:i, msg:`Precio muy alto: $${it.unit}` });
       if (it.unit > 0 && it.unit < 0.01) warnings.push({ item:i, msg:`Precio muy bajo: $${it.unit}` });
       if (it.qty > 100000) warnings.push({ item:i, msg:`Cantidad muy alta: ${it.qty}` });
-      if (!it.desc || it.desc.length < 3) warnings.push({ item:i, msg:"Descripción vacía" });
+      if (!it.desc || it.desc.length < 3) warnings.push({ item:i, msg:'Descripción vacía' });
     });
     return { ok:true, warnings };
   },
@@ -462,21 +462,30 @@ async function orquestar(input) {
 
   try {
     // ═══ FASE 0: Determinar qué tenemos ═══
-    let { items, contenido, tipo, pais, canal, incoterm, moneda, tcMoneda,
-          flete:fleteIn, seguro:seguroIn, tc, proveedor,
-          tipoImportador, margenVenta, soloExtraer } = input;
+    let { items, pais, canal, incoterm, moneda, proveedor } = input;
+    const {
+      contenido,
+      tipo,
+      tcMoneda,
+      flete: fleteIn,
+      seguro: seguroIn,
+      tc: tcInput,
+      tipoImportador,
+      margenVenta,
+      soloExtraer
+    } = input;
 
-    canal = (canal || "DEFINITIVA").toUpperCase();
-    pais = (pais || "").toUpperCase();
-    incoterm = (incoterm || "FOB").toUpperCase();
-    moneda = (moneda || "USD").toUpperCase();
-    const fleteManual = parseFloat(fleteIn) || 0;
-    const seguroManual = parseFloat(seguroIn) || 0;
-    tc = parseFloat(tc) || 0;
+    canal = (canal || 'DEFINITIVA').toUpperCase();
+    pais = (pais || '').toUpperCase();
+    incoterm = (incoterm || 'FOB').toUpperCase();
+    moneda = (moneda || 'USD').toUpperCase();
+    let fleteManual = parseFloat(fleteIn) || 0;
+    let seguroManual = parseFloat(seguroIn) || 0;
+    const tc = parseFloat(tcInput) || 0;
 
     // ═══ FASE 1: EXTRACCIÓN (si viene documento en vez de items) ═══
     if (!items?.length && contenido) {
-      log.push("[Extractor] Leyendo documento...");
+      log.push('[Extractor] Leyendo documento...');
       const ext = await agenteExtractor.extraer(contenido, tipo);
       if (!ext.ok) { resultado.error = ext.error; resultado.log = log; return resultado; }
       const val = agenteExtractor.validar(ext.data);
@@ -485,10 +494,10 @@ async function orquestar(input) {
       // If soloExtraer=true, return for human review
       if (soloExtraer) {
         resultado.exito = true;
-        resultado.modo = "extraccion";
+        resultado.modo = 'extraccion';
         resultado.extraccion = {
           data: ext.data,
-          paraRevisar: ext.data.items?.map((it,i) => ({ i, desc:it.desc||"", qty:it.qty||1, unit:it.unit||0, sku:it.sku||"" })),
+          paraRevisar: ext.data.items?.map((it,i) => ({ i, desc:it.desc||'', qty:it.qty||1, unit:it.unit||0, sku:it.sku||'' })),
           warnings: val.warnings,
           proveedor: ext.data.supplier, pais: ext.data.country, moneda: ext.data.currency, incoterm: ext.data.incoterm,
         };
@@ -498,17 +507,17 @@ async function orquestar(input) {
       }
 
       items = ext.data.items;
-      if (!pais && ext.data.country) pais = ext.data.country.toUpperCase();
-      if (moneda === "USD" && ext.data.currency) moneda = ext.data.currency.toUpperCase();
-      if (incoterm === "FOB" && ext.data.incoterm) incoterm = ext.data.incoterm.toUpperCase();
+      if (!pais && ext.data.country) pais = normalizarCodigoPais(ext.data.country) || ext.data.country.toUpperCase();
+      if (moneda === 'USD' && ext.data.currency) moneda = ext.data.currency.toUpperCase();
+      if (incoterm === 'FOB' && ext.data.incoterm) incoterm = ext.data.incoterm.toUpperCase();
       if (ext.data.supplier) proveedor = ext.data.supplier;
-      log.push(`[Extractor] ✓ ${items.length} items de ${proveedor || "proveedor"}`);
+      log.push(`[Extractor] ✓ ${items.length} items de ${proveedor || 'proveedor'}`);
     }
 
-    if (!items?.length) { resultado.error = "Sin items"; resultado.log = log; return resultado; }
+    if (!items?.length) { resultado.error = 'Sin items'; resultado.log = log; return resultado; }
 
     // ═══ FASE 2: MONEDA ═══
-    if (moneda !== "USD") {
+    if (moneda !== 'USD') {
       log.push(`[Calculista] Convirtiendo ${moneda} → USD...`);
       const conv = agenteCalculista.convertirMoneda(items, moneda, tcMoneda);
       resultado.etapas.moneda = conv.conversion;
@@ -516,14 +525,14 @@ async function orquestar(input) {
     }
 
     // ═══ FASE 3: CLASIFICACIÓN HS ═══
-    log.push("[Clasificador] Clasificando partidas (multi-agente)...");
+    log.push('[Clasificador] Clasificando partidas (multi-agente)...');
     items = await agenteClasificador.clasificar(items);
     const clasificados = items.filter(i => i.hs);
     resultado.etapas.clasificacion = { total:items.length, ok:clasificados.length, confianza:clasificados.length ? Math.round(clasificados.reduce((s,i)=>s+(i.confianza||0),0)/clasificados.length) : 0 };
     log.push(`[Clasificador] ✓ ${clasificados.length}/${items.length} (confianza ${resultado.etapas.clasificacion.confianza}%)`);
 
     // ═══ FASE 4: REGULATORIO ═══
-    log.push("[Regulatorio] Verificando permisos, TLCs, antidumping...");
+    log.push('[Regulatorio] Verificando permisos, TLCs, antidumping...');
     const reg = agenteRegulatorio.analizar(items, pais);
     items = reg.items;
     resultado.alertas.push(...reg.alertas);
@@ -532,33 +541,35 @@ async function orquestar(input) {
     log.push(`[Regulatorio] ✓ ${reg.alertas.length} alertas, ${reg.detallePermisos.length} permisos requeridos`);
 
     // ═══ FASE 5: INCOTERM → FOB ═══
-    if (incoterm !== "FOB") {
+    if (incoterm !== 'FOB') {
       log.push(`[Calculista] Ajustando ${incoterm} → FOB...`);
       const adj = agenteCalculista.ajustarIncoterm(items, incoterm, fleteManual, seguroManual);
       items = adj.items;
+      fleteManual = adj.flete;
+      seguroManual = adj.seguro;
       resultado.etapas.incoterm = adj.ajuste;
-      log.push(`[Calculista] ✓ FOB ajustado`);
+      log.push('[Calculista] ✓ FOB ajustado');
     }
 
     // ═══ CHECK DSI ═══
     const fobTotal = items.reduce((s,i) => s + (i.qty||1)*(i.unit||0), 0);
-    if (fobTotal <= 2000 && (canal === "POSTAL" || canal === "COURIER" || canal === "DSI")) {
-      log.push("[Calculista] Modo DSI (FOB ≤ $2,000)");
+    if (fobTotal <= 2000 && (canal === 'POSTAL' || canal === 'COURIER' || canal === 'DSI')) {
+      log.push('[Calculista] Modo DSI (FOB ≤ $2,000)');
       const dsi = agenteCalculista.calcularDSI(fobTotal, fleteManual, seguroManual);
       const ops = agenteCalculista.calcularOperativos(canal, dsi.cif);
-      resultado.exito = true; resultado.modo = "DSI"; resultado.items = items;
+      resultado.exito = true; resultado.modo = 'DSI'; resultado.items = items;
       resultado.totales = { ...dsi, costosOperativos:ops, totalReal: dsi.totalLanded + (ops.totalOperativo||0) };
       if (tc > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tc;
-      resultado.alertas.push({ tipo:"dsi", nivel:"info", mensaje:"📦 DSI: AV 4% flat, sin percepción." });
+      resultado.alertas.push({ tipo:'dsi', nivel:'info', mensaje:'📦 DSI: AV 4% flat, sin percepción.' });
       resultado.log = log; resultado.tiempoMs = Date.now()-t0;
       return resultado;
     }
 
     // ═══ FASE 6: FLETE ═══
     let fleteTotal = fleteManual;
-    let seguroTotal = seguroManual;
+    const seguroTotal = seguroManual;
     if (fleteTotal === 0 && pais) {
-      log.push("[Logístico] Estimando flete...");
+      log.push('[Logístico] Estimando flete...');
       const peso = items.reduce((s,i) => s + ((i.pesoKg||1)*(i.qty||1)), 0);
       const est = agenteLogistico.estimarFlete(pais, canal, peso, fobTotal);
       if (est) { fleteTotal = est.flete||0; resultado.etapas.flete = { estimado:true, monto:fleteTotal, transit:est.tiempoTransito }; }
@@ -566,7 +577,7 @@ async function orquestar(input) {
     }
 
     // ═══ FASE 7: CÁLCULO TRIBUTARIO ═══
-    log.push("[Calculista] Calculando tributos...");
+    log.push('[Calculista] Calculando tributos...');
     items = items.map(item => {
       const itemFOB = (item.qty||1) * (item.unit||0);
       const prop = fobTotal > 0 ? itemFOB/fobTotal : 1/items.length;
@@ -580,7 +591,7 @@ async function orquestar(input) {
     const totales = { fob:0, flete:fleteTotal, seguro:0, cif:0, adValorem:0, isc:0, igv:0, ipm:0, percepcion:0, antidumping:0, totalTributos:0, totalLanded:0 };
     items.forEach(it => {
       if (!it.tributos) return;
-      for (const k of ["fob","seguro","cif","adValorem","isc","igv","ipm","percepcion","antidumping","totalTributos","totalLanded"]) totales[k] += it.tributos[k]||0;
+      for (const k of ['fob','seguro','cif','adValorem','isc','igv','ipm','percepcion','antidumping','totalTributos','totalLanded']) totales[k] += it.tributos[k]||0;
     });
 
     // Operativos
@@ -604,12 +615,12 @@ async function orquestar(input) {
     log.push(`[Calculista] ✓ Total: $${totales.totalReal.toFixed(2)}`);
 
     // ═══ FASE 8: VALORACIÓN (paralelo, no bloquea) ═══
-    log.push("[Valoración] Verificando duda razonable...");
+    log.push('[Valoración] Verificando duda razonable...');
     try {
       const dudas = await agenteValoracion.verificar(items, pais);
-      const riesgosos = dudas.filter(d => d?.riesgo === "alto" || d?.riesgo === "critico");
+      const riesgosos = dudas.filter(d => d?.riesgo === 'alto' || d?.riesgo === 'critico');
       if (riesgosos.length > 0) {
-        resultado.alertas.push({ tipo:"duda_razonable", nivel:"alto", mensaje:`🔶 ${riesgosos.length} item(s) con riesgo SUNAT`, items:riesgosos.map(d=>({hs:d.hs,riesgo:d.riesgo,msg:d.mensaje})) });
+        resultado.alertas.push({ tipo:'duda_razonable', nivel:'alto', mensaje:`🔶 ${riesgosos.length} item(s) con riesgo SUNAT`, items:riesgosos.map(d=>({hs:d.hs,riesgo:d.riesgo,msg:d.mensaje})) });
       }
       resultado.etapas.valoracion = { verificados:dudas.length, riesgosos:riesgosos.length };
       log.push(`[Valoración] ✓ ${dudas.length} verificados, ${riesgosos.length} riesgosos`);
@@ -617,14 +628,14 @@ async function orquestar(input) {
 
     // ═══ FASE 9: COMPLIANCE (si hay proveedor) ═══
     if (proveedor && proveedor.length > 3) {
-      log.push("[Compliance] Verificando proveedor en listas OFAC/ONU...");
+      log.push('[Compliance] Verificando proveedor en listas OFAC/ONU...');
       try {
         const sanc = await agenteCompliance.verificarProveedor(proveedor, pais);
         if (sanc?.enListaNegra) {
-          resultado.alertas.push({ tipo:"sancion", nivel:"critico", mensaje:`🔴 ${proveedor}: coincidencia en listas de sanciones. NO PROCEDER.` });
+          resultado.alertas.push({ tipo:'sancion', nivel:'critico', mensaje:`🔴 ${proveedor}: coincidencia en listas de sanciones. NO PROCEDER.` });
         }
         resultado.etapas.compliance = sanc ? { verificado:true, enListaNegra:sanc.enListaNegra } : { verificado:false };
-        log.push(`[Compliance] ✓ ${sanc?.enListaNegra ? "⚠ EN LISTA NEGRA" : "Limpio"}`);
+        log.push(`[Compliance] ✓ ${sanc?.enListaNegra ? '⚠ EN LISTA NEGRA' : 'Limpio'}`);
       } catch(e) { resultado.etapas.compliance = { error:e.message }; }
     }
 
@@ -634,10 +645,10 @@ async function orquestar(input) {
 
     // ═══ RESULTADO ═══
     resultado.exito = true;
-    resultado.modo = "completo";
+    resultado.modo = 'completo';
     resultado.items = items;
     resultado.totales = totales;
-    resultado.metadata = { proveedor, pais, canal, incoterm, moneda, tc, tipoImportador: tipoImportador||"general", margenPct: margenVenta||30 };
+    resultado.metadata = { proveedor, pais, canal, incoterm, moneda, tc, tipoImportador: tipoImportador||'general', margenPct: margenVenta||30 };
     resultado.log = log;
 
   } catch(e) {
@@ -648,6 +659,26 @@ async function orquestar(input) {
   resultado.tiempoMs = Date.now() - t0;
   return resultado;
 }
+
+const BASE_AGENT_REGISTRY = [
+  { id: 'orquestador-central', nombre: 'Orquestador Central', categoria: 'base' },
+  { id: 'clasificador-hs', nombre: agenteClasificador.nombre, categoria: 'base' },
+  { id: 'clasificador-hs-a', nombre: 'Clasificador HS A', categoria: 'base' },
+  { id: 'clasificador-hs-b', nombre: 'Clasificador HS B', categoria: 'base' },
+  { id: 'clasificador-hs-arbitro', nombre: 'Arbitro Arancelario', categoria: 'base' },
+  { id: 'regulatorio', nombre: agenteRegulatorio.nombre, categoria: 'base' },
+  { id: 'calculista', nombre: agenteCalculista.nombre, categoria: 'base' },
+  { id: 'conversor-moneda', nombre: 'Conversor de Moneda', categoria: 'base' },
+  { id: 'ajustador-incoterm', nombre: 'Ajustador Incoterm', categoria: 'base' },
+  { id: 'motor-dsi', nombre: 'Motor DSI', categoria: 'base' },
+  { id: 'valoracion', nombre: agenteValoracion.nombre, categoria: 'base' },
+  { id: 'logistico', nombre: agenteLogistico.nombre, categoria: 'base' },
+  { id: 'compliance', nombre: agenteCompliance.nombre, categoria: 'base' },
+  { id: 'validador-proveedor', nombre: 'Validador de Proveedores', categoria: 'base' },
+  { id: 'legal', nombre: agenteLegal.nombre, categoria: 'base' },
+  { id: 'analizador-margen', nombre: 'Analizador de Margen', categoria: 'base' },
+  { id: 'extractor', nombre: agenteExtractor.nombre, categoria: 'base' },
+];
 
 module.exports = {
   orquestar,
@@ -660,6 +691,7 @@ module.exports = {
   agenteCompliance,
   agenteLegal,
   agenteExtractor,
+  BASE_AGENT_REGISTRY,
   // Data
   ANTIDUMPING,
   INCOTERMS,

@@ -14,6 +14,7 @@
     "test:e2e": "jest tests/e2e --coverage",
     "lint": "eslint server/**/*.js",
     "lint:fix": "eslint server/**/*.js --fix",
+    "production:check": "node scripts/validate-production-env.js",
     "docs": "jsdoc -c jsdoc.json -r server -d docs/api",
     "client:install": "cd client && npm install",
     "client:dev": "cd client && npm run dev",
@@ -36,6 +37,7 @@
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^8.0.2",
+    "open": "^11.0.0",
     "pdf-parse": "^1.1.1",
     "sql.js": "^1.10.3",
     "ws": "^8.14.2"

@@ -7,13 +7,11 @@
 //
 // CON AUTO-REPAIR: Aprende de fallos y se auto-corrige
 
-const path = require("path");
-const fs = require("fs");
-const crypto = require("crypto");
-const { generarEmbedding } = require("./embeddings");
-const autoRepair = require("./auto-repair");
+const path = require('path');
+const fs = require('fs');
+const autoRepair = require('./auto-repair');
 
-const DB_PATH = process.env.DB_PATH || "./data/cotizador.db";
+const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
 let db = null;
 let useBetterSqlite3 = false;
 
@@ -25,27 +23,27 @@ async function init() {
   fs.mkdirSync(dir, { recursive: true });
 
   try {
-    const Database = require("better-sqlite3");
+    const Database = require('better-sqlite3');
     db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
+    db.pragma('journal_mode = WAL');
     useBetterSqlite3 = true;
-    console.log("[MEMORIA] ✅ better-sqlite3 cargado");
+    console.log('[MEMORIA] ✅ better-sqlite3 cargado');
   } catch (e) {
     try {
-      const initSqlJs = require("sql.js");
+      const initSqlJs = require('sql.js');
       const SQL = await initSqlJs();
 
       if (fs.existsSync(DB_PATH)) {
         const fileBuffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(fileBuffer);
-        console.log("[MEMORIA] ✅ sql.js cargado (DB existente)");
+        console.log('[MEMORIA] ✅ sql.js cargado (DB existente)');
       } else {
         db = new SQL.Database();
-        console.log("[MEMORIA] ✅ sql.js cargado (DB nueva)");
+        console.log('[MEMORIA] ✅ sql.js cargado (DB nueva)');
       }
       useBetterSqlite3 = false;
     } catch (e2) {
-      console.error("[MEMORIA] ❌ Error:", e2.message);
+      console.error('[MEMORIA] ❌ Error:', e2.message);
     }
   }
 
@@ -104,14 +102,15 @@ async function init() {
 
   // Auto-guardado para sql.js
   if (!useBetterSqlite3) {
-    setInterval(() => {
+    const memoriaAutosaveInterval = setInterval(() => {
       try {
         const data = db.export();
         fs.writeFileSync(DB_PATH, Buffer.from(data));
       } catch (e) {
-        console.error("[MEMORIA] Error guardando:", e.message);
+        console.error('[MEMORIA] Error guardando:', e.message);
       }
     }, 60000);
+    memoriaAutosaveInterval.unref?.();
   }
 }
 
@@ -129,7 +128,7 @@ class MemoriaHibrida {
 
   guardarCotizacion(data) {
     return autoRepair.ejecutarConAutoReparacion(
-      "memoria-hibrida",
+      'memoria-hibrida',
       () => {
         const id = `cot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         db.prepare(`
@@ -162,10 +161,10 @@ class MemoriaHibrida {
     if (!data.usuario_id) return { error: 'usuario_id requerido' };
     const existing = db.prepare('SELECT * FROM memoria_contexto WHERE usuario_id = ?').get(data.usuario_id);
     if (existing) {
-      db.prepare(`UPDATE memoria_contexto SET tipo_importador = COALESCE(?, tipo_importador), margen_preferido = COALESCE(?, margen_preferido), veces_uso = veces_uso + 1, last_used = datetime('now') WHERE usuario_id = ?`)
+      db.prepare('UPDATE memoria_contexto SET tipo_importador = COALESCE(?, tipo_importador), margen_preferido = COALESCE(?, margen_preferido), veces_uso = veces_uso + 1, last_used = datetime(\'now\') WHERE usuario_id = ?')
         .run(data.tipo_importador, data.margen_preferido, data.usuario_id);
     } else {
-      db.prepare(`INSERT INTO memoria_contexto (usuario_id, tipo_importador, margen_preferido) VALUES (?, ?, ?)`)
+      db.prepare('INSERT INTO memoria_contexto (usuario_id, tipo_importador, margen_preferido) VALUES (?, ?, ?)')
         .run(data.usuario_id, data.tipo_importador, data.margen_preferido);
     }
     return { usuario_id: data.usuario_id, tipo: 'contexto' };
@@ -180,8 +179,8 @@ class MemoriaHibrida {
       total_cotizaciones: db.prepare('SELECT COUNT(*) as count FROM memoria_cotizaciones').get().count,
       total_documentos: db.prepare('SELECT COUNT(*) as count FROM memoria_documentos').get().count,
       total_usuarios: db.prepare('SELECT COUNT(DISTINCT usuario_id) as count FROM memoria_contexto').get().count,
-      paises_mas_comunes: db.prepare("SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = 'pais_origen' ORDER BY frecuencia DESC LIMIT 5").all(),
-      productos_mas_cotizados: db.prepare("SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = 'producto' ORDER BY frecuencia DESC LIMIT 10").all()
+      paises_mas_comunes: db.prepare('SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = \'pais_origen\' ORDER BY frecuencia DESC LIMIT 5').all(),
+      productos_mas_cotizados: db.prepare('SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = \'producto\' ORDER BY frecuencia DESC LIMIT 10').all()
     };
   }
 }

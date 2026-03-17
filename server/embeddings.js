@@ -28,7 +28,7 @@ async function initEmbedder() {
     try {
       const { pipeline } = require('@xenova/transformers');
       
-      console.log("[EMBEDDINGS] Cargando modelo all-MiniLM-L6-v2 (50MB)...");
+      console.log('[EMBEDDINGS] Cargando modelo all-MiniLM-L6-v2 (50MB)...');
       
       embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
         quantized: true, // Reducir tamaño a ~25MB
@@ -40,12 +40,12 @@ async function initEmbedder() {
         }
       });
       
-      console.log("[EMBEDDINGS] ✅ Modelo cargado exitosamente");
+      console.log('[EMBEDDINGS] ✅ Modelo cargado exitosamente');
       return embedder;
       
     } catch (error) {
-      console.error("[EMBEDDINGS] Error cargando modelo:", error.message);
-      console.log("[EMBEDDINGS] Usando fallback TF-IDF");
+      console.error('[EMBEDDINGS] Error cargando modelo:', error.message);
+      console.log('[EMBEDDINGS] Usando fallback TF-IDF');
       embedder = null;
       return null;
     }
@@ -80,7 +80,7 @@ async function generarEmbedding(texto) {
     return JSON.stringify(Array.from(output.data));
     
   } catch (error) {
-    console.error("[EMBEDDINGS] Error generando embedding:", error.message);
+    console.error('[EMBEDDINGS] Error generando embedding:', error.message);
     return generarEmbeddingFallback(texto);
   }
 }
@@ -98,7 +98,7 @@ function generarEmbeddingFallback(texto) {
   
   const embedding = new Array(384).fill(0);
   
-  palabras.forEach((palabra, idx) => {
+  palabras.forEach((palabra) => {
     // Hash consistente de la palabra
     let hash = 0;
     for (let i = 0; i < palabra.length; i++) {
@@ -174,13 +174,13 @@ async function buscarSemanticamente(query, documentos, topK = 5) {
 // PRE-CALENTAR MODELO (opcional, para producción)
 // ═══════════════════════════════════════════════════
 async function precalentarModelo() {
-  console.log("[EMBEDDINGS] Precalentando modelo...");
+  console.log('[EMBEDDINGS] Precalentando modelo...');
   await initEmbedder();
   
   // Generar embedding de prueba
-  await generarEmbedding("camiseta de algodón");
+  await generarEmbedding('camiseta de algodón');
   
-  console.log("[EMBEDDINGS] ✅ Modelo precalentado");
+  console.log('[EMBEDDINGS] ✅ Modelo precalentado');
 }
 
 // ═══════════════════════════════════════════════════

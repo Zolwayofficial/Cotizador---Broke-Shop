@@ -13,9 +13,9 @@
 //
 // TODOS CON ACTUALIZACIÓN AUTOMÁTICA Y CACHE
 
-const https = require("https");
-const http = require("http");
-const iconv = require("iconv-lite");
+const https = require('https');
+const http = require('http');
+const iconv = require('iconv-lite');
 
 // Cache con TTL (tiempo de vida)
 const _cache = {};
@@ -38,16 +38,16 @@ function httpsGet(url, timeout = 15000) {
   return new Promise((resolve, reject) => {
     https.get(url, { timeout }, res => {
       const chunks = [];
-      res.on("data", d => chunks.push(d));
-      res.on("end", () => {
+      res.on('data', d => chunks.push(d));
+      res.on('end', () => {
         try {
           resolve(JSON.parse(Buffer.concat(chunks).toString()));
         } catch {
           resolve(Buffer.concat(chunks).toString());
         }
       });
-      res.on("error", reject);
-    }).on("error", reject);
+      res.on('error', reject);
+    }).on('error', reject);
   });
 }
 
@@ -55,10 +55,10 @@ function httpGet(url, timeout = 15000) {
   return new Promise((resolve, reject) => {
     http.get(url, { timeout }, res => {
       const chunks = [];
-      res.on("data", d => chunks.push(d));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-      res.on("error", reject);
-    }).on("error", reject);
+      res.on('data', d => chunks.push(d));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
   });
 }
 
@@ -99,7 +99,7 @@ const VUCE = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[VUCE] Error:", e.message);
+      console.error('[VUCE] Error:', e.message);
       return { error: e.message, partida, pais };
     }
   },
@@ -120,7 +120,7 @@ const VUCE = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[VUCE] Error:", e.message);
+      console.error('[VUCE] Error:', e.message);
       return { error: e.message };
     }
   }
@@ -165,11 +165,11 @@ const SUNAT = {
 
     try {
       // Scraping de Aduanet
-      const clean = partida.replace(/\./g, "").padEnd(10, "0");
+      const clean = partida.replace(/\./g, '').padEnd(10, '0');
       const url = `http://www.aduanet.gob.pe/itarancel/arancelS01Alias?accion=buscarPartida&cod_partida=${clean}&esframe=1`;
       
       const htmlBuffer = await httpGet(url);
-      const html = iconv.decode(htmlBuffer, "latin1");
+      const html = iconv.decode(htmlBuffer, 'latin1');
 
       const result = {
         partida: clean,
@@ -195,14 +195,14 @@ const SUNAT = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[SUNAT] Error:", e.message);
+      console.error('[SUNAT] Error:', e.message);
       return { error: e.message, partida };
     }
   },
 
   async consultarTodasLasPartidas() {
     // Retorna la NANDINA completa (ya implementado en nandina.js)
-    return { message: "Usar nandinaService.getData()" };
+    return { message: 'Usar nandinaService.getData()' };
   }
 };
 
@@ -232,7 +232,7 @@ const MTC = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[MTC] Error:", e.message);
+      console.error('[MTC] Error:', e.message);
       return { error: e.message, producto };
     }
   },
@@ -282,7 +282,7 @@ const DIGESA = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[DIGESA] Error:", e.message);
+      console.error('[DIGESA] Error:', e.message);
       return { error: e.message, producto };
     }
   },
@@ -333,7 +333,7 @@ const SENASA = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[SENASA] Error:", e.message);
+      console.error('[SENASA] Error:', e.message);
       return { error: e.message, producto };
     }
   },
@@ -382,7 +382,7 @@ const MINAM = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[MINAM] Error:", e.message);
+      console.error('[MINAM] Error:', e.message);
       return { error: e.message, producto };
     }
   }
@@ -412,7 +412,7 @@ const PRODUCE = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[PRODUCE] Error:", e.message);
+      console.error('[PRODUCE] Error:', e.message);
       return { error: e.message, producto };
     }
   }
@@ -445,7 +445,7 @@ const INDECOPI = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[INDECOPI] Error:", e.message);
+      console.error('[INDECOPI] Error:', e.message);
       return { error: e.message, producto };
     }
   },
@@ -482,11 +482,11 @@ const ADUANET = {
     if (cached) return cached;
 
     try {
-      const clean = partida.replace(/\./g, "").padEnd(10, "0");
+      const clean = partida.replace(/\./g, '').padEnd(10, '0');
       const url = `http://www.aduanet.gob.pe/itarancel/arancelS01Alias?accion=buscarPartida&cod_partida=${clean}&esframe=1`;
       
       const htmlBuffer = await httpGet(url, 30000);
-      const html = iconv.decode(htmlBuffer, "latin1");
+      const html = iconv.decode(htmlBuffer, 'latin1');
 
       const result = {
         partida: clean,
@@ -513,7 +513,7 @@ const ADUANET = {
       setCache(cacheKey, result);
       return result;
     } catch (e) {
-      console.error("[ADUANET] Error:", e.message);
+      console.error('[ADUANET] Error:', e.message);
       return { error: e.message, partida };
     }
   }
@@ -554,7 +554,7 @@ module.exports = {
   // Limpiar cache
   limpiarCache() {
     Object.keys(_cache).forEach(key => delete _cache[key]);
-    console.log("[CONECTORES] Cache limpiada");
+    console.log('[CONECTORES] Cache limpiada');
   },
 
   // Obtener estadísticas de cache
