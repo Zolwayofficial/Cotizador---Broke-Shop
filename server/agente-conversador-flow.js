@@ -359,6 +359,21 @@ function tieneProductosCapturados(datosPrevios = {}) {
   return Array.isArray(datosPrevios.productos) && datosPrevios.productos.length > 0;
 }
 
+function resumirProductosCapturados(productos = []) {
+  if (!Array.isArray(productos) || productos.length === 0) {
+    return 'Perfecto.';
+  }
+
+  if (productos.length === 1) {
+    const item = productos[0];
+    const cantidad = Number(item?.cantidad) > 0 ? Number(item.cantidad) : 1;
+    const descripcion = normalizarTexto(item?.descripcion || item?.producto || 'producto');
+    return `Perfecto, ya capture ${cantidad} unidad(es) de ${descripcion}.`;
+  }
+
+  return `Perfecto, ya capture ${productos.length} productos distintos.`;
+}
+
 function requierePaso(stepKey, datosPrevios = {}) {
   switch (stepKey) {
   case 'productos':
@@ -394,6 +409,128 @@ function requierePaso(stepKey, datosPrevios = {}) {
     );
   default:
     return false;
+  }
+}
+
+function crearPreguntaPaso(stepKey, datosPrevios = {}) {
+  const productos = datosPrevios.productos || [];
+
+  switch (stepKey) {
+  case 'productos':
+    return {
+      pregunta: 'Hola. Soy tu asistente de importaciones. Que productos quieres importar?',
+      paso: 'productos',
+      tipo: 'lista',
+      hint: 'Ej: 500 camisetas de algodon, 100 laptops, etc.'
+    };
+  case 'pais_origen':
+    return {
+      pregunta: `${resumirProductosCapturados(productos)} Desde que pais importaras?`,
+      paso: 'pais_origen',
+      tipo: 'texto',
+      hint: 'Ej: China, USA, Brasil, etc.'
+    };
+  case 'tipo_sujeto':
+    return {
+      pregunta: 'Importas como persona natural o empresa?',
+      opciones: FLOW_SUBJECT_OPTIONS,
+      paso: 'tipo_sujeto',
+      tipo: 'opciones'
+    };
+  case 'canal':
+    return {
+      pregunta: `Que canal usaras para importar desde ${datosPrevios.pais_origen}?`,
+      opciones: FLOW_CHANNEL_OPTIONS,
+      paso: 'canal',
+      tipo: 'opciones'
+    };
+  case 'objetivo_calculo':
+    return {
+      pregunta: 'Que quieres obtener con esta cotizacion?',
+      opciones: FLOW_OBJECTIVE_OPTIONS,
+      paso: 'objetivo_calculo',
+      tipo: 'opciones',
+      hint: 'Puedes enfocarte solo en el landed cost o pedir una salida comercial.'
+    };
+  case 'precio_unitario':
+    return {
+      pregunta: 'Cual es el precio unitario en USD?',
+      paso: 'precio_unitario',
+      tipo: 'numero',
+      hint: 'Ej: 3.50'
+    };
+  case 'incoterm':
+    return {
+      pregunta: 'Que incoterm usa el proveedor?',
+      opciones: FLOW_INCOTERM_OPTIONS,
+      paso: 'incoterm',
+      tipo: 'opciones'
+    };
+  case 'tipo_importador':
+    return {
+      pregunta: datosPrevios.tipo_sujeto === 'persona_natural'
+        ? 'Como describirias tu experiencia importando como persona natural?'
+        : 'Cual es el perfil de la empresa importadora?',
+      opciones: obtenerOpcionesTipoImportador(datosPrevios),
+      paso: 'tipo_importador',
+      tipo: 'opciones'
+    };
+  case 'bien_usado':
+    return {
+      pregunta: 'La mercancia es nueva o usada?',
+      opciones: FLOW_PRODUCT_CONDITION_OPTIONS,
+      paso: 'bien_usado',
+      tipo: 'opciones',
+      hint: 'Si es usada, la percepcion y algunas restricciones pueden cambiar.'
+    };
+  case 'flete':
+    return {
+      pregunta: 'Conoces el costo de flete internacional?',
+      opciones: OPTIONAL_ESTIMATE_OPTIONS,
+      paso: 'flete',
+      tipo: 'numero',
+      hint: 'Escribe el monto si ya lo tienes o elige estimarlo.'
+    };
+  case 'seguro':
+    return {
+      pregunta: 'Conoces el costo del seguro?',
+      opciones: FLOW_INSURANCE_OPTIONS,
+      paso: 'seguro',
+      tipo: 'numero',
+      hint: 'Escribe el monto, usa seguro de tabla o deja que el sistema lo estime.'
+    };
+  case 'peso_total':
+    return {
+      pregunta: 'Peso total de la mercancia en kg?',
+      opciones: OPTIONAL_ESTIMATE_OPTIONS,
+      paso: 'peso_total',
+      tipo: 'numero',
+      hint: 'Ayuda a estimar mejor el flete.'
+    };
+  case 'tipo_cambio':
+    return {
+      pregunta: 'Quieres usar un tipo de cambio manual?',
+      opciones: OPTIONAL_ESTIMATE_OPTIONS,
+      paso: 'tipo_cambio',
+      tipo: 'numero',
+      hint: 'Escribe el TC o elige usar el actual de SUNAT.'
+    };
+  case 'margen_venta':
+    return {
+      pregunta: 'Que margen de utilidad buscas (%)?',
+      opciones: FLOW_MARGIN_OPTIONS,
+      paso: 'margen_venta',
+      tipo: 'numero',
+      hint: 'Puedes escribir otro porcentaje si quieres.'
+    };
+  case 'calcular':
+    return {
+      pregunta: 'Perfecto. Ya tengo la informacion principal. Calculamos el costo total de importacion?',
+      paso: 'calcular',
+      tipo: 'confirmacion'
+    };
+  default:
+    return null;
   }
 }
 
@@ -534,153 +671,74 @@ function interpretarRespuestaPorPaso(mensaje, pasoActual) {
 
 function generarPregunta(contexto = {}) {
   const datosPrevios = contexto?.datos_previos || {};
-  const productos = datosPrevios.productos || [];
 
   if (requierePaso('productos', datosPrevios)) {
-    return {
-      pregunta: 'Hola. Soy tu asistente de importaciones. Que productos quieres importar?',
-      paso: 'productos',
-      tipo: 'lista',
-      hint: 'Ej: 500 camisetas de algodon, 100 laptops, etc.'
-    };
+    return crearPreguntaPaso('productos', datosPrevios);
   }
 
   if (requierePaso('pais_origen', datosPrevios)) {
-    return {
-      pregunta: `Perfecto, ${productos.length} producto(s). Desde que pais importaras?`,
-      paso: 'pais_origen',
-      tipo: 'texto',
-      hint: 'Ej: China, USA, Brasil, etc.'
-    };
+    return crearPreguntaPaso('pais_origen', datosPrevios);
   }
 
   if (requierePaso('tipo_sujeto', datosPrevios)) {
-    return {
-      pregunta: 'Importas como persona natural o empresa?',
-      opciones: FLOW_SUBJECT_OPTIONS,
-      paso: 'tipo_sujeto',
-      tipo: 'opciones'
-    };
+    return crearPreguntaPaso('tipo_sujeto', datosPrevios);
   }
 
   if (requierePaso('canal', datosPrevios)) {
-    return {
-      pregunta: `Que canal usaras para importar desde ${datosPrevios.pais_origen}?`,
-      opciones: FLOW_CHANNEL_OPTIONS,
-      paso: 'canal',
-      tipo: 'opciones'
-    };
+    return crearPreguntaPaso('canal', datosPrevios);
   }
 
   if (requierePaso('objetivo_calculo', datosPrevios)) {
-    return {
-      pregunta: 'Que quieres obtener con esta cotizacion?',
-      opciones: FLOW_OBJECTIVE_OPTIONS,
-      paso: 'objetivo_calculo',
-      tipo: 'opciones',
-      hint: 'Puedes enfocarte solo en el landed cost o pedir una salida comercial.'
-    };
+    return crearPreguntaPaso('objetivo_calculo', datosPrevios);
   }
 
   if (requierePaso('precio_unitario', datosPrevios)) {
-    return {
-      pregunta: 'Cual es el precio unitario en USD?',
-      paso: 'precio_unitario',
-      tipo: 'numero',
-      hint: 'Ej: 3.50'
-    };
+    return crearPreguntaPaso('precio_unitario', datosPrevios);
   }
 
   if (requierePaso('incoterm', datosPrevios)) {
-    return {
-      pregunta: 'Que incoterm usa el proveedor?',
-      opciones: FLOW_INCOTERM_OPTIONS,
-      paso: 'incoterm',
-      tipo: 'opciones'
-    };
+    return crearPreguntaPaso('incoterm', datosPrevios);
   }
 
   if (requierePaso('tipo_importador', datosPrevios)) {
-    return {
-      pregunta: datosPrevios.tipo_sujeto === 'persona_natural'
-        ? 'Como describirias tu experiencia importando como persona natural?'
-        : 'Cual es el perfil de la empresa importadora?',
-      opciones: obtenerOpcionesTipoImportador(datosPrevios),
-      paso: 'tipo_importador',
-      tipo: 'opciones'
-    };
+    return crearPreguntaPaso('tipo_importador', datosPrevios);
   }
 
   if (requierePaso('bien_usado', datosPrevios)) {
-    return {
-      pregunta: 'La mercancia es nueva o usada?',
-      opciones: FLOW_PRODUCT_CONDITION_OPTIONS,
-      paso: 'bien_usado',
-      tipo: 'opciones',
-      hint: 'Si es usada, la percepcion y algunas restricciones pueden cambiar.'
-    };
+    return crearPreguntaPaso('bien_usado', datosPrevios);
   }
 
   if (requierePaso('flete', datosPrevios)) {
-    return {
-      pregunta: 'Conoces el costo de flete internacional?',
-      opciones: OPTIONAL_ESTIMATE_OPTIONS,
-      paso: 'flete',
-      tipo: 'numero',
-      hint: 'Escribe el monto si ya lo tienes o elige estimarlo.'
-    };
+    return crearPreguntaPaso('flete', datosPrevios);
   }
 
   if (requierePaso('seguro', datosPrevios)) {
-    return {
-      pregunta: 'Conoces el costo del seguro?',
-      opciones: FLOW_INSURANCE_OPTIONS,
-      paso: 'seguro',
-      tipo: 'numero',
-      hint: 'Escribe el monto, usa seguro de tabla o deja que el sistema lo estime.'
-    };
+    return crearPreguntaPaso('seguro', datosPrevios);
   }
 
   if (requierePaso('peso_total', datosPrevios)) {
-    return {
-      pregunta: 'Peso total de la mercancia en kg?',
-      opciones: OPTIONAL_ESTIMATE_OPTIONS,
-      paso: 'peso_total',
-      tipo: 'numero',
-      hint: 'Ayuda a estimar mejor el flete.'
-    };
+    return crearPreguntaPaso('peso_total', datosPrevios);
   }
 
   if (requierePaso('tipo_cambio', datosPrevios)) {
-    return {
-      pregunta: 'Quieres usar un tipo de cambio manual?',
-      opciones: OPTIONAL_ESTIMATE_OPTIONS,
-      paso: 'tipo_cambio',
-      tipo: 'numero',
-      hint: 'Escribe el TC o elige usar el actual de SUNAT.'
-    };
+    return crearPreguntaPaso('tipo_cambio', datosPrevios);
   }
 
   if (requierePaso('margen_venta', datosPrevios)) {
-    return {
-      pregunta: 'Que margen de utilidad buscas (%)?',
-      opciones: FLOW_MARGIN_OPTIONS,
-      paso: 'margen_venta',
-      tipo: 'numero',
-      hint: 'Puedes escribir otro porcentaje si quieres.'
-    };
+    return crearPreguntaPaso('margen_venta', datosPrevios);
   }
 
-  return {
-    pregunta: 'Perfecto. Ya tengo la informacion principal. Calculamos el costo total de importacion?',
-    paso: 'calcular',
-    tipo: 'confirmacion'
-  };
+  return crearPreguntaPaso('calcular', datosPrevios);
+}
+
+function generarPreguntaParaPaso(stepKey, contexto = {}) {
+  return crearPreguntaPaso(stepKey, contexto?.datos_previos || {});
 }
 
 module.exports = {
   QUESTIONS_TREE,
   generarPregunta,
+  generarPreguntaParaPaso,
   interpretarRespuestaPorPaso,
   extraerDeLenguajeNatural,
   FLOW_CHANNEL_OPTIONS,

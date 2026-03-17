@@ -31,6 +31,7 @@ const { dedupePermisos, generarRecomendacionesResultado } = require('./cotizacio
 const { buildImportProfile } = require('./importacion-profile');
 const { normalizarCodigoPais, normalizarPaisParaRuta } = require('./paises');
 const { construirValidacionOficialImportacion } = require('./validacion-oficial-importacion');
+const { resolverTipoCambioOperativo, construirAlertaTipoCambio } = require('./tipo-cambio-operativo');
 const {
   hasAdvancedBenchmarkInput,
   calculateAdvancedImportBenchmark,
@@ -44,6 +45,7 @@ async function resolverValidacionOficial(resultado, items, pais, log) {
     const validacionOficial = await construirValidacionOficialImportacion({ items, pais });
     if (validacionOficial?.subpartidas?.length) {
       resultado.validacionOficial = validacionOficial;
+      agregarAlertaTributariaOficial(resultado, validacionOficial);
       if (Array.isArray(log)) {
         log.push(
           `[Oficial] ✓ ADUANET validó ${validacionOficial.subpartidas.length} subpartida(s)` +
@@ -51,12 +53,53 @@ async function resolverValidacionOficial(resultado, items, pais, log) {
         );
       }
     } else if (validacionOficial?.error && Array.isArray(log)) {
+      agregarAlertaTributariaOficial(resultado, validacionOficial);
       log.push(`[Oficial] Validacion oficial no disponible: ${validacionOficial.error}`);
     }
+    return validacionOficial;
   } catch (error) {
     if (Array.isArray(log)) {
       log.push(`[Oficial] Validacion oficial omitida: ${error.message}`);
     }
+    return null;
+  }
+}
+
+function agregarAlertaTributariaOficial(resultado, validacionOficial) {
+  if (!resultado || !Array.isArray(resultado.alertas) || !validacionOficial) return;
+
+  resultado.alertas = resultado.alertas.filter(
+    (alerta) => alerta?.tipo !== 'normativo_tributario_oficial'
+  );
+
+  const subpartidas = Array.isArray(validacionOficial.subpartidas)
+    ? validacionOficial.subpartidas
+    : [];
+  const conFuenteOficial = subpartidas.filter((subpartida) => subpartida?.oficialEnVivo).length;
+
+  if (subpartidas.length > 0) {
+    const hasIsc = subpartidas.some((subpartida) => {
+      const isc = Number(subpartida?.gravamenes?.isc);
+      return Number.isFinite(isc) && isc > 0;
+    });
+    const hasConvenio = subpartidas.some((subpartida) => Boolean(subpartida?.convenio));
+
+    resultado.alertas.push({
+      tipo: 'normativo_tributario_oficial',
+      nivel: conFuenteOficial > 0 ? 'info' : 'medio',
+      mensaje: conFuenteOficial > 0
+        ? `Validacion tributaria oficial: ADUANET confirmo gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como vigente el bloque "Validacion oficial en vivo".`
+        : 'No se obtuvo confirmacion oficial en vivo para esta corrida. Confirma IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
+    });
+    return;
+  }
+
+  if (validacionOficial.error) {
+    resultado.alertas.push({
+      tipo: 'normativo_tributario_oficial',
+      nivel: 'medio',
+      mensaje: 'Validacion oficial tributaria no disponible en esta consulta. Confirma en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
+    });
   }
 }
 
@@ -437,7 +480,6 @@ const agenteLegal = {
 
   generarAlertas(items, _pais) {
     const alertas = [];
-    alertas.push({ tipo:'normativo', nivel:'info', mensaje:'ℹ Ley 32387: IGV 16% + IPM 2% = 18%. Vigente Jul 2025.' });
 
     items.forEach(item => {
       if (item.antidumpingInfo) {
@@ -544,7 +586,8 @@ async function orquestar(input) {
     const shouldProjectMargin = objetivo !== 'costo_importacion';
     let fleteManual = parseFloat(fleteIn) || 0;
     let seguroManual = parseFloat(seguroIn) || 0;
-    const tc = parseFloat(tcInput) || 0;
+    const tipoCambio = await resolverTipoCambioOperativo(tcInput);
+    const tc = tipoCambio.tasa || 0;
     const trazabilidad = {
       flete: fleteManual > 0
         ? { estado: 'real', fuente: 'manual', monto: fleteManual }
@@ -561,7 +604,18 @@ async function orquestar(input) {
             )
         ),
       incoterm: { codigo: incoterm, estado: 'exacto', mensaje: null },
+      tipoCambio: {
+        estado: tipoCambio.estado,
+        fuente: tipoCambio.fuente,
+        monto: tc,
+        mensaje: tipoCambio.mensaje,
+        referenciaSunat: tipoCambio.referenciaSunat,
+        diferencialVsSunat: tipoCambio.diferencialVsSunat,
+      },
     };
+    if (tc > 0) {
+      log.push(`[TC] ${tipoCambio.mensaje}`);
+    }
 
     // ═══ FASE 1: EXTRACCIÓN (si viene documento en vez de items) ═══
     if (!items?.length && contenido) {
@@ -699,14 +753,21 @@ async function orquestar(input) {
         incoterm,
         moneda,
         tc,
+        tcFuente: tipoCambio.fuente,
+        tcEstado: tipoCambio.estado,
         tipoSujeto: tipoSujeto || 'empresa',
         tipoImportador: tipoImportador || 'general',
         objetivoCalculo: objetivo,
         margenPct: shouldProjectMargin ? (margenVenta || 30) : null,
         seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
       };
+      resultado.tipoCambio = tipoCambio;
       resultado.trazabilidad = trazabilidad;
       resultado.precision = evaluarPrecisionCotizacion({ items, trazabilidad });
+      const alertaTipoCambioPostal = construirAlertaTipoCambio(tipoCambio);
+      if (alertaTipoCambioPostal) {
+        resultado.alertas.push(alertaTipoCambioPostal);
+      }
       resultado.alertas.unshift({
         tipo: 'precision',
         nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),
@@ -766,14 +827,21 @@ async function orquestar(input) {
         incoterm,
         moneda,
         tc,
+        tcFuente: tipoCambio.fuente,
+        tcEstado: tipoCambio.estado,
         tipoSujeto: tipoSujeto || 'empresa',
         tipoImportador: tipoImportador || 'general',
         objetivoCalculo: objetivo,
         margenPct: shouldProjectMargin ? (margenVenta || 30) : null,
         seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
       };
+      resultado.tipoCambio = tipoCambio;
       resultado.trazabilidad = trazabilidad;
       resultado.precision = evaluarPrecisionCotizacion({ items, trazabilidad });
+      const alertaTipoCambioDSI = construirAlertaTipoCambio(tipoCambio);
+      if (alertaTipoCambioDSI) {
+        resultado.alertas.push(alertaTipoCambioDSI);
+      }
       resultado.alertas.unshift({
         tipo: 'precision',
         nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),
@@ -911,16 +979,23 @@ async function orquestar(input) {
       incoterm,
       moneda,
       tc,
+      tcFuente: tipoCambio.fuente,
+      tcEstado: tipoCambio.estado,
       tipoSujeto: tipoSujeto || 'empresa',
       tipoImportador: tipoImportador || 'general',
       objetivoCalculo: objetivo,
       margenPct: shouldProjectMargin ? (margenVenta || 30) : null,
       seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
     };
+    resultado.tipoCambio = tipoCambio;
     trazabilidad.seguro.monto = totales.seguro || trazabilidad.seguro.monto;
     trazabilidad.flete.monto = totales.flete || trazabilidad.flete.monto;
     resultado.trazabilidad = trazabilidad;
     resultado.precision = evaluarPrecisionCotizacion({ items, trazabilidad });
+    const alertaTipoCambio = construirAlertaTipoCambio(tipoCambio);
+    if (alertaTipoCambio) {
+      resultado.alertas.push(alertaTipoCambio);
+    }
     resultado.alertas.unshift({
       tipo: 'precision',
       nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),

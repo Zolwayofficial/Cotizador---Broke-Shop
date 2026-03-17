@@ -102,6 +102,44 @@ const EMPTY_ADMIN_FORM = {
   role: 'user'
 }
 
+const ADMIN_CONFIRM_COPY = {
+  revoke_approval: {
+    title: 'Revocar aprobacion',
+    confirmLabel: 'Si, revocar',
+    tone: 'danger'
+  },
+  approve: {
+    title: 'Aprobar miembro',
+    confirmLabel: 'Si, aprobar',
+    tone: 'info'
+  },
+  suspend: {
+    title: 'Suspender acceso',
+    confirmLabel: 'Si, suspender',
+    tone: 'danger'
+  },
+  reactivate: {
+    title: 'Reactivar acceso',
+    confirmLabel: 'Si, reactivar',
+    tone: 'info'
+  },
+  make_admin: {
+    title: 'Conceder rol admin',
+    confirmLabel: 'Si, hacerlo admin',
+    tone: 'warn'
+  },
+  remove_admin: {
+    title: 'Quitar rol admin',
+    confirmLabel: 'Si, quitar admin',
+    tone: 'danger'
+  },
+  reset_password: {
+    title: 'Resetear contrasena',
+    confirmLabel: 'Guardar nueva clave',
+    tone: 'warn'
+  }
+}
+
 const ACCESS_BENEFITS = [
   'Acceso exclusivo para miembros autorizados de la comunidad Broke Shop.',
   'Cada cotizacion muestra precision, permisos y recomendaciones.',
@@ -112,6 +150,17 @@ const BRAND_NOTES = [
   'Acceso privado',
   'Cotizacion guiada',
   'Comunidad importadora'
+]
+
+const DASHBOARD_CHART_COLORS = [
+  '#ffb000',
+  '#ffd166',
+  '#f4a261',
+  '#e76f51',
+  '#2a9d8f',
+  '#5dade2',
+  '#90be6d',
+  '#f6bd60'
 ]
 
 function createId(prefix) {
@@ -152,6 +201,249 @@ function normalizeOption(option) {
     value: option?.value ?? option?.label ?? '',
     label: option?.label ?? option?.value ?? ''
   }
+}
+
+function defaultDashboardScopeFor(role) {
+  return role === 'admin' ? 'community' : 'mine'
+}
+
+function chartColor(index) {
+  return DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length]
+}
+
+function formatPercent(value) {
+  return `${toNumber(value).toFixed(0)}%`
+}
+
+function formatMetricDelta(metric, mode = 'percent') {
+  if (!metric || metric.variacion === undefined || metric.variacion === null) {
+    return 'Sin variacion';
+  }
+
+  const variation = toNumber(metric.variacion)
+  if (variation === 0) return 'Sin variacion'
+
+  const prefix = variation > 0 ? '+' : ''
+  if (mode === 'count') {
+    return `${prefix}${variation} vs periodo anterior`
+  }
+
+  return `${prefix}${variation}% vs periodo anterior`
+}
+
+function DashboardScopeToggle({ scope, isAdmin, onChange }) {
+  if (isAdmin) {
+    return (
+      <div className="scope-toggle" role="tablist" aria-label="Alcance del dashboard">
+        <button
+          type="button"
+          className={`scope-toggle-button ${scope === 'community' ? 'active' : ''}`}
+          onClick={() => onChange('community')}
+        >
+          Comunidad
+        </button>
+        <button
+          type="button"
+          className={`scope-toggle-button ${scope === 'mine' ? 'active' : ''}`}
+          onClick={() => onChange('mine')}
+        >
+          Mi actividad
+        </button>
+      </div>
+    )
+  }
+
+  return <div className="scope-chip">Mi actividad</div>
+}
+
+function DashboardLineChart({ title, data }) {
+  const items = Array.isArray(data) ? data : []
+  const width = 540
+  const height = 220
+  const padding = 24
+  const maxValue = Math.max(1, ...items.map((item) => toNumber(item.cotizaciones)))
+  const innerWidth = width - padding * 2
+  const innerHeight = height - padding * 2
+
+  const points = items.map((item, index) => {
+    const x = padding + (items.length <= 1 ? innerWidth / 2 : (index / (items.length - 1)) * innerWidth)
+    const y = padding + innerHeight - (toNumber(item.cotizaciones) / maxValue) * innerHeight
+    return { x, y, label: item.mes, value: toNumber(item.cotizaciones), dolares: toNumber(item.dolares) }
+  })
+
+  const linePoints = points.map((point) => `${point.x},${point.y}`).join(' ')
+  const areaPoints = points.length
+    ? `${padding},${height - padding} ${linePoints} ${points[points.length - 1].x},${height - padding}`
+    : ''
+  const latest = points[points.length - 1]
+
+  return (
+    <article className="chart-card chart-card-wide">
+      <div className="chart-card-head">
+        <div>
+          <p className="panel-kicker">Serie principal</p>
+          <h3>{title}</h3>
+        </div>
+        <div className="chart-chip chart-chip-primary">
+          <strong>{latest ? latest.value : 0}</strong>
+          <span>ultimo mes</span>
+        </div>
+      </div>
+
+      <div className="chart-shell">
+        <svg viewBox={`0 0 ${width} ${height}`} className="line-chart-svg" aria-label={title}>
+          <defs>
+            <linearGradient id="dashboard-line-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(255,176,0,0.38)" />
+              <stop offset="100%" stopColor="rgba(255,176,0,0.03)" />
+            </linearGradient>
+          </defs>
+
+          {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+            const y = padding + innerHeight * fraction
+            return (
+              <line
+                key={fraction}
+                x1={padding}
+                y1={y}
+                x2={width - padding}
+                y2={y}
+                stroke="rgba(255, 184, 0, 0.08)"
+                strokeWidth="1"
+              />
+            )
+          })}
+
+          {points.length ? <polygon points={areaPoints} fill="url(#dashboard-line-fill)" /> : null}
+          {points.length ? (
+            <polyline
+              points={linePoints}
+              fill="none"
+              stroke={chartColor(0)}
+              strokeWidth="4"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ) : null}
+
+          {points.map((point) => (
+            <g key={point.label}>
+              <circle cx={point.x} cy={point.y} r="5.5" fill={chartColor(0)} stroke="#0b0b0b" strokeWidth="2" />
+              <text x={point.x} y={height - 4} textAnchor="middle" className="line-chart-label">
+                {point.label}
+              </text>
+            </g>
+          ))}
+        </svg>
+
+        <div className="line-chart-dollars">
+          {points.map((point) => (
+            <div key={`${point.label}-usd`} className="line-chart-dollar-chip">
+              <span>{point.label}</span>
+              <strong>{formatMoney(point.dolares)}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DashboardDonutChart({ title, data, valueKey, labelKey }) {
+  const items = Array.isArray(data) ? data : []
+  const total = items.reduce((sum, item) => sum + toNumber(item[valueKey]), 0)
+  let accumulator = 0
+  const segments = items.map((item, index) => {
+    const value = toNumber(item[valueKey])
+    const start = total > 0 ? (accumulator / total) * 100 : 0
+    accumulator += value
+    const end = total > 0 ? (accumulator / total) * 100 : 0
+    return `${chartColor(index)} ${start}% ${end}%`
+  })
+
+  return (
+    <article className="chart-card">
+      <div className="chart-card-head">
+        <div>
+          <p className="panel-kicker">Distribucion</p>
+          <h3>{title}</h3>
+        </div>
+        <div className="chart-chip">
+          <strong>{total}</strong>
+          <span>registros</span>
+        </div>
+      </div>
+
+      <div className="donut-layout">
+        <div
+          className="donut-chart"
+          style={{
+            background: total > 0
+              ? `conic-gradient(${segments.join(', ')})`
+              : 'conic-gradient(rgba(255,255,255,0.08) 0 100%)',
+          }}
+        >
+          <div className="donut-chart-center">
+            <strong>{items.length}</strong>
+            <span>series</span>
+          </div>
+        </div>
+
+        <div className="chart-legend">
+          {items.map((item, index) => {
+            const value = toNumber(item[valueKey])
+            const percent = total > 0 ? (value / total) * 100 : 0
+            return (
+              <div key={`${item[labelKey]}-${index}`} className="legend-row">
+                <span className="legend-swatch" style={{ background: chartColor(index) }} />
+                <div className="legend-copy">
+                  <strong>{item[labelKey]}</strong>
+                  <span>{value} · {formatPercent(percent)}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DashboardBarChart({ title, data, valueKey, labelKey }) {
+  const items = Array.isArray(data) ? data : []
+  const maxValue = Math.max(1, ...items.map((item) => toNumber(item[valueKey])))
+
+  return (
+    <article className="chart-card">
+      <div className="chart-card-head">
+        <div>
+          <p className="panel-kicker">Ranking</p>
+          <h3>{title}</h3>
+        </div>
+      </div>
+
+      <div className="bar-chart">
+        {items.map((item, index) => {
+          const value = toNumber(item[valueKey])
+          const width = `${(value / maxValue) * 100}%`
+          return (
+            <div key={`${item[labelKey]}-${index}`} className="bar-chart-row">
+              <div className="bar-chart-copy">
+                <strong>{item[labelKey]}</strong>
+                <span>{value}</span>
+              </div>
+              <div className="bar-chart-track">
+                <div
+                  className="bar-chart-fill"
+                  style={{ width, background: `linear-gradient(90deg, ${chartColor(index)}, rgba(255,255,255,0.24))` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </article>
+  )
 }
 
 function assistantMessage(payload) {
@@ -406,6 +698,8 @@ function App() {
   const [view, setView] = useState('cotizador')
   const [salud, setSalud] = useState(null)
   const [dashboard, setDashboard] = useState(null)
+  const [dashboardAnalysis, setDashboardAnalysis] = useState(null)
+  const [dashboardScope, setDashboardScope] = useState('mine')
   const [messages, setMessages] = useState([])
   const [contexto, setContexto] = useState({ datos_previos: {}, paso_actual: null })
   const [input, setInput] = useState('')
@@ -424,6 +718,7 @@ function App() {
   const [adminError, setAdminError] = useState(null)
   const [adminNotice, setAdminNotice] = useState(null)
   const [adminForm, setAdminForm] = useState({ ...EMPTY_ADMIN_FORM })
+  const [adminConfirm, setAdminConfirm] = useState(null)
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [uploadingDocument, setUploadingDocument] = useState(false)
   const [documentDraft, setDocumentDraft] = useState(null)
@@ -431,6 +726,52 @@ function App() {
   const messagesEndRef = useRef(null)
   const documentInputRef = useRef(null)
   const isAdmin = currentUser?.role === 'admin'
+  const heroContent = isAdmin
+    ? {
+        title: 'Cotiza con precision, valida requisitos y dirige tu operacion con mas claridad.',
+        text:
+          'El chat sigue siendo el centro operativo, pero ahora tu comunidad trabaja con acceso controlado, historial real y una vista secundaria para monitorear actividad.',
+        railA: {
+          label: 'Operacion privada',
+          title: 'Control total de acceso',
+          text: 'Apruebas, suspendes y acompanias a tu comunidad sin sacar el foco de la cotizacion.'
+        },
+        railB: {
+          label: 'Tu ventaja',
+          title: 'Chat + trazabilidad',
+          text: 'Cotizacion guiada, precision por componente y un panel real para seguir la operacion.'
+        },
+        status: {
+          label: 'Acceso',
+          title: 'Solo miembros aprobados',
+          text: 'El ingreso queda reservado a personas que habilitas directamente desde tu comunidad.'
+        }
+      }
+    : {
+        title: 'Cotiza con precision, valida requisitos y toma decisiones de importacion con mas claridad.',
+        text:
+          'Tu workspace reune chat, calculo, permisos y trazabilidad en una sola experiencia para que avances mas rapido y con menos duda.',
+        railA: {
+          label: 'Tu experiencia',
+          title: 'Cotizacion guiada',
+          text: 'Respondes lo minimo y el sistema arma la operacion paso a paso sin volverte el proceso pesado.'
+        },
+        railB: {
+          label: 'Tu ventaja',
+          title: 'Precision visible',
+          text: 'Cada cotizacion te muestra que dato es exacto, cual es estimado y que permisos debes revisar.'
+        },
+        status: {
+          label: 'Tu cuenta',
+          title: 'Miembro activo',
+          text: 'Tu acceso ya esta habilitado para cotizar, revisar historial y operar dentro de la comunidad.'
+        }
+      }
+
+  const isCurrentAdminTarget = (user) => {
+    if (!currentUser?.id || !user?.id) return false
+    return String(currentUser.id) === String(user.id)
+  }
 
   useEffect(() => {
     void bootSession()
@@ -452,9 +793,36 @@ function App() {
     }
   }, [isAdmin, view])
 
-  const cargarDashboard = async () => {
-    const response = await axios.get(`${API_URL}/api/dashboard`)
-    setDashboard(response.data)
+  useEffect(() => {
+    if (!currentUser?.role) return
+    if (currentUser.role !== 'admin' && dashboardScope !== 'mine') {
+      setDashboardScope('mine')
+    }
+  }, [currentUser?.role, dashboardScope])
+
+  useEffect(() => {
+    if (!currentUser?.id || view !== 'dashboard') return
+    void cargarDashboard(dashboardScope)
+  }, [currentUser?.id, view, dashboardScope])
+
+  const cargarDashboard = async (scopeOverride) => {
+    const resolvedScope = scopeOverride || dashboardScope || defaultDashboardScopeFor(currentUser?.role)
+    const [dashboardRes, analysisRes] = await Promise.allSettled([
+      axios.get(`${API_URL}/api/dashboard`, { params: { scope: resolvedScope } }),
+      axios.get(`${API_URL}/api/dashboard/analisis`, { params: { scope: resolvedScope } })
+    ])
+
+    if (dashboardRes.status === 'fulfilled') {
+      setDashboard(dashboardRes.value.data)
+    } else {
+      throw dashboardRes.reason
+    }
+
+    if (analysisRes.status === 'fulfilled') {
+      setDashboardAnalysis(analysisRes.value.data.analisis || null)
+    } else {
+      setDashboardAnalysis(null)
+    }
   }
 
   const loadAdminUsers = async () => {
@@ -473,13 +841,15 @@ function App() {
     }
   }
 
-  const inicializar = async () => {
+  const inicializar = async (scopeOverride = defaultDashboardScopeFor(currentUser?.role)) => {
     setLoading(true)
     setError(null)
 
+    const resolvedScope = scopeOverride || defaultDashboardScopeFor(currentUser?.role)
+
     const [healthRes, dashboardRes, inicioRes] = await Promise.allSettled([
       axios.get(`${API_URL}/api/monitor/health`),
-      axios.get(`${API_URL}/api/dashboard`),
+      axios.get(`${API_URL}/api/dashboard`, { params: { scope: resolvedScope } }),
       axios.post(`${API_URL}/api/agente-0/iniciar`)
     ])
 
@@ -514,9 +884,13 @@ function App() {
       throw new Error('La sesion ya no es valida.')
     }
 
-    setCurrentUser(meRes.value.data)
+    const sessionUser = meRes.value.data
+    const nextScope = defaultDashboardScopeFor(sessionUser.role)
+
+    setCurrentUser(sessionUser)
     setMembership(membershipRes.status === 'fulfilled' ? membershipRes.value.data : null)
-    await inicializar()
+    setDashboardScope(nextScope)
+    await inicializar(nextScope)
   }
 
   const bootSession = async () => {
@@ -592,7 +966,7 @@ function App() {
     setResultado(null)
     setDocumentDraft(null)
     setDocumentForm(buildDocumentDraftForm(null))
-    await inicializar()
+    await inicializar(dashboardScope)
   }
 
   const abrirSelectorDocumento = () => {
@@ -747,7 +1121,7 @@ function App() {
       const updatedUser = response.data.user
       setAdminUsers((current) => current.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
 
-      if (currentUser?.id === updatedUser.id) {
+      if (String(currentUser?.id || '') === String(updatedUser.id || '')) {
         setCurrentUser(updatedUser)
       }
 
@@ -759,47 +1133,115 @@ function App() {
     }
   }
 
+  const openAdminConfirm = (config) => {
+    setAdminError(null)
+    setAdminNotice(null)
+    setAdminConfirm(config)
+  }
+
+  const closeAdminConfirm = () => {
+    if (adminLoading) return
+    setAdminConfirm(null)
+  }
+
   const handleAdminToggleActive = async (user) => {
-    await patchAdminUser(
-      user.id,
-      { active: !user.active },
-      user.active ? `Acceso suspendido para ${user.email}.` : `Acceso reactivado para ${user.email}.`
-    )
+    if (isCurrentAdminTarget(user)) {
+      setAdminError('No puedes suspender o reactivar tu propia cuenta desde este panel.')
+      return
+    }
+
+    openAdminConfirm({
+      type: user.active ? 'suspend' : 'reactivate',
+      user,
+      patch: { active: !user.active },
+      successMessage: user.active
+        ? `Acceso suspendido para ${user.email}.`
+        : `Acceso reactivado para ${user.email}.`,
+      message: user.active
+        ? `Vas a suspender el acceso de ${user.email}. No podra entrar hasta que lo reactives.`
+        : `Vas a reactivar el acceso de ${user.email}. Recuperara el ingreso segun su rol actual.`
+    })
   }
 
   const handleAdminToggleApproved = async (user) => {
-    await patchAdminUser(
-      user.id,
-      { approved: !user.approved },
-      user.approved ? `Aprobacion revocada para ${user.email}.` : `Aprobacion concedida para ${user.email}.`
-    )
+    if (isCurrentAdminTarget(user)) {
+      setAdminError('No puedes revocar tu propia aprobacion desde este panel.')
+      return
+    }
+
+    openAdminConfirm({
+      type: user.approved ? 'revoke_approval' : 'approve',
+      user,
+      patch: { approved: !user.approved },
+      successMessage: user.approved
+        ? `Aprobacion revocada para ${user.email}.`
+        : `Aprobacion concedida para ${user.email}.`,
+      message: user.approved
+        ? `Vas a revocar la aprobacion de ${user.email}. La cuenta seguira existiendo, pero ya no podra operar hasta volver a aprobarla.`
+        : `Vas a aprobar a ${user.email}. La cuenta quedara habilitada para operar si tambien esta activa.`
+    })
   }
 
   const handleAdminToggleRole = async (user) => {
+    if (isCurrentAdminTarget(user)) {
+      setAdminError('No puedes cambiar tu propio rol admin desde este panel.')
+      return
+    }
+
     const nextRole = user.role === 'admin' ? 'user' : 'admin'
-    await patchAdminUser(
-      user.id,
-      { role: nextRole },
-      nextRole === 'admin' ? `${user.email} ahora es administrador.` : `${user.email} vuelve a ser miembro.`
-    )
+    openAdminConfirm({
+      type: nextRole === 'admin' ? 'make_admin' : 'remove_admin',
+      user,
+      patch: { role: nextRole },
+      successMessage: nextRole === 'admin'
+        ? `${user.email} ahora es administrador.`
+        : `${user.email} vuelve a ser miembro.`,
+      message: nextRole === 'admin'
+        ? `Vas a dar permisos de administrador a ${user.email}. Podra gestionar accesos, roles y credenciales.`
+        : `Vas a quitar el rol admin a ${user.email}. Mantendra su cuenta, pero ya no podra administrar la comunidad.`
+    })
   }
 
   const handleAdminPasswordReset = async (user) => {
-    const password = window.prompt(`Nueva contrasena temporal para ${user.email}`)
-    if (!password) return
+    openAdminConfirm({
+      type: 'reset_password',
+      user,
+      password: '',
+      message: `Vas a reemplazar la contrasena de ${user.email}. Define una clave temporal segura para compartirla luego por un canal confiable.`
+    })
+  }
 
-    setAdminError(null)
-    setAdminNotice(null)
-    setAdminLoading(true)
+  const handleAdminConfirmAction = async () => {
+    if (!adminConfirm) return
 
-    try {
-      await axios.post(`${API_URL}/api/admin/users/${user.id}/reset-password`, { password })
-      setAdminNotice(`Contrasena actualizada para ${user.email}.`)
-    } catch (requestError) {
-      setAdminError(requestError.response?.data?.error || requestError.message)
-    } finally {
-      setAdminLoading(false)
+    const action = adminConfirm
+
+    if (action.type === 'reset_password') {
+      const password = String(action.password || '').trim()
+      if (!password || password.length < 6) {
+        setAdminError('La nueva contrasena temporal debe tener al menos 6 caracteres.')
+        return
+      }
+
+      setAdminError(null)
+      setAdminNotice(null)
+      setAdminLoading(true)
+
+      try {
+        await axios.post(`${API_URL}/api/admin/users/${action.user.id}/reset-password`, { password })
+        setAdminNotice(`Contrasena actualizada para ${action.user.email}.`)
+        setAdminConfirm(null)
+      } catch (requestError) {
+        setAdminError(requestError.response?.data?.error || requestError.message)
+      } finally {
+        setAdminLoading(false)
+      }
+
+      return
     }
+
+    setAdminConfirm(null)
+    await patchAdminUser(action.user.id, action.patch, action.successMessage)
   }
 
   const handleLogout = () => {
@@ -811,8 +1253,11 @@ function App() {
     setAdminError(null)
     setAdminNotice(null)
     setAdminForm({ ...EMPTY_ADMIN_FORM })
+    setAdminConfirm(null)
     setMessages([])
     setDashboard(null)
+    setDashboardAnalysis(null)
+    setDashboardScope('mine')
     setSalud(null)
     setResultado(null)
     setDocumentDraft(null)
@@ -960,22 +1405,19 @@ function App() {
         <section className="hero hero-brand">
           <div className="hero-copy">
             <p className="eyebrow amber">Broke Shop import intelligence</p>
-            <h1>Un cotizador premium para una comunidad que no necesita puertas abiertas.</h1>
-            <p className="hero-text">
-              El chat sigue siendo el centro operativo, pero ahora la experiencia se siente privada, profesional y
-              alineada con tu marca. El dashboard queda como vista secundaria con datos reales.
-            </p>
+            <h1>{heroContent.title}</h1>
+            <p className="hero-text">{heroContent.text}</p>
 
             <div className="hero-rail">
               <div className="rail-card">
-                <span>Modo activo</span>
-                <strong>Comunidad cerrada</strong>
-                <p>El acceso queda limitado a cuentas aprobadas y login individual.</p>
+                <span>{heroContent.railA.label}</span>
+                <strong>{heroContent.railA.title}</strong>
+                <p>{heroContent.railA.text}</p>
               </div>
               <div className="rail-card">
-                <span>Tu ventaja</span>
-                <strong>Chat + trazabilidad</strong>
-                <p>Precision por componente, permisos visibles y recomendaciones en la misma vista.</p>
+                <span>{heroContent.railB.label}</span>
+                <strong>{heroContent.railB.title}</strong>
+                <p>{heroContent.railB.text}</p>
               </div>
             </div>
           </div>
@@ -1013,9 +1455,9 @@ function App() {
             </div>
 
             <div className="status-panel">
-              <span>Acceso</span>
-              <strong>Solo miembros aprobados</strong>
-              <p>El ingreso queda reservado a personas que habilitas directamente desde tu comunidad.</p>
+              <span>{heroContent.status.label}</span>
+              <strong>{heroContent.status.title}</strong>
+              <p>{heroContent.status.text}</p>
             </div>
           </div>
         </section>
@@ -1188,7 +1630,7 @@ function App() {
                           step="0.0001"
                           value={documentForm.tc}
                           onChange={(event) => handleDocumentFieldChange('tc', event.target.value)}
-                          placeholder="Opcional"
+                          placeholder="Opcional: en blanco usa SUNAT venta"
                         />
                       </label>
 
@@ -1842,7 +2284,7 @@ function App() {
                           type="button"
                           className="ghost-button"
                           onClick={() => handleAdminToggleApproved(user)}
-                          disabled={adminLoading || currentUser?.id === user.id}
+                          disabled={adminLoading || isCurrentAdminTarget(user)}
                         >
                           {user.approved ? 'Revocar aprobacion' : 'Aprobar'}
                         </button>
@@ -1850,7 +2292,7 @@ function App() {
                           type="button"
                           className="ghost-button"
                           onClick={() => handleAdminToggleActive(user)}
-                          disabled={adminLoading || currentUser?.id === user.id}
+                          disabled={adminLoading || isCurrentAdminTarget(user)}
                         >
                           {user.active ? 'Suspender' : 'Reactivar'}
                         </button>
@@ -1858,7 +2300,7 @@ function App() {
                           type="button"
                           className="ghost-button"
                           onClick={() => handleAdminToggleRole(user)}
-                          disabled={adminLoading || currentUser?.id === user.id}
+                          disabled={adminLoading || isCurrentAdminTarget(user)}
                         >
                           {user.role === 'admin' ? 'Quitar admin' : 'Hacer admin'}
                         </button>
@@ -1882,7 +2324,15 @@ function App() {
               <div>
                 <p className="panel-kicker">Vista secundaria</p>
                 <h2>Panel real de actividad</h2>
-                <p>El dashboard ya no compite con el chat. Solo muestra actividad real guardada en tu base.</p>
+                <p>Base deterministica con datos reales guardados. La IA aporta lectura ejecutiva sobre ese mismo historial.</p>
+              </div>
+
+              <div className="dashboard-toolbar">
+                <div className="scope-summary">
+                  <span className="panel-kicker">Alcance</span>
+                  <strong>{dashboard?.meta?.scopeLabel || (isAdmin ? 'Comunidad' : 'Mi actividad')}</strong>
+                </div>
+                <DashboardScopeToggle scope={dashboardScope} isAdmin={isAdmin} onChange={setDashboardScope} />
               </div>
             </div>
 
@@ -1890,68 +2340,172 @@ function App() {
               <div className="kpi-card">
                 <span>Total cotizaciones</span>
                 <strong>{dashboard?.kpis?.totalCotizaciones?.valor || 0}</strong>
+                <small>{formatMetricDelta(dashboard?.kpis?.totalCotizaciones)}</small>
               </div>
               <div className="kpi-card">
                 <span>Total dolares</span>
                 <strong>{formatMoney(dashboard?.kpis?.totalDolares?.valor)}</strong>
+                <small>{formatMetricDelta(dashboard?.kpis?.totalDolares)}</small>
               </div>
               <div className="kpi-card">
                 <span>Ticket promedio</span>
                 <strong>{formatMoney(dashboard?.kpis?.ticketPromedio?.valor)}</strong>
+                <small>{formatMetricDelta(dashboard?.kpis?.ticketPromedio)}</small>
               </div>
               <div className="kpi-card">
                 <span>Paises activos</span>
                 <strong>{dashboard?.kpis?.paisesActivos?.valor || 0}</strong>
+                <small>{formatMetricDelta(dashboard?.kpis?.paisesActivos, 'count')}</small>
               </div>
             </div>
 
             {dashboard?.meta?.hayDatos ? (
-              <div className="dashboard-columns">
-                <section className="panel">
-                  <div className="panel-head compact">
-                    <div>
-                      <p className="panel-kicker">IA + historial</p>
-                      <h2>Tendencias</h2>
+              <div className="dashboard-stack">
+                <div className="chart-grid">
+                  <DashboardLineChart
+                    title={dashboard?.graficos?.evolucionMensual?.titulo || 'Evolucion'}
+                    data={dashboard?.graficos?.evolucionMensual?.datos || []}
+                  />
+                  <DashboardDonutChart
+                    title={dashboard?.graficos?.distribucionPaises?.titulo || 'Distribucion por pais'}
+                    data={dashboard?.graficos?.distribucionPaises?.datos || []}
+                    valueKey="valor"
+                    labelKey="pais"
+                  />
+                  <DashboardBarChart
+                    title={dashboard?.graficos?.topProductos?.titulo || 'Top productos'}
+                    data={dashboard?.graficos?.topProductos?.datos || []}
+                    valueKey="valor"
+                    labelKey="producto"
+                  />
+                </div>
+
+                <div className="dashboard-columns">
+                  <section className="panel">
+                    <div className="panel-head compact">
+                      <div>
+                        <p className="panel-kicker">IA + historial</p>
+                        <h2>Lectura ejecutiva</h2>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="simple-list">
-                    {(dashboard?.tendencias || []).map((item) => (
-                      <article key={item.titulo} className="list-card">
-                        <strong>{item.titulo}</strong>
-                        <p>{item.descripcion}</p>
-                      </article>
-                    ))}
-                  </div>
-                </section>
+                    <div className="analysis-grid">
+                      {Array.isArray(dashboardAnalysis?.insights) ? dashboardAnalysis.insights.map((item, index) => (
+                        <article key={`insight-${index}`} className="list-card">
+                          <strong>Insight {index + 1}</strong>
+                          <p>{item}</p>
+                        </article>
+                      )) : null}
 
-                <section className="panel">
-                  <div className="panel-head compact">
-                    <div>
-                      <p className="panel-kicker">Atencion</p>
-                      <h2>Alertas</h2>
+                      {Array.isArray(dashboardAnalysis?.oportunidades) ? dashboardAnalysis.oportunidades.map((item, index) => (
+                        <article key={`op-${index}`} className="list-card">
+                          <strong>Oportunidad {index + 1}</strong>
+                          <p>{item}</p>
+                        </article>
+                      )) : null}
+
+                      {dashboardAnalysis?.alerta ? (
+                        <article className="list-card">
+                          <strong>Alerta IA</strong>
+                          <p>{dashboardAnalysis.alerta}</p>
+                        </article>
+                      ) : null}
+
+                      {dashboardAnalysis?.recomendacion ? (
+                        <article className="list-card">
+                          <strong>Recomendacion</strong>
+                          <p>{dashboardAnalysis.recomendacion}</p>
+                        </article>
+                      ) : null}
                     </div>
-                  </div>
+                  </section>
 
-                  <div className="simple-list">
-                    {(dashboard?.alertas || []).map((item) => (
-                      <article key={item.id || item.titulo} className="list-card">
-                        <strong>{item.titulo}</strong>
-                        <p>{item.mensaje}</p>
-                      </article>
-                    ))}
-                  </div>
-                </section>
+                  <section className="panel">
+                    <div className="panel-head compact">
+                      <div>
+                        <p className="panel-kicker">Atencion</p>
+                        <h2>Alertas y tendencias</h2>
+                      </div>
+                    </div>
+
+                    <div className="simple-list">
+                      {(dashboard?.tendencias || []).map((item) => (
+                        <article key={item.titulo} className="list-card">
+                          <strong>{item.titulo}</strong>
+                          <p>{item.descripcion}</p>
+                        </article>
+                      ))}
+
+                      {(dashboard?.alertas || []).map((item) => (
+                        <article key={item.id || item.titulo} className="list-card">
+                          <strong>{item.titulo}</strong>
+                          <p>{item.mensaje}</p>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </div>
               </div>
             ) : (
               <div className="empty-dashboard">
                 <h3>Sin historial todavia</h3>
-                <p>El panel se activara cuando existan cotizaciones reales guardadas por tu comunidad.</p>
+                <p>
+                  {isAdmin
+                    ? 'El panel de comunidad se activara cuando existan cotizaciones reales guardadas por tus miembros.'
+                    : 'Tu panel personal se activara cuando guardes tus primeras cotizaciones reales.'}
+                </p>
               </div>
             )}
           </section>
         )}
       </main>
+
+      {adminConfirm ? (
+        <div className="admin-confirm-overlay" role="presentation" onClick={closeAdminConfirm}>
+          <section
+            className={`admin-confirm-dialog ${ADMIN_CONFIRM_COPY[adminConfirm.type]?.tone || 'info'}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="panel-kicker">Confirmacion requerida</p>
+            <h2 id="admin-confirm-title">
+              {ADMIN_CONFIRM_COPY[adminConfirm.type]?.title || 'Confirmar accion'}
+            </h2>
+            <p>{adminConfirm.message}</p>
+
+            <div className="admin-confirm-target">
+              <strong>{adminConfirm.user?.name || adminConfirm.user?.email}</strong>
+              <span>{adminConfirm.user?.email}</span>
+            </div>
+
+            {adminConfirm.type === 'reset_password' ? (
+              <label className="admin-confirm-field">
+                <span>Nueva contrasena temporal</span>
+                <input
+                  type="text"
+                  value={adminConfirm.password || ''}
+                  onChange={(event) =>
+                    setAdminConfirm((current) => (current ? { ...current, password: event.target.value } : current))
+                  }
+                  placeholder="Minimo 6 caracteres"
+                  autoFocus
+                />
+              </label>
+            ) : null}
+
+            <div className="admin-confirm-actions">
+              <button type="button" className="ghost-button" onClick={closeAdminConfirm} disabled={adminLoading}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={handleAdminConfirmAction} disabled={adminLoading}>
+                {adminLoading ? 'Procesando...' : (ADMIN_CONFIRM_COPY[adminConfirm.type]?.confirmLabel || 'Confirmar')}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

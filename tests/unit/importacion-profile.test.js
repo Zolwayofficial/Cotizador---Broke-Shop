@@ -18,6 +18,19 @@ describe('importacion-profile', () => {
       permisos: [],
       seguroModo: 'TABLA',
       resultado: {
+        tipoCambio: {
+          tasa: 3.64,
+          estado: 'manual_usuario',
+          fuente: 'manual_usuario',
+          referenciaSunat: {
+            compra: 3.66,
+            venta: 3.68,
+          },
+          diferencialVsSunat: {
+            absoluto: -0.04,
+            porcentaje: -1.09,
+          },
+        },
         totales: {
           fob: 1000,
           flete: 80,
@@ -94,5 +107,7 @@ describe('importacion-profile', () => {
     expect(profile.validacionOficial.subpartidas[0].convenio.acuerdo).toMatch(/Peru-China/i);
     expect(profile.validacionOficial.subpartidas[0].restricciones.total).toBe(1);
     expect(profile.validacionOficial.subpartidas[0].descripcionesMinimas).toHaveLength(1);
+    expect(profile.baseTributaria.some((row) => row.concepto === 'Fuente tributaria oficial')).toBe(true);
+    expect(profile.baseTributaria.some((row) => row.concepto === 'Tipo de cambio operativo')).toBe(true);
   });
 });

@@ -162,6 +162,12 @@ function construirChecklistDocumental({ tipoSujeto, proveedor, incoterm, regimen
 }
 
 function construirBaseTributaria({ totales, trazabilidad, resultado }) {
+  const validacionOficial = resultado?.validacionOficial;
+  const subpartidasOficiales = Array.isArray(validacionOficial?.subpartidas)
+    ? validacionOficial.subpartidas
+    : [];
+  const conFuenteOficial = subpartidasOficiales.filter((subpartida) => subpartida?.oficialEnVivo).length;
+  const tipoCambio = resultado?.tipoCambio;
   const base = [
     {
       concepto: 'Valor FOB',
@@ -198,11 +204,43 @@ function construirBaseTributaria({ totales, trazabilidad, resultado }) {
     },
   ];
 
+  if (subpartidasOficiales.length > 0) {
+    base.push({
+      concepto: 'Fuente tributaria oficial',
+      valor: `${subpartidasOficiales.length} subpartida(s) consultadas`,
+      detalle: conFuenteOficial > 0
+        ? 'El desglose IGV/IPM/ISC, convenios y restricciones puede variar por subpartida y pais. Usa el bloque de validacion oficial en vivo como referencia vigente.'
+        : 'La consulta oficial no respondio en vivo para esta corrida; conviene contrastar el desglose tributario y convenios en ADUANET/SUNAT antes de cerrar.',
+    });
+  }
+
+  if (tipoCambio?.tasa) {
+    let detalle = 'Se aplico el tipo de cambio operativo resuelto por el sistema.';
+
+    if (tipoCambio.estado === 'manual_usuario') {
+      const ref = tipoCambio.referenciaSunat;
+      const diff = tipoCambio.diferencialVsSunat;
+      detalle = ref?.venta
+        ? `TC manual del usuario. Referencia SUNAT venta ${ref.venta.toFixed(4)}${diff ? ` (${diff.porcentaje >= 0 ? '+' : ''}${diff.porcentaje}% vs SUNAT)` : ''}.`
+        : 'TC manual del usuario sin referencia SUNAT disponible en esta corrida.';
+    } else if (tipoCambio.estado === 'oficial_en_vivo') {
+      detalle = `TC validado con SUNAT en vivo. Compra ${toNumber(tipoCambio.referenciaSunat?.compra).toFixed(4)} / venta ${toNumber(tipoCambio.referenciaSunat?.venta).toFixed(4)}.`;
+    } else if (tipoCambio.estado === 'fallback') {
+      detalle = 'No hubo respuesta SUNAT en vivo; se uso un TC de respaldo operativo.';
+    }
+
+    base.push({
+      concepto: 'Tipo de cambio operativo',
+      valor: `PEN ${toNumber(tipoCambio.tasa).toFixed(4)} por USD`,
+      detalle,
+    });
+  }
+
   if (totales.totalPEN) {
     base.push({
       concepto: 'Total referencial en PEN',
       valor: `PEN ${toNumber(totales.totalPEN).toFixed(2)}`,
-      detalle: 'Se calcula con el tipo de cambio capturado o con el valor operativo configurado.',
+      detalle: 'Se calcula con el tipo de cambio operativo aplicado en esta corrida.',
     });
   }
 

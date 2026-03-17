@@ -3,7 +3,7 @@ const { describe, it, expect } = require("@jest/globals");
 function loadDashboardService(rows = []) {
   jest.resetModules();
   jest.doMock("../../server/db", () => ({
-    listQuotations: jest.fn(() => rows),
+    listQuotations: jest.fn((userId) => (userId ? rows.filter((row) => row.user_id === userId) : rows)),
   }));
 
   return require("../../server/dashboard/dashboard-service");
@@ -27,6 +27,78 @@ describe("Dashboard Service", () => {
       const datos2 = await dashboardService.obtenerDatosDashboard({});
 
       expect(datos1).toBe(datos2);
+    });
+
+    it("filtra el dashboard al historial del usuario cuando el scope es personal", async () => {
+      const rows = [
+        {
+          id: 'q1',
+          user_id: 'user-1',
+          name: 'Cotizacion 1',
+          created_at: '2026-03-17T10:00:00.000Z',
+          origin_country: 'CN',
+          total_landed: 1200,
+          state_json: JSON.stringify({ productos: [{ descripcion: 'audifonos' }] }),
+          results_json: JSON.stringify({}),
+        },
+        {
+          id: 'q2',
+          user_id: 'user-2',
+          name: 'Cotizacion 2',
+          created_at: '2026-03-17T11:00:00.000Z',
+          origin_country: 'US',
+          total_landed: 800,
+          state_json: JSON.stringify({ productos: [{ descripcion: 'polos' }] }),
+          results_json: JSON.stringify({}),
+        },
+      ];
+      const dashboardService = loadDashboardService(rows);
+      const datos = await dashboardService.obtenerDatosDashboard({
+        viewerUserId: 'user-1',
+        viewerRole: 'user',
+        scope: 'mine',
+      });
+
+      expect(datos.meta.scope).toBe('mine');
+      expect(datos.meta.scopeLabel).toMatch(/Mi actividad/i);
+      expect(datos.kpis.totalCotizaciones.valor).toBe(1);
+      expect(datos.graficos.distribucionPaises.datos[0].pais).toBe('China');
+    });
+
+    it("permite al admin usar la vista comunitaria", async () => {
+      const rows = [
+        {
+          id: 'q1',
+          user_id: 'admin-1',
+          name: 'Cotizacion 1',
+          created_at: '2026-03-17T10:00:00.000Z',
+          origin_country: 'CN',
+          total_landed: 1200,
+          state_json: JSON.stringify({ productos: [{ descripcion: 'audifonos' }] }),
+          results_json: JSON.stringify({}),
+        },
+        {
+          id: 'q2',
+          user_id: 'user-2',
+          name: 'Cotizacion 2',
+          created_at: '2026-03-17T11:00:00.000Z',
+          origin_country: 'US',
+          total_landed: 800,
+          state_json: JSON.stringify({ productos: [{ descripcion: 'polos' }] }),
+          results_json: JSON.stringify({}),
+        },
+      ];
+      const dashboardService = loadDashboardService(rows);
+      const datos = await dashboardService.obtenerDatosDashboard({
+        viewerUserId: 'admin-1',
+        viewerRole: 'admin',
+        scope: 'community',
+      });
+
+      expect(datos.meta.scope).toBe('community');
+      expect(datos.meta.scopeLabel).toMatch(/Comunidad/i);
+      expect(datos.kpis.totalCotizaciones.valor).toBe(2);
+      expect(datos.graficos.distribucionPaises.datos).toHaveLength(2);
     });
   });
 

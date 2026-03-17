@@ -1759,13 +1759,16 @@ app.get('/api/logistica/estadisticas-personalizadas', (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Obtener datos completos del dashboard
-app.get('/api/dashboard', async (req, res) => {
+app.get('/api/dashboard', auth.requireAuth, async (req, res) => {
   try {
     const filtros = {
       desde: req.query.desde,
       hasta: req.query.hasta,
       pais: req.query.pais,
-      courier: req.query.courier
+      courier: req.query.courier,
+      scope: req.query.scope,
+      viewerUserId: req.user.id,
+      viewerRole: req.user.role,
     };
 
     const datos = await dashboardService.obtenerDatosDashboard(filtros);
@@ -1776,11 +1779,14 @@ app.get('/api/dashboard', async (req, res) => {
 });
 
 // Obtener análisis con IA
-app.get('/api/dashboard/analisis', async (req, res) => {
+app.get('/api/dashboard/analisis', auth.requireAuth, async (req, res) => {
   try {
     const filtros = {
       desde: req.query.desde,
-      hasta: req.query.hasta
+      hasta: req.query.hasta,
+      scope: req.query.scope,
+      viewerUserId: req.user.id,
+      viewerRole: req.user.role,
     };
 
     const datos = await dashboardService.obtenerDatosDashboard(filtros);
@@ -1798,11 +1804,14 @@ app.get('/api/dashboard/analisis', async (req, res) => {
 });
 
 // Obtener gráficos sugeridos por IA
-app.get('/api/dashboard/graficos-sugeridos', async (req, res) => {
+app.get('/api/dashboard/graficos-sugeridos', auth.requireAuth, async (req, res) => {
   try {
     const filtros = {
       desde: req.query.desde,
-      hasta: req.query.hasta
+      hasta: req.query.hasta,
+      scope: req.query.scope,
+      viewerUserId: req.user.id,
+      viewerRole: req.user.role,
     };
 
     const datos = await dashboardService.obtenerDatosDashboard(filtros);
@@ -1819,15 +1828,19 @@ app.get('/api/dashboard/graficos-sugeridos', async (req, res) => {
 });
 
 // Chat con datos (preguntar cualquier cosa)
-app.post('/api/dashboard/chat', async (req, res) => {
+app.post('/api/dashboard/chat', auth.requireAuth, async (req, res) => {
   try {
-    const { pregunta } = req.body;
+    const { pregunta, scope } = req.body;
 
     if (!pregunta) {
       return res.status(400).json({ error: 'pregunta requerida' });
     }
 
-    const datos = await dashboardService.obtenerDatosDashboard({});
+    const datos = await dashboardService.obtenerDatosDashboard({
+      scope,
+      viewerUserId: req.user.id,
+      viewerRole: req.user.role,
+    });
     const respuesta = await dashboardService.chatConDatos(pregunta, datos);
 
     res.json({
@@ -1842,7 +1855,7 @@ app.post('/api/dashboard/chat', async (req, res) => {
 });
 
 // Generar SQL con IA
-app.post('/api/dashboard/generar-sql', async (req, res) => {
+app.post('/api/dashboard/generar-sql', auth.requireAuth, async (req, res) => {
   try {
     const { pregunta } = req.body;
 
@@ -1871,7 +1884,7 @@ app.post('/api/dashboard/generar-sql', async (req, res) => {
 });
 
 // Obtener estadísticas del dashboard
-app.get('/api/dashboard/estadisticas', (req, res) => {
+app.get('/api/dashboard/estadisticas', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const estadisticas = dashboardService.obtenerEstadisticas();
     res.json(estadisticas);
@@ -1881,7 +1894,7 @@ app.get('/api/dashboard/estadisticas', (req, res) => {
 });
 
 // Limpiar cache del dashboard
-app.post('/api/dashboard/limpiar-cache', (req, res) => {
+app.post('/api/dashboard/limpiar-cache', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     dashboardService.limpiarCache();
     res.json({ ok: true, mensaje: 'Cache limpiada' });
@@ -2217,21 +2230,29 @@ app.post('/api/agente/extraer', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/agente/calcular', async (req, res) => {
+app.post('/api/agente/calcular', auth.optionalAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const resultado = await agente.orquestar(req.body);
-    res.json(resultado);
+    const quotationId = guardarCotizacionCalculada(req, req.body, resultado);
+    res.json({
+      ...resultado,
+      quotationId: quotationId || resultado.quotationId || null,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/agente', async (req, res) => {
+app.post('/api/agente', auth.optionalAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const resultado = await agente.orquestar(req.body);
-    res.json(resultado);
+    const quotationId = guardarCotizacionCalculada(req, req.body, resultado);
+    res.json({
+      ...resultado,
+      quotationId: quotationId || resultado.quotationId || null,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2301,7 +2322,7 @@ app.post('/api/auto-cotizar/extraer', upload.single('file'), async (req, res) =>
   }
 });
 
-app.post('/api/auto-cotizar/calcular', async (req, res) => {
+app.post('/api/auto-cotizar/calcular', auth.optionalAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const { items, pais, canal, incoterm, flete, seguro, tc, proveedor,
@@ -2321,11 +2342,15 @@ app.post('/api/auto-cotizar/calcular', async (req, res) => {
       margenVenta: parseFloat(margenVenta) || 30,
     });
 
-    res.json(resultado);
+    const quotationId = guardarCotizacionCalculada(req, req.body, resultado);
+    res.json({
+      ...resultado,
+      quotationId: quotationId || resultado.quotationId || null,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/auto-cotizar/directo', async (req, res) => {
+app.post('/api/auto-cotizar/directo', auth.optionalAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const { items, pais, canal, incoterm, flete, seguro, tc, proveedor,
@@ -2345,7 +2370,11 @@ app.post('/api/auto-cotizar/directo', async (req, res) => {
       margenVenta: parseFloat(margenVenta) || 30,
     });
 
-    res.json(resultado);
+    const quotationId = guardarCotizacionCalculada(req, req.body, resultado);
+    res.json({
+      ...resultado,
+      quotationId: quotationId || resultado.quotationId || null,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Antidumping: check if an item has active INDECOPI measures
@@ -2478,6 +2507,106 @@ function canAccessQuotation(user, quotation) {
   );
 }
 
+function buildQuotationNameFromItems(items = []) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return 'Cotizacion sin nombre';
+  }
+
+  const labels = items
+    .map((item) => String(item?.desc || item?.producto || item?.description || '').trim())
+    .filter(Boolean);
+
+  if (labels.length === 0) return 'Cotizacion sin nombre';
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]} + ${labels.length - 1} item(s)`;
+}
+
+function extractFobFromResult(resultado = {}) {
+  if (Number.isFinite(Number(resultado?.totales?.fob))) {
+    return Number(resultado.totales.fob);
+  }
+
+  if (Array.isArray(resultado?.items)) {
+    return resultado.items.reduce((sum, item) => {
+      const tributos = item?.tributos || {};
+      if (Number.isFinite(Number(tributos.fob))) {
+        return sum + Number(tributos.fob);
+      }
+
+      const qty = Number(item?.qty || 0);
+      const unit = Number(item?.unit || 0);
+      return sum + (qty * unit);
+    }, 0);
+  }
+
+  return 0;
+}
+
+function extractTotalLandedFromResult(resultado = {}) {
+  const candidates = [
+    resultado?.totales?.totalReal,
+    resultado?.totales?.totalLanded,
+    resultado?.benchmark?.academic?.importCost?.total,
+    resultado?.benchmark?.operational?.importCost?.total,
+  ];
+
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+  }
+
+  return 0;
+}
+
+function extractCpuFromResult(resultado = {}) {
+  const itemWithCost = Array.isArray(resultado?.items)
+    ? resultado.items.find((item) => Number.isFinite(Number(item?.tributos?.costoPorUnidad || item?.tributos?.cpu)))
+    : null;
+
+  if (itemWithCost) {
+    return Number(itemWithCost.tributos.costoPorUnidad || itemWithCost.tributos.cpu);
+  }
+
+  const totalQty = Array.isArray(resultado?.items)
+    ? resultado.items.reduce((sum, item) => sum + Number(item?.qty || 0), 0)
+    : 0;
+
+  const total = extractTotalLandedFromResult(resultado);
+  if (totalQty > 0 && total > 0) {
+    return total / totalQty;
+  }
+
+  return 0;
+}
+
+function guardarCotizacionCalculada(req, payload = {}, resultado = {}) {
+  if (!req?.user?.id) return null;
+
+  const quotationId = db.saveQuotation({
+    userId: req.user.id,
+    name: buildQuotationNameFromItems(payload.items || resultado.items),
+    date: new Date().toISOString(),
+    channel: String(payload.canal || payload.channel || resultado?.metadata?.canal || '').toUpperCase(),
+    originCountry: String(
+      payload.pais ||
+      payload.originCountry ||
+      payload.origin_country ||
+      resultado?.metadata?.pais ||
+      ''
+    ).toUpperCase(),
+    fobTotal: extractFobFromResult(resultado),
+    totalLanded: extractTotalLandedFromResult(resultado),
+    cpu: extractCpuFromResult(resultado),
+    state: payload,
+    results: resultado,
+  });
+
+  dashboardService.limpiarCache();
+  return quotationId;
+}
+
 app.get('/api/quotations', auth.requireAuth, (req, res) => {
   const list = db.listQuotations(req.user.id);
   res.json(list);
@@ -2507,6 +2636,7 @@ app.post('/api/quotations', auth.requireAuth, (req, res) => {
     userId: req.user.id,
   };
   const id = db.saveQuotation(data);
+  dashboardService.limpiarCache();
   res.json({ id });
 });
 
@@ -2517,6 +2647,7 @@ app.delete('/api/quotations/:id', auth.requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Acceso denegado' });
   }
   db.deleteQuotation(req.params.id);
+  dashboardService.limpiarCache();
   res.json({ ok: true });
 });
 

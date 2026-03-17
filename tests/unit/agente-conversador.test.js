@@ -48,6 +48,185 @@ describe('agente-conversador', () => {
     expect(respuesta.paso).toBe('precio_unitario');
   });
 
+  it('responde una aclaracion sobre courier vs aereo sin avanzar el paso actual', async () => {
+    const respuesta = await conversador.agenteConversador('que diferencia entre courier express y aereo importacion formal', {
+      datos_previos: {
+        productos: [{ cantidad: 12, producto: 'audifonos', descripcion: 'audifonos bluetooth' }],
+        pais_origen: 'ES',
+        tipo_sujeto: 'empresa',
+      },
+      paso_actual: 'canal',
+    });
+
+    expect(respuesta.paso).toBe('canal');
+    expect(respuesta.contexto.paso_actual).toBe('canal');
+    expect(respuesta.contexto.datos_previos.canal).toBeUndefined();
+    expect(respuesta.mensaje).toMatch(/courier express/i);
+    expect(respuesta.mensaje).toMatch(/aereo formal/i);
+    expect(Array.isArray(respuesta.opciones)).toBe(true);
+    expect(respuesta.opciones).toHaveLength(4);
+  });
+
+  it('mantiene el paso activo al aclarar aunque falten campos previos en el contexto', async () => {
+    const respuesta = await conversador.agenteConversador('que diferencia hay entre courier express y aereo importacion formal', {
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
+        pais_origen: 'ES',
+      },
+      paso_actual: 'canal',
+    });
+
+    expect(respuesta.paso).toBe('canal');
+    expect(respuesta.contexto.paso_actual).toBe('canal');
+    expect(respuesta.contexto.datos_previos.canal).toBeUndefined();
+    expect(respuesta.mensaje).toMatch(/courier express/i);
+    expect(respuesta.mensaje).toMatch(/seguimos con este punto/i);
+    expect(respuesta.mensaje).toMatch(/que canal usaras para importar desde es/i);
+    expect(respuesta.opciones.map((item) => item.value)).toEqual([
+      'MARITIMO',
+      'AEREO',
+      'COURIER',
+      'POSTAL',
+    ]);
+  });
+
+  it('aclara el tipo de cambio manual sin consumir el dato pendiente', async () => {
+    const respuesta = await conversador.agenteConversador('conviene usar mi tipo de cambio o el de sunat?', {
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'tablet', descripcion: 'tablet' }],
+        pais_origen: 'CN',
+        tipo_sujeto: 'empresa',
+        canal: 'COURIER',
+        objetivo_calculo: 'precio_sugerido',
+        precio_unitario: 150,
+        incoterm: 'FOB',
+        tipo_importador: 'general',
+        bien_usado: false,
+        flete: 0,
+        seguro: 0,
+        peso_total: 0,
+      },
+      paso_actual: 'tipo_cambio',
+    });
+
+    expect(respuesta.paso).toBe('tipo_cambio');
+    expect(respuesta.contexto.paso_actual).toBe('tipo_cambio');
+    expect(respuesta.contexto.datos_previos.tipo_cambio).toBeUndefined();
+    expect(respuesta.mensaje).toMatch(/tipo de cambio/i);
+    expect(respuesta.mensaje).toMatch(/sistema lo respeta/i);
+  });
+
+  it('permite corregir el producto mientras espera el pais y luego retoma el mismo paso', async () => {
+    const propuesta = await conversador.agenteConversador('150 vinos, no uno', {
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
+      },
+      paso_actual: 'pais_origen',
+    });
+
+    expect(propuesta.paso).toBe('confirmar_correccion');
+    expect(propuesta.contexto.paso_actual).toBe('confirmar_correccion');
+    expect(propuesta.contexto.datos_previos.productos[0].cantidad).toBe(1);
+    expect(propuesta.mensaje).toMatch(/quieres corregir productos/i);
+    expect(propuesta.opciones.map((item) => item.value)).toEqual([
+      'CONFIRMAR_CORRECCION',
+      'CANCELAR_CORRECCION',
+    ]);
+
+    const confirmada = await conversador.agenteConversador('CONFIRMAR_CORRECCION', propuesta.contexto);
+    expect(confirmada.paso).toBe('pais_origen');
+    expect(confirmada.contexto.paso_actual).toBe('pais_origen');
+    expect(confirmada.contexto.datos_previos.productos[0].cantidad).toBe(150);
+    expect(confirmada.contexto.datos_previos.productos[0].descripcion).toMatch(/vinos/i);
+    expect(confirmada.mensaje).toMatch(/actualice productos/i);
+    expect(confirmada.mensaje).toMatch(/desde que pais importaras/i);
+  });
+
+  it('permite rechazar una correccion y mantiene el valor anterior', async () => {
+    const propuesta = await conversador.agenteConversador('150 vinos, no uno', {
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
+      },
+      paso_actual: 'pais_origen',
+    });
+
+    const rechazada = await conversador.agenteConversador('CANCELAR_CORRECCION', propuesta.contexto);
+    expect(rechazada.paso).toBe('pais_origen');
+    expect(rechazada.contexto.paso_actual).toBe('pais_origen');
+    expect(rechazada.contexto.datos_previos.productos[0].cantidad).toBe(1);
+    expect(rechazada.mensaje).toMatch(/mantengo productos/i);
+  });
+
+  it('pide confirmar antes de corregir el tipo de sujeto e invalida el perfil importador dependiente', async () => {
+    const propuesta = await conversador.agenteConversador('persona natural', {
+      datos_previos: {
+        productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
+        pais_origen: 'US',
+        tipo_sujeto: 'empresa',
+        canal: 'COURIER',
+        objetivo_calculo: 'precio_sugerido',
+        precio_unitario: 5,
+        incoterm: 'FOB',
+        tipo_importador: 'general',
+      },
+      paso_actual: 'bien_usado',
+    });
+
+    expect(propuesta.paso).toBe('confirmar_correccion');
+    expect(propuesta.mensaje).toMatch(/tipo de sujeto/i);
+
+    const confirmada = await conversador.agenteConversador('si', propuesta.contexto);
+    expect(confirmada.contexto.datos_previos.tipo_sujeto).toBe('persona_natural');
+    expect(confirmada.contexto.datos_previos.tipo_importador).toBeUndefined();
+    expect(confirmada.paso).toBe('tipo_importador');
+    expect(confirmada.opciones).toEqual([
+      { value: 'nuevo', label: 'Persona natural - primera importacion' },
+      { value: 'general', label: 'Persona natural - ya he importado antes' },
+    ]);
+  });
+
+  it('pide confirmar antes de corregir el canal e invalida pasos logisticos dependientes', async () => {
+    const propuesta = await conversador.agenteConversador('mejor postal', {
+      datos_previos: {
+        productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
+        pais_origen: 'US',
+        tipo_sujeto: 'empresa',
+        canal: 'MARITIMO',
+        objetivo_calculo: 'precio_sugerido',
+        precio_unitario: 5,
+        incoterm: 'FOB',
+        tipo_importador: 'general',
+        bien_usado: false,
+        flete: 50,
+        seguro: 10,
+        peso_total: 8,
+      },
+      paso_actual: 'tipo_cambio',
+    });
+
+    expect(propuesta.paso).toBe('confirmar_correccion');
+    expect(propuesta.mensaje).toMatch(/canal/i);
+
+    const confirmada = await conversador.agenteConversador('si', propuesta.contexto);
+    expect(confirmada.contexto.datos_previos.canal).toBe('POSTAL');
+    expect(confirmada.contexto.datos_previos.flete).toBeUndefined();
+    expect(confirmada.contexto.datos_previos.seguro).toBeUndefined();
+    expect(confirmada.contexto.datos_previos.peso_total).toBeUndefined();
+    expect(confirmada.paso).toBe('tipo_cambio');
+  });
+
+  it('muestra un resumen de cantidades mas claro al pedir el pais de origen', () => {
+    const pregunta = conversador.generarPregunta({
+      datos_previos: {
+        productos: [{ cantidad: 150, producto: 'vinos', descripcion: 'vinos espanoles' }],
+      },
+    });
+
+    expect(pregunta.paso).toBe('pais_origen');
+    expect(pregunta.pregunta).toMatch(/150 unidad\(es\)/i);
+    expect(pregunta.pregunta).toMatch(/vinos espanoles/i);
+  });
+
   it('expone todos los incoterms comunes en vez de un boton OTRO roto', () => {
     const pregunta = conversador.generarPregunta({
       datos_previos: {

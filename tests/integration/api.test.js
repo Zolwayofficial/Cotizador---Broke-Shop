@@ -1,9 +1,7 @@
-// tests/integration/api.test.js
-// Tests de integración para API REST
-
 const { describe, it, expect, beforeAll, afterAll } = require('@jest/globals');
 const request = require('supertest');
 const db = require('../../server/db');
+const dashboardService = require('../../server/dashboard/dashboard-service');
 const benchmarkCase = require('../../server/benchmarks/fixtures/ksarp-pc1.case.json');
 
 describe('API REST Integration Tests', () => {
@@ -18,12 +16,40 @@ describe('API REST Integration Tests', () => {
       .send({
         email,
         password,
-        name: 'Admin Comunidad'
+        name: 'Admin Comunidad',
       });
 
     expect(registerResponse.status).toBe(200);
 
     db.run('UPDATE users SET role = ?, active = 1, approved = 1 WHERE id = ?', ['admin', registerResponse.body.id]);
+
+    const loginResponse = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+
+    expect(loginResponse.status).toBe(200);
+
+    return {
+      email,
+      password,
+      token: loginResponse.body.token,
+      id: loginResponse.body.id,
+    };
+  }
+
+  async function createUser(base = Date.now()) {
+    const password = 'secret12';
+    const email = `user-${base}@example.com`;
+
+    const registerResponse = await request(app)
+      .post('/api/auth/register')
+      .send({
+        email,
+        password,
+        name: 'Miembro Comunidad',
+      });
+
+    expect(registerResponse.status).toBe(200);
 
     const loginResponse = await request(app)
       .post('/api/auth/login')
@@ -51,21 +77,81 @@ describe('API REST Integration Tests', () => {
   });
 
   describe('GET /api/health', () => {
-    it('debería retornar health check', async () => {
+    it('deberia retornar health check', async () => {
       const response = await request(app).get('/api/health');
-      
+
       expect(response.status).toBe(200);
       expect(response.body).toBeDefined();
     });
   });
 
   describe('GET /api/dashboard', () => {
-    it('debería retornar datos del dashboard', async () => {
-      const response = await request(app).get('/api/dashboard');
-      
+    it('deberia retornar datos del dashboard autenticado', async () => {
+      const user = await createUser(Date.now());
+      const response = await request(app)
+        .get('/api/dashboard')
+        .set('Authorization', `Bearer ${user.token}`);
+
       expect(response.status).toBe(200);
       expect(response.body).toBeDefined();
       expect(response.body.kpis).toBeDefined();
+      expect(response.body.meta.scope).toBe('mine');
+    });
+
+    it('deberia respetar el scope del usuario y permitir vista comunidad a admin', async () => {
+      db.run('DELETE FROM quotations');
+      dashboardService.limpiarCache();
+
+      const admin = await createAdmin(Date.now());
+      const member = await createUser(Date.now() + 1);
+
+      const adminQuote = await request(app)
+        .post('/api/agente/calcular')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .send({
+          items: [{ desc: 'laptops gamer', qty: 10, unit: 900 }],
+          pais: 'US',
+          canal: 'AEREO',
+          incoterm: 'FOB',
+          tipoImportador: 'general',
+          margenVenta: 25,
+          moneda: 'USD',
+        });
+
+      const memberQuote = await request(app)
+        .post('/api/agente/calcular')
+        .set('Authorization', `Bearer ${member.token}`)
+        .send({
+          items: [{ desc: 'vinos espanoles', qty: 24, unit: 11 }],
+          pais: 'ES',
+          canal: 'MARITIMO',
+          incoterm: 'FOB',
+          tipoImportador: 'general',
+          margenVenta: 30,
+          moneda: 'USD',
+        });
+
+      expect(adminQuote.status).toBe(200);
+      expect(memberQuote.status).toBe(200);
+
+      dashboardService.limpiarCache();
+
+      const mineResponse = await request(app)
+        .get('/api/dashboard?scope=mine')
+        .set('Authorization', `Bearer ${member.token}`);
+
+      expect(mineResponse.status).toBe(200);
+      expect(mineResponse.body.meta.scope).toBe('mine');
+      expect(mineResponse.body.kpis.totalCotizaciones.valor).toBe(1);
+      expect(mineResponse.body.graficos.distribucionPaises.datos[0].pais).toBe('Espana');
+
+      const communityResponse = await request(app)
+        .get('/api/dashboard?scope=community')
+        .set('Authorization', `Bearer ${admin.token}`);
+
+      expect(communityResponse.status).toBe(200);
+      expect(communityResponse.body.meta.scope).toBe('community');
+      expect(communityResponse.body.kpis.totalCotizaciones.valor).toBe(2);
     });
   });
 
@@ -81,7 +167,7 @@ describe('API REST Integration Tests', () => {
           .send({
             email: `sin-codigo-${base}@example.com`,
             password: 'secret12',
-            name: 'Sin Codigo'
+            name: 'Sin Codigo',
           });
 
         expect(response.status).toBe(403);
@@ -104,7 +190,7 @@ describe('API REST Integration Tests', () => {
         .send({
           email: `admin-${base}@example.com`,
           password: adminPassword,
-          name: 'Admin Comunidad'
+          name: 'Admin Comunidad',
         });
 
       expect(adminRegister.status).toBe(200);
@@ -115,7 +201,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/auth/login')
         .send({
           email: `admin-${base}@example.com`,
-          password: adminPassword
+          password: adminPassword,
         });
 
       const miembroRegister = await request(app)
@@ -123,7 +209,7 @@ describe('API REST Integration Tests', () => {
         .send({
           email: `miembro-${base}@example.com`,
           password: adminPassword,
-          name: 'Miembro Regular'
+          name: 'Miembro Regular',
         });
 
       const miembroCodeAttempt = await request(app)
@@ -146,7 +232,7 @@ describe('API REST Integration Tests', () => {
           email: `invitado-${base}@example.com`,
           password: 'secret12',
           nombre: 'Invitado',
-          codigoInvitacion: codigoResponse.body.codigo
+          codigoInvitacion: codigoResponse.body.codigo,
         });
 
       expect(invitado.status).toBe(200);
@@ -163,7 +249,7 @@ describe('API REST Integration Tests', () => {
         .send({
           email: `usuario-${base}@example.com`,
           password: 'secret12',
-          name: 'Usuario Regular'
+          name: 'Usuario Regular',
         });
 
       const response = await request(app)
@@ -192,7 +278,7 @@ describe('API REST Integration Tests', () => {
           password: 'secret12',
           name: 'Miembro Manual',
           company: 'Broke Shop',
-          role: 'user'
+          role: 'user',
         });
 
       expect(createResponse.status).toBe(201);
@@ -212,7 +298,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/auth/login')
         .send({
           email: createResponse.body.user.email,
-          password: 'secret12'
+          password: 'secret12',
         });
 
       expect(blockedLogin.status).toBe(403);
@@ -238,7 +324,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/auth/login')
         .send({
           email: createResponse.body.user.email,
-          password: 'secret12'
+          password: 'secret12',
         });
 
       expect(oldPasswordLogin.status).toBe(401);
@@ -247,7 +333,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/auth/login')
         .send({
           email: createResponse.body.user.email,
-          password: newPassword
+          password: newPassword,
         });
 
       expect(newPasswordLogin.status).toBe(200);
@@ -262,7 +348,7 @@ describe('API REST Integration Tests', () => {
   });
 
   describe('POST /api/agente/calcular', () => {
-    it('debería calcular una cotización simple sin romper el rate limiter', async () => {
+    it('deberia calcular una cotizacion simple sin romper el rate limiter', async () => {
       const response = await request(app)
         .post('/api/agente/calcular')
         .send({
@@ -272,12 +358,46 @@ describe('API REST Integration Tests', () => {
           incoterm: 'FOB',
           tipoImportador: 'general',
           margenVenta: 30,
-          moneda: 'USD'
+          moneda: 'USD',
         });
 
       expect(response.status).toBe(200);
       expect(response.body.exito).toBe(true);
       expect(response.body.totales.totalReal).toBeGreaterThan(0);
+    });
+
+    it('deberia guardar la cotizacion autenticada y reflejarla en el dashboard', async () => {
+      const admin = await createAdmin(Date.now());
+      db.run('DELETE FROM quotations');
+      dashboardService.limpiarCache();
+
+      const response = await request(app)
+        .post('/api/agente/calcular')
+        .set('Authorization', `Bearer ${admin.token}`)
+        .send({
+          items: [{ desc: 'audifonos bluetooth', qty: 100, unit: 12.5 }],
+          pais: 'CN',
+          canal: 'COURIER',
+          incoterm: 'FOB',
+          tipoImportador: 'general',
+          margenVenta: 30,
+          moneda: 'USD',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.exito).toBe(true);
+      expect(response.body.quotationId).toBeDefined();
+
+      const quotations = db.listQuotations(admin.id);
+      expect(quotations).toHaveLength(1);
+
+      const dashboardResponse = await request(app)
+        .get('/api/dashboard?scope=mine')
+        .set('Authorization', `Bearer ${admin.token}`);
+
+      expect(dashboardResponse.status).toBe(200);
+      expect(dashboardResponse.body.meta?.hayDatos).toBe(true);
+      expect(dashboardResponse.body.kpis.totalCotizaciones.valor).toBe(1);
     });
 
     it('deberia aceptar el caso benchmark avanzado sin romper compatibilidad', async () => {
@@ -306,7 +426,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/agente-0/chat')
         .send({
           mensaje: '500 camisetas de algodon',
-          contexto: inicio.body.contexto
+          contexto: inicio.body.contexto,
         });
 
       expect(productos.status).toBe(200);
@@ -316,7 +436,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/agente-0/chat')
         .send({
           mensaje: 'China',
-          contexto: productos.body.contexto
+          contexto: productos.body.contexto,
         });
 
       expect(pais.status).toBe(200);
@@ -326,7 +446,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/agente-0/chat')
         .send({
           mensaje: 'Empresa',
-          contexto: pais.body.contexto
+          contexto: pais.body.contexto,
         });
 
       expect(sujeto.status).toBe(200);
@@ -336,7 +456,7 @@ describe('API REST Integration Tests', () => {
         .post('/api/agente-0/chat')
         .send({
           mensaje: 'Aereo',
-          contexto: sujeto.body.contexto
+          contexto: sujeto.body.contexto,
         });
 
       expect(canal.status).toBe(200);
@@ -362,18 +482,21 @@ describe('API REST Integration Tests', () => {
   });
 
   describe('GET /api/dashboard/analisis', () => {
-    it('debería retornar análisis con IA', async () => {
-      const response = await request(app).get('/api/dashboard/analisis');
-      
+    it('deberia retornar analisis con autenticacion', async () => {
+      const user = await createUser(Date.now());
+      const response = await request(app)
+        .get('/api/dashboard/analisis')
+        .set('Authorization', `Bearer ${user.token}`);
+
       expect(response.status).toBe(200);
       expect(response.body.analisis).toBeDefined();
     });
   });
 
   describe('GET /api/logistica/empresas', () => {
-    it('debería retornar empresas configuradas', async () => {
+    it('deberia retornar empresas configuradas', async () => {
       const response = await request(app).get('/api/logistica/empresas');
-      
+
       expect(response.status).toBe(200);
       expect(response.body.couriers).toBeDefined();
       expect(response.body.navieras).toBeDefined();
@@ -381,49 +504,51 @@ describe('API REST Integration Tests', () => {
   });
 
   describe('GET /api/logistica/contingencia', () => {
-    it('debería retornar estado de contingencia', async () => {
+    it('deberia retornar estado de contingencia', async () => {
       const response = await request(app).get('/api/logistica/contingencia');
-      
+
       expect(response.status).toBe(200);
       expect(response.body.total_usos).toBeDefined();
     });
   });
 
   describe('POST /api/logistica/cotizar', () => {
-    it('debería cotizar con todos los couriers', async () => {
+    it('deberia cotizar con todos los couriers', async () => {
       const datos = {
         origen: 'US',
         destino: 'PE',
         peso: 50,
         dimensiones: { largo: 100, ancho: 50, alto: 50 },
-        valor: 1000
+        valor: 1000,
       };
 
       const response = await request(app)
         .post('/api/logistica/cotizar')
         .send(datos);
-      
+
       expect(response.status).toBe(200);
       expect(response.body.couriers).toBeDefined();
       expect(response.body.navieras).toBeDefined();
     });
 
-    it('debería retornar error sin datos requeridos', async () => {
+    it('deberia retornar error sin datos requeridos', async () => {
       const response = await request(app)
         .post('/api/logistica/cotizar')
         .send({});
-      
+
       expect(response.status).toBe(400);
       expect(response.body.error).toBeDefined();
     });
   });
 
   describe('POST /api/dashboard/chat', () => {
-    it('debería responder preguntas', async () => {
+    it('deberia responder preguntas autenticadas', async () => {
+      const user = await createUser(Date.now());
       const response = await request(app)
         .post('/api/dashboard/chat')
-        .send({ pregunta: '¿Cuál es el total de cotizaciones?' });
-      
+        .set('Authorization', `Bearer ${user.token}`)
+        .send({ pregunta: 'Cual es el total de cotizaciones?' });
+
       expect(response.status).toBe(200);
       expect(response.body.respuesta).toBeDefined();
     });

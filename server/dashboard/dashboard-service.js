@@ -152,6 +152,25 @@ function fallbackAnalysis(hayDatos) {
   };
 }
 
+function resolveDashboardScope(filtros = {}) {
+  const requestedScope = String(filtros.scope || '').trim().toLowerCase();
+  const isAdmin = filtros.viewerRole === 'admin';
+
+  if (requestedScope === 'community' && isAdmin) {
+    return 'community';
+  }
+
+  if (requestedScope === 'mine') {
+    return 'mine';
+  }
+
+  return isAdmin ? 'community' : 'mine';
+}
+
+function dashboardScopeLabel(scope) {
+  return scope === 'community' ? 'Comunidad' : 'Mi actividad';
+}
+
 class DashboardService {
   constructor() {
     this.cache = new Map();
@@ -159,27 +178,43 @@ class DashboardService {
   }
 
   async obtenerDatosDashboard(filtros = {}) {
-    const cacheKey = `dashboard:${JSON.stringify(filtros)}`;
+    const scope = resolveDashboardScope(filtros);
+    const viewerUserId = filtros.viewerUserId || null;
+    const viewerRole = filtros.viewerRole || 'user';
+    const cacheKey = `dashboard:${JSON.stringify({
+      ...filtros,
+      scope,
+      viewerUserId,
+      viewerRole,
+    })}`;
     const cached = this.cache.get(cacheKey);
 
     if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
       return cached.data;
     }
 
-    const quotations = this._obtenerCotizaciones(filtros);
+    const quotations = this._obtenerCotizaciones({
+      ...filtros,
+      scope,
+      viewerUserId,
+      viewerRole,
+    });
     const kpis = this._obtenerKPIs(quotations);
     const graficos = this._obtenerDatosGraficos(quotations);
     const datos = {
       meta: {
         hayDatos: quotations.length > 0,
         totalRegistros: quotations.length,
+        scope,
+        scopeLabel: dashboardScopeLabel(scope),
+        viewerRole,
         ultimaActualizacion: new Date().toISOString(),
       },
       kpis,
       graficos,
       tendencias: this._obtenerTendencias(quotations, graficos, kpis),
       tops: this._obtenerTops(quotations),
-      alertas: this._obtenerAlertas(quotations),
+      alertas: this._obtenerAlertas(quotations, scope),
     };
 
     this.cache.set(cacheKey, {
@@ -195,9 +230,12 @@ class DashboardService {
     const hasta = filtros.hasta ? new Date(filtros.hasta) : null;
     const paisFiltro = filtros.pais ? normalizeCountryCode(filtros.pais) : null;
     const courierFiltro = String(filtros.courier || '').trim().toUpperCase();
+    const scope = resolveDashboardScope(filtros);
+    const rows = scope === 'community'
+      ? db.listQuotations()
+      : db.listQuotations(filtros.viewerUserId);
 
-    return db
-      .listQuotations()
+    return rows
       .map((row) => {
         const state = parseJson(row.state_json, {});
         const results = parseJson(row.results_json, {});
@@ -418,16 +456,20 @@ class DashboardService {
     };
   }
 
-  _obtenerAlertas(quotations) {
+  _obtenerAlertas(quotations, scope = 'mine') {
     if (quotations.length === 0) {
       return [
         {
           id: 'sin-datos',
           tipo: 'info',
           titulo: 'Sin cotizaciones guardadas',
-          mensaje: 'Aun no hay cotizaciones reales en la base. Usa el chat para generar la primera.',
+          mensaje: scope === 'community'
+            ? 'Aun no hay cotizaciones reales guardadas por la comunidad. Usa el chat para generar la primera.'
+            : 'Aun no hay cotizaciones reales guardadas en tu historial. Usa el chat para generar la primera.',
           timestamp: new Date().toISOString(),
-          accion: 'Inicia una cotizacion guiada desde la pantalla principal',
+          accion: scope === 'community'
+            ? 'Genera o guarda cotizaciones reales para empezar a construir el historial compartido.'
+            : 'Inicia una cotizacion guiada desde la pantalla principal',
         },
       ];
     }

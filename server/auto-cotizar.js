@@ -21,6 +21,7 @@ const { dedupePermisos, generarRecomendacionesResultado } = require('./cotizacio
 const { buildImportProfile } = require('./importacion-profile');
 const { normalizarCodigoPais, normalizarPaisParaRuta } = require('./paises');
 const { construirValidacionOficialImportacion } = require('./validacion-oficial-importacion');
+const { resolverTipoCambioOperativo, construirAlertaTipoCambio } = require('./tipo-cambio-operativo');
 const {
   hasAdvancedBenchmarkInput,
   calculateAdvancedImportBenchmark,
@@ -34,6 +35,7 @@ async function resolverValidacionOficial(resultado, items, pais, log) {
     const validacionOficial = await construirValidacionOficialImportacion({ items, pais });
     if (validacionOficial?.subpartidas?.length) {
       resultado.validacionOficial = validacionOficial;
+      agregarAlertaTributariaOficial(resultado, validacionOficial);
       if (Array.isArray(log)) {
         log.push(
           `✓ Validacion oficial ADUANET: ${validacionOficial.subpartidas.length} subpartida(s)` +
@@ -41,12 +43,53 @@ async function resolverValidacionOficial(resultado, items, pais, log) {
         );
       }
     } else if (validacionOficial?.error && Array.isArray(log)) {
+      agregarAlertaTributariaOficial(resultado, validacionOficial);
       log.push(`Validacion oficial no disponible: ${validacionOficial.error}`);
     }
+    return validacionOficial;
   } catch (error) {
     if (Array.isArray(log)) {
       log.push(`Validacion oficial omitida: ${error.message}`);
     }
+    return null;
+  }
+}
+
+function agregarAlertaTributariaOficial(resultado, validacionOficial) {
+  if (!resultado || !Array.isArray(resultado.alertas) || !validacionOficial) return;
+
+  resultado.alertas = resultado.alertas.filter(
+    (alerta) => alerta?.tipo !== 'normativo_tributario_oficial'
+  );
+
+  const subpartidas = Array.isArray(validacionOficial.subpartidas)
+    ? validacionOficial.subpartidas
+    : [];
+  const conFuenteOficial = subpartidas.filter((subpartida) => subpartida?.oficialEnVivo).length;
+
+  if (subpartidas.length > 0) {
+    const hasIsc = subpartidas.some((subpartida) => {
+      const isc = Number(subpartida?.gravamenes?.isc);
+      return Number.isFinite(isc) && isc > 0;
+    });
+    const hasConvenio = subpartidas.some((subpartida) => Boolean(subpartida?.convenio));
+
+    resultado.alertas.push({
+      tipo: 'normativo_tributario_oficial',
+      nivel: conFuenteOficial > 0 ? 'info' : 'medio',
+      mensaje: conFuenteOficial > 0
+        ? `Validacion tributaria oficial: ADUANET confirmo gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como vigente el bloque "Validacion oficial en vivo".`
+        : 'No se obtuvo confirmacion oficial en vivo para esta corrida. Confirma IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
+    });
+    return;
+  }
+
+  if (validacionOficial.error) {
+    resultado.alertas.push({
+      tipo: 'normativo_tributario_oficial',
+      nivel: 'medio',
+      mensaje: 'Validacion oficial tributaria no disponible en esta consulta. Confirma en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
+    });
   }
 }
 
@@ -392,13 +435,6 @@ function calcularMargen(totalLandedPorUnidad, costosOperativosPorUnidad, margenP
 function verificarAlertas(items, pais) {
   const alertas = [];
 
-  // Ley 32387 (2025): IGV 15% + IPM 2% → efectivo desde julio 2025
-  // Verificar si hay cambios programados
-  alertas.push({
-    tipo: 'normativo', nivel: 'info',
-    mensaje: 'ℹ Tasas calculadas según Ley 32387 (IGV 16% + IPM 2% = 18% total). Vigente desde Jul 2025.',
-  });
-
   // Check antidumping vigencia
   items.forEach(item => {
     if (!item.hs) return;
@@ -546,6 +582,8 @@ async function calcular(input) {
     const seguroMode = String(seguroModo || '').toUpperCase();
     const objetivo = objetivoCalculo || 'precio_sugerido';
     const shouldProjectMargin = objetivo !== 'costo_importacion';
+    const tipoCambio = await resolverTipoCambioOperativo(tc);
+    const tcAplicado = tipoCambio.tasa || 0;
     const trazabilidad = {
       flete: fleteManual > 0
         ? { estado: 'real', fuente: 'manual', monto: fleteManual }
@@ -562,7 +600,18 @@ async function calcular(input) {
             )
         ),
       incoterm: { codigo: (incoterm || 'FOB').toUpperCase(), estado: 'exacto', mensaje: null },
+      tipoCambio: {
+        estado: tipoCambio.estado,
+        fuente: tipoCambio.fuente,
+        monto: tcAplicado,
+        mensaje: tipoCambio.mensaje,
+        referenciaSunat: tipoCambio.referenciaSunat,
+        diferencialVsSunat: tipoCambio.diferencialVsSunat,
+      },
     };
+    if (tcAplicado > 0) {
+      log.push(tipoCambio.mensaje);
+    }
 
     // ── CONVERTIR MONEDA ──
     if (monedaUpper !== 'USD') {
@@ -606,14 +655,16 @@ async function calcular(input) {
         costosOperativos: costosOp,
         totalReal: cifPostal + costosOp.totalOperativo,
       };
-      if (tc > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tc;
+      if (tcAplicado > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tcAplicado;
       resultado.items = items;
       resultado.metadata = {
         proveedor,
         pais: country,
         incoterm,
         canal: canalUpper,
-        tc,
+        tc: tcAplicado,
+        tcFuente: tipoCambio.fuente,
+        tcEstado: tipoCambio.estado,
         moneda: monedaUpper,
         tipoSujeto: tipoSujeto || 'empresa',
         tipoImportador: tipoImportador || 'general',
@@ -621,6 +672,7 @@ async function calcular(input) {
         margenVentaPct: shouldProjectMargin ? (margenVenta || 30) : null,
         seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
       };
+      resultado.tipoCambio = tipoCambio;
       resultado.alertas = [{ tipo: 'postal_franquicia', nivel: 'info', mensaje: 'Postal de bajo valor tratado como franquicia base.' }];
       if (fleteManual > 0) {
         trazabilidad.flete = { estado: 'real', fuente: 'manual', monto: fleteManual };
@@ -634,6 +686,10 @@ async function calcular(input) {
         };
       resultado.trazabilidad = trazabilidad;
       resultado.precision = evaluarPrecisionCotizacion({ items, trazabilidad });
+      const alertaTipoCambioPostal = construirAlertaTipoCambio(tipoCambio);
+      if (alertaTipoCambioPostal) {
+        resultado.alertas.push(alertaTipoCambioPostal);
+      }
       resultado.alertas.unshift({
         tipo: 'precision',
         nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),
@@ -676,14 +732,16 @@ async function calcular(input) {
       resultado.exito = true;
       resultado.modo = 'DSI';
       resultado.totales = { ...dsi, costosOperativos: costosOp, totalReal: dsi.totalLanded + costosOp.totalOperativo };
-      if (tc > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tc;
+      if (tcAplicado > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tcAplicado;
       resultado.items = items;
       resultado.metadata = {
         proveedor,
         pais: country,
         incoterm,
         canal: canalUpper,
-        tc,
+        tc: tcAplicado,
+        tcFuente: tipoCambio.fuente,
+        tcEstado: tipoCambio.estado,
         moneda: monedaUpper,
         tipoSujeto: tipoSujeto || 'empresa',
         tipoImportador: tipoImportador || 'general',
@@ -691,6 +749,7 @@ async function calcular(input) {
         margenVentaPct: shouldProjectMargin ? (margenVenta || 30) : null,
         seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
       };
+      resultado.tipoCambio = tipoCambio;
       resultado.alertas = [{ tipo: 'dsi', nivel: 'info', mensaje: '📦 Importación simplificada (DSI). AV 4% flat, sin percepción ni antidumping.' }];
       if (fleteT > 0) {
         trazabilidad.flete = { estado: 'real', fuente: 'manual', monto: fleteT };
@@ -706,6 +765,10 @@ async function calcular(input) {
       }
       resultado.trazabilidad = trazabilidad;
       resultado.precision = evaluarPrecisionCotizacion({ items, trazabilidad });
+      const alertaTipoCambioDSI = construirAlertaTipoCambio(tipoCambio);
+      if (alertaTipoCambioDSI) {
+        resultado.alertas.push(alertaTipoCambioDSI);
+      }
       resultado.alertas.unshift({
         tipo: 'precision',
         nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),
@@ -903,12 +966,12 @@ async function calcular(input) {
     totales.costosOperativos = calcularCostosOperativos(canalUpper, totales.cif, pesoTotal);
     totales.totalReal = totales.totalLanded + totales.costosOperativos.totalOperativo;
 
-    if (tc > 0) {
-      totales.totalPEN = totales.totalReal * tc;
-      totales.totalLandedPEN = totales.totalLanded * tc;
+    if (tcAplicado > 0) {
+      totales.totalPEN = totales.totalReal * tcAplicado;
+      totales.totalLandedPEN = totales.totalLanded * tcAplicado;
 
       // TC SENSITIVITY ANALYSIS
-      totales.sensibilidadTC = calcularSensibilidadTC(totales.totalReal, tc);
+      totales.sensibilidadTC = calcularSensibilidadTC(totales.totalReal, tcAplicado);
       log.push('✓ Sensibilidad TC calculada (±3%, ±5%, ±10%)');
     }
     log.push(`✓ Total landed: $${totales.totalLanded.toFixed(2)} + operativos: $${totales.costosOperativos.totalOperativo.toFixed(2)} = $${totales.totalReal.toFixed(2)}`);
@@ -955,7 +1018,9 @@ async function calcular(input) {
       pais: country,
       incoterm,
       canal: canalUpper,
-      tc,
+      tc: tcAplicado,
+      tcFuente: tipoCambio.fuente,
+      tcEstado: tipoCambio.estado,
       moneda: monedaUpper,
       tipoSujeto: tipoSujeto || 'empresa',
       tipoImportador: percepcionTipo,
@@ -963,10 +1028,15 @@ async function calcular(input) {
       margenVentaPct: shouldProjectMargin ? (margenVenta || 30) : null,
       seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
     };
+    resultado.tipoCambio = tipoCambio;
     trazabilidad.seguro.monto = totales.seguro || trazabilidad.seguro.monto;
     trazabilidad.flete.monto = totales.flete || trazabilidad.flete.monto;
     resultado.trazabilidad = trazabilidad;
     resultado.precision = evaluarPrecisionCotizacion({ items: itemsClasificados, trazabilidad });
+    const alertaTipoCambio = construirAlertaTipoCambio(tipoCambio);
+    if (alertaTipoCambio) {
+      resultado.alertas.push(alertaTipoCambio);
+    }
     resultado.alertas.unshift({
       tipo: 'precision',
       nivel: resultado.precision.requiereRevision ? 'alto' : (resultado.precision.esReferencial ? 'medio' : 'info'),

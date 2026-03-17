@@ -1,5 +1,16 @@
 const { beforeAll, describe, expect, it } = require('@jest/globals');
 
+jest.mock('../../server/tipo-cambio-operativo', () => ({
+  resolverTipoCambioOperativo: jest.fn(async (payload = {}) => ({
+    tc: Number(payload.tc) || 3.65,
+    fuente: payload.tc ? 'manual_usuario' : 'test_fixture',
+    oficial: false,
+    referenciaAutomatica: 3.65,
+    diferenciaVsReferencia: 0,
+    alertas: [],
+  })),
+}));
+
 const nandina = require('../../server/nandina');
 const agente = require('../../server/agente');
 const autoCotizar = require('../../server/auto-cotizar');

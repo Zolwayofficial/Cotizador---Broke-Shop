@@ -13,10 +13,10 @@
 //
 // TODOS CON ACTUALIZACIÓN AUTOMÁTICA Y CACHE
 
-const https = require('https');
 const http = require('http');
 const iconv = require('iconv-lite');
 const { sanitizeCountry, normalizarCodigoPais } = require('./paises');
+const sunatProxy = require('./sunat-proxy');
 
 // Cache con TTL (tiempo de vida)
 const _cache = {};
@@ -35,23 +35,6 @@ const CACHE_TTL = {
 // ═══════════════════════════════════════════════════
 // HELPERS HTTP
 // ═══════════════════════════════════════════════════
-function httpsGet(url, timeout = 15000) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { timeout }, res => {
-      const chunks = [];
-      res.on('data', d => chunks.push(d));
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString()));
-        } catch {
-          resolve(Buffer.concat(chunks).toString());
-        }
-      });
-      res.on('error', reject);
-    }).on('error', reject);
-  });
-}
-
 function httpGet(url, timeout = 15000) {
   return new Promise((resolve, reject) => {
     http.get(url, { timeout }, res => {
@@ -361,21 +344,29 @@ const SUNAT = {
     if (cached) return cached;
 
     try {
-      // API de decolecta (proxy de SUNAT)
-      const response = await httpsGet('https://api.decolecta.com/v1/tipo-cambio/sunat');
-      
+      const response = await sunatProxy.getTipoCambio();
       const result = {
         compra: response.compra || 0,
         venta: response.venta || 0,
-        fecha: new Date().toISOString(),
-        fuente: 'SUNAT'
+        fecha: response.fecha || new Date().toISOString(),
+        fuente: response.source || 'SUNAT',
+        estado: response.status || 'referencia_externa',
+        estrategia: response.strategy || null,
+        oficial: response.official === true,
       };
 
       setCache(cacheKey, result);
       return result;
     } catch (e) {
       // Fallback
-      const fallback = { compra: 3.70, venta: 3.75, fecha: new Date().toISOString(), fuente: 'fallback' };
+      const fallback = {
+        compra: 3.70,
+        venta: 3.75,
+        fecha: new Date().toISOString(),
+        fuente: 'fallback_local',
+        estado: 'fallback',
+        oficial: false,
+      };
       setCache(cacheKey, fallback);
       return fallback;
     }
