@@ -129,6 +129,16 @@ if (!hasRealValue('AFTERSHIP_TOKEN')) {
   warnings.push('AFTERSHIP_TOKEN no esta configurado; el tracking complementario y el directorio de couriers quedaran limitados');
 }
 
+const documentOcrEnabled = hasRealValue('DOCUMENT_OCR_ENABLED') && ['1', 'true', 'yes', 'on'].includes(String(process.env.DOCUMENT_OCR_ENABLED).trim().toLowerCase());
+const documentOcrKeys = ['GOOGLE_CLOUD_PROJECT_ID', 'GOOGLE_DOCUMENT_AI_LOCATION', 'GOOGLE_DOCUMENT_AI_PROCESSOR_ID'];
+const missingDocumentOcr = documentOcrKeys.filter((key) => !hasRealValue(key));
+
+if (documentOcrEnabled && missingDocumentOcr.length > 0) {
+  warnings.push(`DOCUMENT_OCR_ENABLED esta activo pero falta configurar: ${missingDocumentOcr.join(', ')}. Los PDFs escaneados seguiran en fallback.`);
+} else if (documentOcrEnabled) {
+  successes.push('OCR oficial para documentos escaneados configurado');
+}
+
 if (successes.length > 0) {
   printSection('OK', successes);
 }

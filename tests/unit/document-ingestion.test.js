@@ -6,12 +6,16 @@ const XLSX = require('xlsx');
 const pdfParse = require('pdf-parse');
 
 jest.mock('pdf-parse', () => jest.fn());
+jest.mock('../../server/document-ocr', () => ({
+  extractDocumentTextWithOcr: jest.fn(),
+}));
 
 const {
   extractUploadedContent,
   extractDocxText,
   extractSpreadsheetText,
 } = require('../../server/document-ingestion');
+const { extractDocumentTextWithOcr } = require('../../server/document-ocr');
 
 async function createTempFile(buffer, extension) {
   const filePath = path.join(os.tmpdir(), `cotizador-test-${Date.now()}-${Math.random().toString(16).slice(2)}${extension}`);
@@ -47,6 +51,7 @@ async function createMinimalDocx(text) {
 describe('document ingestion', () => {
   beforeEach(() => {
     pdfParse.mockReset();
+    extractDocumentTextWithOcr.mockReset();
   });
 
   it('extrae texto util de un DOCX', async () => {
@@ -140,6 +145,32 @@ describe('document ingestion', () => {
         statusCode: 422,
         code: 'pdf_without_text',
       });
+    } finally {
+      await fs.promises.rm(pdfPath, { force: true });
+    }
+  });
+
+  it('usa OCR opcional si un PDF escaneado no trae texto directo', async () => {
+    pdfParse.mockResolvedValueOnce({ text: '   ' });
+    extractDocumentTextWithOcr.mockResolvedValueOnce({
+      contenido: 'Factura comercial\nProveedor Asia Corp\nFOB USD 15200',
+      tipo: 'text',
+      source: 'google-documentai-ocr',
+    });
+    const pdfPath = await createTempFile(Buffer.from('%PDF-1.4 scanned-ish'), '.pdf');
+
+    try {
+      const result = await extractUploadedContent({
+        path: pdfPath,
+        mimetype: 'application/pdf',
+        originalname: 'escaneado.pdf',
+      });
+
+      expect(result.source).toBe('google-documentai-ocr');
+      expect(result.contenido).toMatch(/Asia Corp/);
+      expect(extractDocumentTextWithOcr).toHaveBeenCalledWith(expect.any(Buffer), expect.objectContaining({
+        mimeType: 'application/pdf',
+      }));
     } finally {
       await fs.promises.rm(pdfPath, { force: true });
     }

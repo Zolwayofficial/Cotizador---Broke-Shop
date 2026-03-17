@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const JSZip = require('jszip');
 const XLSX = require('xlsx');
+const { extractDocumentTextWithOcr } = require('./document-ocr');
 
 const ALLOWED_UPLOAD_MIMES = [
   'application/pdf',
@@ -180,16 +181,31 @@ async function extractUploadedContent(file) {
       return pdf;
     }
 
+    let ocrResult = null;
+    let ocrError = null;
+    try {
+      ocrResult = await extractDocumentTextWithOcr(buffer, {
+        mimeType: 'application/pdf',
+        fileName: file.originalname || '',
+      });
+    } catch (error) {
+      ocrError = error;
+    }
+
+    if (ocrResult) {
+      return ocrResult;
+    }
+
     if (pdf.tipo === 'pdf-unreadable') {
       throw createIngestionError('No se pudo leer el PDF. Sube un PDF valido o conviertelo a imagen, DOCX o XLSX.', {
         code: 'pdf_unreadable',
-        details: pdf.warning || null,
+        details: ocrError?.message || pdf.warning || null,
       });
     }
 
     throw createIngestionError('El PDF no contiene texto extraible. Si es una cotizacion escaneada, exportala a imagen (PNG/JPG) o usa un PDF con OCR.', {
       code: 'pdf_without_text',
-      details: pdf.warning || null,
+      details: ocrError?.message || pdf.warning || null,
     });
   }
 
