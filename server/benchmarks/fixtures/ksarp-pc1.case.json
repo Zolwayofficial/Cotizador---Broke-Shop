@@ -1,0 +1,133 @@
+{
+  "benchmarkCaseId": "ksarp-pc1",
+  "benchmarkMode": "hybrid",
+  "proveedor": "BOBIN Corp.",
+  "pais": "US",
+  "canal": "MARITIMO",
+  "incoterm": "FOB",
+  "moneda": "USD",
+  "tipoImportador": "general",
+  "margenVenta": 35,
+  "tc": 3.55,
+  "adValoremRate": 0,
+  "perceptionRatePct": 3.5,
+  "paymentTerms": "50% al aceptar la cotizacion y 50% restante contra entrega de documentos",
+  "dates": {
+    "requestDate": "15 de agosto",
+    "acceptanceDate": "18 de agosto",
+    "swiftConfirmationDate": "25 de agosto",
+    "estimatedShipmentDate": "10 de septiembre",
+    "estimatedArrivalDate": "28 de septiembre",
+    "bankDocumentsDate": "27 de septiembre"
+  },
+  "items": [
+    {
+      "desc": "Remalladoras usadas de costura",
+      "qty": 90,
+      "unit": 94.5,
+      "total": 8505
+    },
+    {
+      "desc": "Recubridoras usadas de costura",
+      "qty": 90,
+      "unit": 97.8,
+      "total": 8802
+    },
+    {
+      "desc": "Collareteras usadas de costura",
+      "qty": 90,
+      "unit": 103.2,
+      "total": 9288
+    }
+  ],
+  "fobTotal": 26595,
+  "flete": 2800,
+  "seguro": 141.54,
+  "bankFees": [
+    {
+      "description": "Comision transferencia 50% inicial",
+      "amount": 45
+    },
+    {
+      "description": "Comision transferencia 50% final",
+      "amount": 54
+    }
+  ],
+  "insurance": {
+    "overInsurancePct": 7,
+    "premiumRatePct": 0.45
+  },
+  "localCharges": [
+    {
+      "name": "Handling",
+      "amount": 155
+    },
+    {
+      "name": "Descarga",
+      "amount": 220
+    },
+    {
+      "name": "Traccion",
+      "amount": 218
+    },
+    {
+      "name": "Movilizacion de carga",
+      "amount": 275
+    },
+    {
+      "name": "Gate in",
+      "amount": 265
+    },
+    {
+      "name": "Servicios administrativos",
+      "amount": 69.5
+    },
+    {
+      "name": "Visto bueno",
+      "amount": 221.8
+    },
+    {
+      "name": "Almacenaje",
+      "amount": 195.7
+    },
+    {
+      "name": "Gastos operativos",
+      "amount": 40
+    },
+    {
+      "name": "Otros",
+      "amount": 155.4
+    }
+  ],
+  "customsBroker": {
+    "commissionPct": 0.7,
+    "minimum": 80
+  },
+  "internalTransport": 1350,
+  "adminExpensePct": 4.6,
+  "financing": {
+    "installmentsDays": [
+      45,
+      60,
+      75
+    ],
+    "ratePer30DaysPct": 2.3,
+    "financedConcepts": [
+      "customs_value",
+      "taxes",
+      "local_charges",
+      "customs_broker",
+      "internal_transport"
+    ]
+  },
+  "distributionChain": [
+    {
+      "name": "importador",
+      "marginPct": 35
+    },
+    {
+      "name": "mayorista",
+      "marginPct": 45
+    }
+  ]
+}

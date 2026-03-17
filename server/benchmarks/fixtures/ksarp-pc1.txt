@@ -1,0 +1,62 @@
+PRACTICA CALIFICADA 1 - PC1
+
+FILA "F" NRC 12541
+
+KSARP S.A.C. es una empresa dedicada a la importacion y comercializacion de repuestos que adquiere en el mercado local para diversos tipos de maquinas. La Gerencia ha decidido realizar a su proveedor internacional un pedido de maquinas de segundo uso para la fabricacion de prendas de vestir.
+
+El 15 de agosto, el Gerente de KSARP S.A.C. solicita a la empresa BOBIN Corp. de USA una cotizacion de maquinas usadas de costura.
+
+BOBIN Corp. envia lo siguiente:
+- Cotizacion por el precio FOB Total US$ 26,595.00
+- Termino de compra FOB
+- Flete de transporte maritimo de US$ 2800,00
+- Forma de pago: Transferencia bancaria del 50 % al aceptar la cotizacion y 50 % restante contra entrega de documentos.
+
+El 18 de agosto, el gerente de KSARP S.A.C. acepta la cotizacion y realiza la transferencia del 50 % pactado, por lo que el Banco carga en la cuenta corriente de la empresa por comision de transferencia el importe de US$ 45,00.
+
+El mismo dia se solicita a su agente de seguro una poliza de seguro, y este le informa que el sobreseguro es de 7 % (realice el calculo de la suma asegurada desde el punto de vista del operador logistico), y la Prima Neta es de 0,45 %.
+
+BOBIN Corp. informa que la mercaderia sera embarcada 15 dias despues de haber recibido el Swift de la transferencia.
+
+El 25 de agosto BOBIN Corp. informa que ha recibido la confirmacion de la transferencia, por lo que la mercaderia sera embarcada el dia 10 de septiembre, y estara llegando al puerto del Callao el dia 28 de septiembre aproximadamente.
+
+El 27 de septiembre el Banco informa a KSARP S.A.C. que tiene los documentos en su poder, y deben cancelar el importe correspondiente al 50 % restante, el cual es cancelado y el banco carga en la cuenta corriente por comision de transferencia el importe de US$ 54,00.
+
+Entre los documentos recibidos tenemos:
+- Bill of Lading, cuyo importe del flete es de US$ 2800.00.
+- Packing List.
+- Factura Comercial siguiente:
+  90Unid. Remalladoras94.508505.00
+  90Unid. Recubridoras97.808802.00
+  90Unid. Collareteras103.209288.00
+  FOB TOTAL US$26595.00
+
+Los mencionados documentos son entregados al agente de aduana, para que realice la nacionalizacion correspondiente y se le solicita el financiamiento para pagar los derechos e impuestos y los gastos necesarios para trasladar la mercaderia a los almacenes de KSARP S.A.C., por lo que girara tres letras, a 45, 60 y 75 dias, por lo que cobrara una tasa de interes de 2,3 % por cada 30 dias.
+
+Los pagos realizados a los operadores son los siguientes:
+Handling : US$ 155,00
+Descarga : US$ 220,00
+Traccion : US$ 218,00
+Movilizacion de carga : US$ 275,00
+Gate in : US$ 265.00
+Servicios administrativos : US$ 69,50
+V°B° : US$ 221,80
+Almacenaje : US$ 195,70
+Gastos Operativos : US$ 40,00
+Otros : US$ 155,40
+Comision del agente : 0,7 % del valor CIF (minimo US$ 80,00).
+Transporte interno : US$ 1,350,00.
+
+Se debe tomar en cuenta que el ad valorem a pagar es de 0 %, y el Tipo de cambio es de S/ 3.55.
+Los gastos administrativos incurridos por KSARP S.A.C. en esta operacion son el 4.6% del precio CIF.
+
+Se pide:
+1. Hallar el Valor en Aduanas y la percepcion.
+2. Hallar la suma asegurada desde el punto de vista del operador logistico.
+3. Determinar el importe a pagar a la compania de seguros.
+4. Hallar el importe de cada letra.
+5. Hallar el Costo de Importacion Total y por producto.
+6. Determinar el Precio de Venta Total y por producto (unitario) de la siguiente cadena de distribucion:
+   IMPORTADOR margen de beneficio es de 35 % de utilidad.
+   MAYORISTA margen de beneficio 45 % de sus costos totales.
+7. Desarrolle el cuadro explicativo del Credito Fiscal para la cadena de distribucion.
