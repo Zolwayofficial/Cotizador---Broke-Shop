@@ -1,0 +1,130 @@
+{
+  "createdAt": "2026-03-17T23:22:34.865Z",
+  "encryptedFile": "ops-snapshot-2026-03-17T23-20-35-478Z.tar.gz.enc",
+  "checksumSha256": "8a0e29a620d978cb6617c365767f9b062c3edda2bafabae5645df4366313521d",
+  "encryption": {
+    "algorithm": "aes-256-gcm",
+    "kdf": "scrypt",
+    "salt": "e813ee2d0c2c1885f48c274b1de2834c",
+    "iv": "baef00840e4e3536494f5ec9",
+    "authTagLength": 16
+  },
+  "included": [
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env",
+      "destination": ".env",
+      "type": "file",
+      "size": 71
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env.production",
+      "destination": ".env.production",
+      "type": "file",
+      "size": 1159
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\secure",
+      "destination": "secure",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\data",
+      "destination": "data",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\ecosystem.config.js",
+      "destination": "ecosystem.config.js",
+      "type": "file",
+      "size": 460
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\DEPLOY.md",
+      "destination": "DEPLOY.md",
+      "type": "file",
+      "size": 7627
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps-direct.ps1",
+      "destination": "deploy-vps-direct.ps1",
+      "type": "file",
+      "size": 731
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps.ps1",
+      "destination": "deploy-vps.ps1",
+      "type": "file",
+      "size": 5494
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps-unix.sh",
+      "destination": "deploy-vps-unix.sh",
+      "type": "file",
+      "size": 3689
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps.sh",
+      "destination": "deploy-vps.sh",
+      "type": "file",
+      "size": 112
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\server",
+      "destination": "server",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\client",
+      "destination": "client",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\scripts",
+      "destination": "scripts",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\docs",
+      "destination": "docs",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\package.json",
+      "destination": "package.json",
+      "type": "file",
+      "size": 2741
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\package-lock.json",
+      "destination": "package-lock.json",
+      "type": "file",
+      "size": 309247
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env.example",
+      "destination": ".env.example",
+      "type": "file",
+      "size": 6467
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env.production.example",
+      "destination": ".env.production.example",
+      "type": "file",
+      "size": 1740
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.gitignore",
+      "destination": ".gitignore",
+      "type": "file",
+      "size": 230
+    }
+  ],
+  "skipped": [],
+  "restoreCommand": "set BACKUP_PASSPHRASE=<tu_clave> && node scripts/restore-secure-backup.js --input ops-snapshot-2026-03-17T23-20-35-478Z.tar.gz.enc"
+}

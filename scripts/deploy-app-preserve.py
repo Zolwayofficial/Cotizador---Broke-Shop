@@ -67,6 +67,8 @@ pm2 save
 chmod 755 "$APP_PATH"
 find "$APP_PATH" -path "$APP_PATH/data" -prune -o -type d -exec chmod 755 {} +
 find "$APP_PATH" -path "$APP_PATH/data/*" -prune -o -type f -exec chmod 644 {} +
+[ -d "$APP_PATH/secure" ] && chmod 700 "$APP_PATH/secure"
+[ -d "$APP_PATH/secure" ] && find "$APP_PATH/secure" -type f -exec chmod 600 {} +
 [ -f "$APP_PATH/.env" ] && chmod 600 "$APP_PATH/.env"
 [ -f "$APP_PATH/.env.production" ] && chmod 600 "$APP_PATH/.env.production"
 

@@ -42,12 +42,14 @@ describe('document OCR', () => {
     process.env.GOOGLE_CLOUD_PROJECT_ID = 'demo-project';
     process.env.GOOGLE_DOCUMENT_AI_LOCATION = 'us';
     process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID = 'processor-123';
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = './secure/google-adc.json';
 
     const config = getDocumentOcrConfig();
 
     expect(config.enabled).toBe(true);
     expect(config.endpoint).toContain('demo-project');
     expect(config.endpoint).toContain('processor-123');
+    expect(config.credentialsPath).toMatch(/secure[\\/]+google-adc\.json$/);
   });
 
   it('procesa OCR con Google Document AI cuando esta habilitado', async () => {
@@ -55,6 +57,7 @@ describe('document OCR', () => {
     process.env.GOOGLE_CLOUD_PROJECT_ID = 'demo-project';
     process.env.GOOGLE_DOCUMENT_AI_LOCATION = 'us';
     process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID = 'processor-123';
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = './secure/google-adc.json';
     __mock.getAccessToken.mockResolvedValueOnce('token-demo');
     global.fetch = jest.fn().mockResolvedValueOnce({
       ok: true,
@@ -70,7 +73,10 @@ describe('document OCR', () => {
       mimeType: 'application/pdf',
     });
 
-    expect(GoogleAuth).toHaveBeenCalled();
+    expect(GoogleAuth).toHaveBeenCalledWith(expect.objectContaining({
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      keyFile: expect.stringMatching(/secure[\\/]+google-adc\.json$/),
+    }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       source: 'google-documentai-ocr',

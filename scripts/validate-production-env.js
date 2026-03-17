@@ -9,9 +9,9 @@ const envFile = envCandidates
   .find((filePath) => fs.existsSync(filePath));
 
 if (envFile) {
-  dotenv.config({ path: envFile });
+  dotenv.config({ path: envFile, override: true });
 } else {
-  dotenv.config();
+  dotenv.config({ override: true });
 }
 
 function isPlaceholder(value) {

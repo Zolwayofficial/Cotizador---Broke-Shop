@@ -17,3 +17,5 @@ scripts/__pycache__/
 backups/*.tar.gz
 restored-backups/
 LOCAL_SECRETS.md
+
+secure/

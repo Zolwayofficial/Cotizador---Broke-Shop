@@ -9,7 +9,7 @@ const envFile = envCandidates
   .map((name) => path.join(process.cwd(), name))
   .find((filePath) => fs.existsSync(filePath));
 
-dotenv.config(envFile ? { path: envFile } : undefined);
+dotenv.config(envFile ? { path: envFile, override: true } : { override: true });
 
 const express = require('express');
 const cors = require('cors');

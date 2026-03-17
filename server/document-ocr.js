@@ -1,3 +1,4 @@
+const path = require('path');
 const { GoogleAuth } = require('google-auth-library');
 
 const SUPPORTED_OCR_MIMES = new Set([
@@ -10,6 +11,7 @@ const SUPPORTED_OCR_MIMES = new Set([
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_PROVIDER = 'google_documentai';
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+const PROJECT_ROOT = path.join(__dirname, '..');
 
 function isTruthyEnv(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') return defaultValue;
@@ -35,9 +37,15 @@ function getDocumentOcrConfig(overrides = {}) {
   const projectId = overrides.projectId || process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GCLOUD_PROJECT || '';
   const location = overrides.location || process.env.GOOGLE_DOCUMENT_AI_LOCATION || 'us';
   const processorId = overrides.processorId || process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID || '';
+  const credentialsPathRaw = overrides.credentialsPath || process.env.GOOGLE_APPLICATION_CREDENTIALS || '';
   const enabledFlag = overrides.enabled ?? isTruthyEnv(process.env.DOCUMENT_OCR_ENABLED, false);
   const timeoutMs = Number(overrides.timeoutMs || process.env.DOCUMENT_OCR_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   const minTextLength = Number(overrides.minTextLength || process.env.DOCUMENT_OCR_MIN_TEXT_LENGTH || 40);
+  const credentialsPath = hasRealValue(credentialsPathRaw)
+    ? (path.isAbsolute(credentialsPathRaw)
+      ? credentialsPathRaw
+      : path.resolve(PROJECT_ROOT, credentialsPathRaw))
+    : '';
 
   const configured = provider === DEFAULT_PROVIDER
     && hasRealValue(projectId)
@@ -54,11 +62,16 @@ function getDocumentOcrConfig(overrides = {}) {
     timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS,
     minTextLength: Number.isFinite(minTextLength) && minTextLength > 0 ? minTextLength : 40,
     endpoint: `https://${location}-documentai.googleapis.com/v1/projects/${projectId}/locations/${location}/processors/${processorId}:process`,
+    credentialsPath,
   };
 }
 
 async function getAccessToken(authOverride = null) {
-  const auth = authOverride || new GoogleAuth({ scopes: [GOOGLE_SCOPE] });
+  const config = getDocumentOcrConfig();
+  const auth = authOverride || new GoogleAuth({
+    scopes: [GOOGLE_SCOPE],
+    keyFile: config.credentialsPath || undefined,
+  });
   const client = await auth.getClient();
   const rawToken = await client.getAccessToken();
   return typeof rawToken === 'string' ? rawToken : rawToken?.token || '';

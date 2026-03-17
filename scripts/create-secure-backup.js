@@ -12,6 +12,7 @@ const DEFAULT_OUTPUT_DIR = path.join(ROOT, 'backups');
 const DEFAULT_ITEMS = [
   { source: '.env', destination: '.env' },
   { source: '.env.production', destination: '.env.production' },
+  { source: 'secure', destination: 'secure' },
   { source: 'data', destination: 'data' },
   { source: 'ecosystem.config.js', destination: 'ecosystem.config.js' },
   { source: 'DEPLOY.md', destination: 'DEPLOY.md' },
