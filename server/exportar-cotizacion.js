@@ -9,8 +9,6 @@
 // - Recomendaciones personalizadas
 // - Apuntes/notas importantes
 
-const fs = require("fs");
-const path = require("path");
 
 // ═══════════════════════════════════════════════════
 // GENERAR PDF DE COTIZACIÓN

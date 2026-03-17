@@ -1,0 +1,114 @@
+{
+  "academic": {
+    "customsValue": 29536.54,
+    "perception": 1219.86,
+    "sumInsured": 31452.65,
+    "premium": 141.54,
+    "letters": [
+      {
+        "days": 45,
+        "total": 13602
+      },
+      {
+        "days": 60,
+        "total": 13753.2
+      },
+      {
+        "days": 75,
+        "total": 13904.41
+      }
+    ],
+    "totalImportCost": 42717.28,
+    "byProduct": [
+      {
+        "desc": "Remalladoras usadas de costura",
+        "allocatedTotal": 13660.86,
+        "unitCost": 151.79
+      },
+      {
+        "desc": "Recubridoras usadas de costura",
+        "allocatedTotal": 14137.9,
+        "unitCost": 157.09
+      },
+      {
+        "desc": "Collareteras usadas de costura",
+        "allocatedTotal": 14918.52,
+        "unitCost": 165.76
+      }
+    ],
+    "distribution": {
+      "importadorSaleTotalWithoutTax": 57668.33,
+      "mayoristaSaleTotalWithoutTax": 83619.09
+    },
+    "creditFiscal": {
+      "importador": {
+        "creditoFiscal": 5316.58,
+        "debitoFiscal": 10380.3,
+        "igvPorPagar": 5063.72
+      },
+      "mayorista": {
+        "creditoFiscal": 10380.3,
+        "debitoFiscal": 15051.44,
+        "igvPorPagar": 4671.14
+      }
+    }
+  },
+  "operational": {
+    "customsValue": 29536.54,
+    "perception": 1219.86,
+    "sumInsured": 31452.65,
+    "premium": 141.54,
+    "letters": [
+      {
+        "days": 45,
+        "total": 13602
+      },
+      {
+        "days": 60,
+        "total": 13753.2
+      },
+      {
+        "days": 75,
+        "total": 13904.41
+      }
+    ],
+    "totalImportCost": 40902.81,
+    "financeCostSeparated": 1814.48,
+    "byProduct": [
+      {
+        "desc": "Remalladoras usadas de costura",
+        "allocatedTotal": 13080.59,
+        "unitCost": 145.34
+      },
+      {
+        "desc": "Recubridoras usadas de costura",
+        "allocatedTotal": 13537.38,
+        "unitCost": 150.42
+      },
+      {
+        "desc": "Collareteras usadas de costura",
+        "allocatedTotal": 14284.84,
+        "unitCost": 158.72
+      }
+    ],
+    "distribution": {
+      "importadorSaleTotalWithoutTax": 55218.79,
+      "mayoristaSaleTotalWithoutTax": 80067.25
+    },
+    "creditFiscal": {
+      "importador": {
+        "creditoFiscal": 5316.58,
+        "debitoFiscal": 9939.38,
+        "igvPorPagar": 4622.81
+      },
+      "mayorista": {
+        "creditoFiscal": 9939.38,
+        "debitoFiscal": 14412.1,
+        "igvPorPagar": 4472.72
+      }
+    }
+  },
+  "tolerances": {
+    "currency": 0.05
+  }
+}

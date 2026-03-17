@@ -1,0 +1,76 @@
+{
+  "createdAt": "2026-03-17T09:22:49.217Z",
+  "encryptedFile": "ops-snapshot-2026-03-17T09-22-48-859Z.tar.gz.enc",
+  "checksumSha256": "b6c77bef3bd9d05aae5ee310cdd62d2b6ef34b3af9ef047cd9bb15af6f278105",
+  "encryption": {
+    "algorithm": "aes-256-gcm",
+    "kdf": "scrypt",
+    "salt": "650c2f59e57c8e28b2e5af295f1c10df",
+    "iv": "b030ce7acae69481d29b37d2",
+    "authTagLength": 16
+  },
+  "included": [
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env",
+      "destination": ".env",
+      "type": "file",
+      "size": 71
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\.env.production",
+      "destination": ".env.production",
+      "type": "file",
+      "size": 812
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\data",
+      "destination": "data",
+      "type": "directory",
+      "size": null
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\ecosystem.config.js",
+      "destination": "ecosystem.config.js",
+      "type": "file",
+      "size": 460
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\DEPLOY.md",
+      "destination": "DEPLOY.md",
+      "type": "file",
+      "size": 7627
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps-direct.ps1",
+      "destination": "deploy-vps-direct.ps1",
+      "type": "file",
+      "size": 731
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps.ps1",
+      "destination": "deploy-vps.ps1",
+      "type": "file",
+      "size": 5494
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps-unix.sh",
+      "destination": "deploy-vps-unix.sh",
+      "type": "file",
+      "size": 3689
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\deploy-vps.sh",
+      "destination": "deploy-vps.sh",
+      "type": "file",
+      "size": 112
+    },
+    {
+      "source": "C:\\Users\\Billy\\AppData\\Local\\Programs\\Antigravity\\cotizador\\backups\\remote-runtime-temp\\server-config",
+      "destination": "vps-state",
+      "type": "directory",
+      "size": null
+    }
+  ],
+  "skipped": [],
+  "restoreCommand": "set BACKUP_PASSPHRASE=<tu_clave> && node scripts/restore-secure-backup.js --input ops-snapshot-2026-03-17T09-22-48-859Z.tar.gz.enc"
+}

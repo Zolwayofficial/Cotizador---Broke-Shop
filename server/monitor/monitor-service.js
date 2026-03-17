@@ -25,12 +25,13 @@ class MonitorService {
       memoryUsage: [],
       cpuUsage: []
     };
-    
+
     this.alerts = [];
     this.maxMetrics = 1000; // Mantener últimos 1000 registros
-    
-    // Iniciar monitoreo automático
-    this._iniciarMonitoreoAutomatico();
+    this.monitoringIntervals = [];
+    this.started = false;
+
+    this._cargarMetricas();
   }
 
   // ═══════════════════════════════════════════════════
@@ -40,17 +41,17 @@ class MonitorService {
   // Registrar request
   registrarRequest(tiempoRespuesta, error = null) {
     this.metrics.requests++;
-    
+
     if (error) {
       this.metrics.errors++;
     }
-    
+
     // Actualizar promedio de tiempo de respuesta
     this.metrics.avgResponseTime = (
       (this.metrics.avgResponseTime * (this.metrics.requests - 1) + tiempoRespuesta) /
       this.metrics.requests
     );
-    
+
     // Guardar métricas periódicamente
     if (this.metrics.requests % 100 === 0) {
       this._guardarMetricas();
@@ -62,7 +63,7 @@ class MonitorService {
     const uptime = Date.now() - this.metrics.startTime;
     const memory = process.memoryUsage();
     const cpu = os.loadavg();
-    
+
     return {
       status: this._determinarEstado(),
       uptime: this._formatearUptime(uptime),
@@ -70,7 +71,7 @@ class MonitorService {
       requests: {
         total: this.metrics.requests,
         errors: this.metrics.errors,
-        errorRate: this.metrics.requests > 0 ? 
+        errorRate: this.metrics.requests > 0 ?
           ((this.metrics.errors / this.metrics.requests) * 100).toFixed(2) : 0
       },
       performance: {
@@ -126,28 +127,28 @@ class MonitorService {
       timestamp: new Date().toISOString(),
       leida: false
     };
-    
+
     this.alerts.push(alerta);
-    
+
     // Limitar alertas
     if (this.alerts.length > 100) {
       this.alerts = this.alerts.slice(-100);
     }
-    
+
     console.log(`[MONITOR] ALERTA [${tipo}]: ${mensaje}`);
-    
+
     return alerta;
   }
 
   // Marcar alerta como leída
   marcarAlertaLeida(id) {
     const alerta = this.alerts.find(a => a.id === id);
-    
+
     if (alerta) {
       alerta.leida = true;
       return true;
     }
-    
+
     return false;
   }
 
@@ -158,40 +159,55 @@ class MonitorService {
     return { eliminadas: antes - this.alerts.length };
   }
 
+  start() {
+    if (this.started) return;
+    this.started = true;
+    this._iniciarMonitoreoAutomatico();
+  }
+
+  stop() {
+    this.monitoringIntervals.forEach(interval => clearInterval(interval));
+    this.monitoringIntervals = [];
+    this.started = false;
+  }
+
   // ═══════════════════════════════════════════════════
   // MÉTODOS PRIVADOS
   // ═══════════════════════════════════════════════════
 
   _iniciarMonitoreoAutomatico() {
     // Monitorear cada 10 segundos
-    setInterval(() => {
+    const metricsInterval = setInterval(() => {
       this._registrarMetricasSistema();
       this._verificarAlertas();
     }, 10000);
-    
+
     // Guardar cada 5 minutos
-    setInterval(() => {
+    const saveInterval = setInterval(() => {
       this._guardarMetricas();
     }, 300000);
-    
+
+    this.monitoringIntervals.push(metricsInterval, saveInterval);
+    this.monitoringIntervals.forEach(interval => interval.unref?.());
+
     console.log('[MONITOR] Monitoreo automático iniciado');
   }
 
   _registrarMetricasSistema() {
     const memory = process.memoryUsage();
     const cpu = os.loadavg();
-    
+
     this.metrics.memoryUsage.push({
       timestamp: Date.now(),
       rss: memory.rss,
       heapUsed: memory.heapUsed
     });
-    
+
     this.metrics.cpuUsage.push({
       timestamp: Date.now(),
       load: cpu[0]
     });
-    
+
     // Limitar historial
     if (this.metrics.memoryUsage.length > this.maxMetrics) {
       this.metrics.memoryUsage.shift();
@@ -201,19 +217,19 @@ class MonitorService {
 
   _verificarAlertas() {
     const salud = this.obtenerSalud();
-    
+
     // Verificar errores
     const errorRate = parseFloat(salud.requests.errorRate);
     if (errorRate > 5) {
       this.agregarAlerta('error', `Tasa de errores alta: ${errorRate}%`, { errorRate });
     }
-    
+
     // Verificar memoria
     const memoryMB = parseFloat(salud.resources.memory.heapUsed);
     if (memoryMB > 400) { // 400 MB
       this.agregarAlerta('memoria', `Uso de memoria alto: ${memoryMB} MB`, { memoryMB });
     }
-    
+
     // Verificar tiempo de respuesta
     const avgTime = parseFloat(salud.performance.avgResponseTime);
     if (avgTime > 500) { // 500ms
@@ -222,19 +238,19 @@ class MonitorService {
   }
 
   _determinarEstado() {
-    const salud = this.obtenerSalud();
-    const errorRate = parseFloat(salud.requests.errorRate);
-    const memoryMB = parseFloat(salud.resources.memory.heapUsed);
-    const avgTime = parseFloat(salud.performance.avgResponseTime);
-    
+    const errorRate = this.metrics.requests > 0 ?
+      ((this.metrics.errors / this.metrics.requests) * 100) : 0;
+    const memoryMB = parseFloat((process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2));
+    const avgTime = this.metrics.avgResponseTime;
+
     if (errorRate > 10 || memoryMB > 500 || avgTime > 1000) {
       return 'critico';
     }
-    
+
     if (errorRate > 5 || memoryMB > 400 || avgTime > 500) {
       return 'alerta';
     }
-    
+
     return 'saludable';
   }
 
@@ -243,19 +259,19 @@ class MonitorService {
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-    
+
     if (days > 0) {
       return `${days}d ${hours % 24}h ${minutes % 60}m`;
     }
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
     }
-    
+
     if (minutes > 0) {
       return `${minutes}m ${seconds % 60}s`;
     }
-    
+
     return `${seconds}s`;
   }
 
@@ -265,7 +281,7 @@ class MonitorService {
       const total = stats.bsize * stats.blocks;
       const free = stats.bsize * stats.bfree;
       const used = total - free;
-      
+
       return {
         total: `${(total / 1024 / 1024 / 1024).toFixed(2)} GB`,
         used: `${(used / 1024 / 1024 / 1024).toFixed(2)} GB`,
@@ -309,6 +325,5 @@ class MonitorService {
 // ═══════════════════════════════════════════════════
 
 const monitorService = new MonitorService();
-monitorService._cargarMetricas(); // Cargar métricas guardadas
 
 module.exports = monitorService;

@@ -9,8 +9,7 @@
 // - Detecta productos que requieren permiso
 // - Alertas de restricciones por país
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorSENASA {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorSENASA {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_${producto}_${paisOrigen}`);
     if (aprendizaje) {
-      console.log(`🧠 SENASA: Usando aprendizaje previo`);
+      console.log('🧠 SENASA: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 

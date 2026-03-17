@@ -9,10 +9,10 @@
 // - Cache de partidas consultadas
 // - Estrategias de scraping adaptativas
 
-const http = require("http");
-const iconv = require("iconv-lite");
-const crypto = require("crypto");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const http = require('http');
+const iconv = require('iconv-lite');
+const crypto = require('crypto');
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorADUANET {
   constructor() {
@@ -96,7 +96,7 @@ class AgenteNavegadorADUANET {
   // CONSULTAR ARANCEL DE PARTIDA
   // ═══════════════════════════════════════════════════
   async consultarArancel(partida) {
-    const clean = partida.replace(/\./g, "").padEnd(10, "0");
+    const clean = partida.replace(/\./g, '').padEnd(10, '0');
     const url = `http://www.aduanet.gob.pe/itarancel/arancelS01Alias?accion=buscarPartida&cod_partida=${clean}&esframe=1`;
 
     const resultado = await this.navegar(url, { timeout: 45000 });

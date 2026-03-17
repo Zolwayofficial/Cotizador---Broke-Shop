@@ -1,0 +1,41 @@
+<svg width="920" height="220" viewBox="0 0 920 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="220" fill="none"/>
+  <g transform="translate(0 22)">
+    <path
+      d="M31 22H100C104.418 22 108 25.5817 108 30V99C108 103.418 104.418 107 100 107H34C29.5817 107 26 103.418 26 99V27C26 24.2386 28.2386 22 31 22Z"
+      stroke="#FFB000"
+      stroke-width="7"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M57 22V40L65.5 33.5L74 40V22"
+      stroke="#FFB000"
+      stroke-width="7"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M49 84L84 49"
+      stroke="#FFB000"
+      stroke-width="9"
+      stroke-linecap="round"
+    />
+    <path
+      d="M64 49H84V69"
+      stroke="#FFB000"
+      stroke-width="9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+  <text
+    x="136"
+    y="132"
+    fill="#FFB000"
+    font-family="Arial Black, Segoe UI Black, sans-serif"
+    font-size="92"
+    font-weight="900"
+    letter-spacing="-4"
+  >
+    Broke Shop
+  </text>
+</svg>

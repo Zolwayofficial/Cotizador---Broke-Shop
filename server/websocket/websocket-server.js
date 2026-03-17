@@ -75,23 +75,23 @@ class WebSocketServer {
       const data = JSON.parse(message);
       
       switch (data.type) {
-        case 'ping':
-          ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
-          break;
+      case 'ping':
+        ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+        break;
         
-        case 'suscribir':
-          this.suscribir(ws, data.channels);
-          break;
+      case 'suscribir':
+        this.suscribir(ws, data.channels);
+        break;
         
-        case 'desuscribir':
-          this.desuscribir(ws, data.channels);
-          break;
+      case 'desuscribir':
+        this.desuscribir(ws, data.channels);
+        break;
         
-        default:
-          ws.send(JSON.stringify({ 
-            type: 'error', 
-            message: 'Tipo de mensaje no reconocido' 
-          }));
+      default:
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          message: 'Tipo de mensaje no reconocido' 
+        }));
       }
     } catch (error) {
       ws.send(JSON.stringify({ 

@@ -51,57 +51,7 @@ const NIVELES = {
 
 class MembresiasService {
   constructor() {
-    this._inicializarTabla();
-  }
-
-  // ═══════════════════════════════════════════════════
-  // INICIALIZAR TABLA
-  // ═══════════════════════════════════════════════════
-
-  _inicializarTabla() {
-    db.raw().exec(`
-      CREATE TABLE IF NOT EXISTS membresias (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id TEXT UNIQUE NOT NULL,
-        nivel TEXT DEFAULT 'GRATIS',
-        codigo_invitacion TEXT,
-        referido_por TEXT,
-        fecha_inicio TEXT DEFAULT (datetime('now')),
-        fecha_vencimiento TEXT,
-        cotizaciones_usadas INTEGER DEFAULT 0,
-        consultas_usadas INTEGER DEFAULT 0,
-        activo BOOLEAN DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS codigos_invitacion (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo TEXT UNIQUE NOT NULL,
-        tipo TEXT DEFAULT 'NORMAL',
-        usos_maximos INTEGER DEFAULT 1,
-        usos_actuales INTEGER DEFAULT 0,
-        creado_por TEXT,
-        activo BOOLEAN DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS pagos_membresia (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario_id TEXT NOT NULL,
-        monto REAL NOT NULL,
-        nivel TEXT NOT NULL,
-        periodo TEXT NOT NULL,
-        estado TEXT DEFAULT 'pendiente',
-        fecha_pago TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_membresias_usuario ON membresias(usuario_id);
-      CREATE INDEX IF NOT EXISTS idx_codigos_codigo ON codigos_invitacion(codigo);
-    `);
-
-    console.log('[MEMBRESÍAS] Tablas inicializadas');
+    // Las tablas se crean en db.js automáticamente
   }
 
   // ═══════════════════════════════════════════════════
@@ -122,10 +72,10 @@ class MembresiasService {
     const usuario = auth.register(email, password, nombre);
 
     // Crear membresía
-    db.raw().prepare(`
+    db.run(`
       INSERT INTO membresias (usuario_id, nivel, codigo_invitacion, referido_por)
       VALUES (?, 'GRATIS', ?, ?)
-    `).run(usuario.id, codigoInvitacion, codigoInvitacion ? this._obtenerCreadorCodigo(codigoInvitacion) : null);
+    `, [usuario.id, codigoInvitacion, codigoInvitacion ? this._obtenerCreadorCodigo(codigoInvitacion) : null]);
 
     // Actualizar usos del código
     if (codigoInvitacion) {
@@ -143,10 +93,10 @@ class MembresiasService {
   // ═══════════════════════════════════════════════════
 
   async _validarCodigoInvitacion(codigo) {
-    const codigoData = db.raw().prepare(`
+    const codigoData = db.get(`
       SELECT * FROM codigos_invitacion 
       WHERE codigo = ? AND activo = 1
-    `).get(codigo);
+    `, [codigo]);
 
     if (!codigoData) return false;
     if (codigoData.usos_maximos > 0 && codigoData.usos_actuales >= codigoData.usos_maximos) return false;
@@ -155,19 +105,19 @@ class MembresiasService {
   }
 
   _obtenerCreadorCodigo(codigo) {
-    const codigoData = db.raw().prepare(`
+    const codigoData = db.get(`
       SELECT creado_por FROM codigos_invitacion WHERE codigo = ?
-    `).get(codigo);
-    
+    `, [codigo]);
+
     return codigoData ? codigoData.creado_por : null;
   }
 
   _incrementarUsoCodigo(codigo) {
-    db.raw().prepare(`
+    db.run(`
       UPDATE codigos_invitacion 
-      SET usos_actuales = usos_actuales + 1, updated_at = datetime('now')
+      SET usos_actuales = usos_actuales + 1
       WHERE codigo = ?
-    `).run(codigo);
+    `, [codigo]);
   }
 
   // ═══════════════════════════════════════════════════
@@ -176,11 +126,11 @@ class MembresiasService {
 
   generarCodigoInvitacion(creadoPor, tipo = 'NORMAL', usosMaximos = 1) {
     const codigo = 'INV-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    db.raw().prepare(`
+
+    db.run(`
       INSERT INTO codigos_invitacion (codigo, tipo, usos_maximos, creado_por)
       VALUES (?, ?, ?, ?)
-    `).run(codigo, tipo, usosMaximos, creadoPor);
+    `, [codigo, tipo, usosMaximos, creadoPor]);
 
     return codigo;
   }
@@ -194,11 +144,11 @@ class MembresiasService {
       throw new Error('Nivel de membresía inválido');
     }
 
-    db.raw().prepare(`
+    db.run(`
       UPDATE membresias 
       SET nivel = ?, fecha_vencimiento = ?, updated_at = datetime('now')
       WHERE usuario_id = ?
-    `).run(nuevoNivel, fechaVencimiento, usuarioId);
+    `, [nuevoNivel, fechaVencimiento, usuarioId]);
 
     return { nivel: nuevoNivel, vencimiento: fechaVencimiento };
   }
@@ -208,19 +158,19 @@ class MembresiasService {
   // ═══════════════════════════════════════════════════
 
   verificarLimite(usuarioId, tipo) {
-    const membresia = db.raw().prepare(`
+    const membresia = db.get(`
       SELECT * FROM membresias WHERE usuario_id = ? AND activo = 1
-    `).get(usuarioId);
+    `, [usuarioId]);
 
     if (!membresia) {
       throw new Error('Membresía no encontrada');
     }
 
     const nivel = NIVELES[membresia.nivel];
-    
+
     if (tipo === 'cotizacion') {
       if (nivel.limiteCotizaciones === -1) return { permitido: true };
-      
+
       const permitido = membresia.cotizaciones_usadas < nivel.limiteCotizaciones;
       return {
         permitido,
@@ -232,7 +182,7 @@ class MembresiasService {
 
     if (tipo === 'consulta') {
       if (nivel.limiteConsultas === -1) return { permitido: true };
-      
+
       const permitido = membresia.consultas_usadas < nivel.limiteConsultas;
       return {
         permitido,
@@ -251,16 +201,17 @@ class MembresiasService {
 
   registrarUso(usuarioId, tipo) {
     if (tipo === 'cotizacion') {
-      db.raw().prepare(`
+      db.run(`
         UPDATE membresias 
         SET cotizaciones_usadas = cotizaciones_usadas + 1, updated_at = datetime('now')
         WHERE usuario_id = ?
-      `).run(usuarioId);
+      `, [usuarioId]);
     } else if (tipo === 'consulta') {
-      db.raw().prepare(`
+      db.run(`
         UPDATE membresias 
         SET consultas_usadas = consultas_usadas + 1, updated_at = datetime('now')
-      `).run(usuarioId);
+        WHERE usuario_id = ?
+      `, [usuarioId]);
     }
   }
 
@@ -269,17 +220,17 @@ class MembresiasService {
   // ═══════════════════════════════════════════════════
 
   obtenerMembresia(usuarioId) {
-    const membresia = db.raw().prepare(`
+    const membresia = db.get(`
       SELECT m.*, u.email, u.name
       FROM membresias m
       JOIN users u ON m.usuario_id = u.id
       WHERE m.usuario_id = ?
-    `).get(usuarioId);
+    `, [usuarioId]);
 
     if (!membresia) return null;
 
     const nivel = NIVELES[membresia.nivel];
-    
+
     return {
       ...membresia,
       nivelNombre: nivel.nombre,
@@ -314,7 +265,7 @@ class MembresiasService {
 
     query += ' ORDER BY m.created_at DESC';
 
-    return db.raw().prepare(query).all(...params);
+    return db.all(query, params);
   }
 
   // ═══════════════════════════════════════════════════
@@ -322,10 +273,10 @@ class MembresiasService {
   // ═══════════════════════════════════════════════════
 
   registrarPago(usuarioId, monto, nivel, periodo, estado = 'pendiente') {
-    db.raw().prepare(`
+    db.run(`
       INSERT INTO pagos_membresia (usuario_id, monto, nivel, periodo, estado)
       VALUES (?, ?, ?, ?, ?)
-    `).run(usuarioId, monto, nivel, periodo, estado);
+    `, [usuarioId, monto, nivel, periodo, estado]);
 
     // Si está pagado, actualizar membresía
     if (estado === 'pagado') {
@@ -338,7 +289,7 @@ class MembresiasService {
 
   _calcularVencimiento(periodo) {
     const ahora = new Date();
-    
+
     if (periodo === 'mensual') {
       ahora.setMonth(ahora.getMonth() + 1);
     } else if (periodo === 'anual') {
@@ -353,15 +304,15 @@ class MembresiasService {
   // ═══════════════════════════════════════════════════
 
   obtenerEstadisticas() {
-    const total = db.raw().prepare(`SELECT COUNT(*) as count FROM membresias WHERE activo = 1`).get().count;
-    const gratis = db.raw().prepare(`SELECT COUNT(*) as count FROM membresias WHERE nivel = 'GRATIS' AND activo = 1`).get().count;
-    const premium = db.raw().prepare(`SELECT COUNT(*) as count FROM membresias WHERE nivel = 'PREMIUM' AND activo = 1`).get().count;
-    const vip = db.raw().prepare(`SELECT COUNT(*) as count FROM membresias WHERE nivel = 'VIP' AND activo = 1`).get().count;
-    
-    const ingresosMes = db.raw().prepare(`
+    const total = db.get('SELECT COUNT(*) as count FROM membresias WHERE activo = 1')?.count || 0;
+    const gratis = db.get('SELECT COUNT(*) as count FROM membresias WHERE nivel = \'GRATIS\' AND activo = 1')?.count || 0;
+    const premium = db.get('SELECT COUNT(*) as count FROM membresias WHERE nivel = \'PREMIUM\' AND activo = 1')?.count || 0;
+    const vip = db.get('SELECT COUNT(*) as count FROM membresias WHERE nivel = \'VIP\' AND activo = 1')?.count || 0;
+
+    const ingresosMes = db.get(`
       SELECT SUM(monto) as total FROM pagos_membresia 
       WHERE estado = 'pagado' AND strftime('%m', fecha_pago) = strftime('%m', 'now')
-    `).get().total || 0;
+    `)?.total || 0;
 
     return {
       total,

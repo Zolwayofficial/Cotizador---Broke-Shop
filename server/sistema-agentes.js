@@ -1,143 +1,187 @@
 // server/sistema-agentes.js
-// 
-// SISTEMA UNIFICADO DE AGENTES — Integra TODOS los agentes
-// 
-// Total: 29 agentes especializados
-// - 18 agentes originales (sistema base)
-// - 9 agentes de navegación (gobierno)
-// - 2 agentes de soporte (memoria + auto-repair)
+//
+// Sistema unificado de agentes y roles activos.
 
-const agentesNavegacion = require("./agentes-navegacion");
-const autoRepair = require("./auto-repair");
+const { BASE_AGENT_REGISTRY } = require('./agente');
+const { CONVERSATIONAL_AGENT_REGISTRY } = require('./agente-conversador');
+const agentesNavegacion = require('./agentes-navegacion');
+const autoRepair = require('./auto-repair');
+const { AUTH_AGENT_DESCRIPTOR } = require('./auth');
+
+const SUPPORT_AGENT_REGISTRY = [
+  { id: 'memoria-agentes', nombre: 'Memoria de Agentes', categoria: 'soporte' },
+  { id: 'auto-repair', nombre: 'Auto-Repair', categoria: 'soporte' },
+  { ...AUTH_AGENT_DESCRIPTOR },
+];
 
 class SistemaUnificadoDeAgentes {
   constructor() {
     this.agentes = {
-      // Agentes de Navegación (9)
       navegacion: agentesNavegacion,
-
-      // Auto-Repair (1)
-      autoRepair: autoRepair,
-
-      // Total agentes activos
-      total: 0
+      autoRepair,
+      auth: AUTH_AGENT_DESCRIPTOR,
+      registro: null,
+      total: 0,
     };
 
     this.inicializado = false;
   }
 
-  // ═══════════════════════════════════════════════════
-  // INICIALIZAR TODOS LOS AGENTES
-  // ═══════════════════════════════════════════════════
-  async inicializar() {
-    if (this.inicializado) {
-      console.log("[SISTEMA AGENTES] ✅ Ya inicializado");
-      return;
-    }
+  _buildRegistroAgentes() {
+    const conversacion = CONVERSATIONAL_AGENT_REGISTRY.map((agent) => ({ ...agent }));
+    const base = BASE_AGENT_REGISTRY.map((agent) => ({ ...agent }));
+    const navegacion = (agentesNavegacion.NAVEGACION_AGENT_REGISTRY || []).map((agent) => ({ ...agent }));
+    const soporte = SUPPORT_AGENT_REGISTRY.map((agent) => ({ ...agent }));
+    const total = conversacion.length + base.length + navegacion.length + soporte.length;
 
-    console.log("[SISTEMA AGENTES] Inicializando 29 agentes...");
-
-    try {
-      // Inicializar agentes de navegación (9 agentes)
-      // ESTO INICIALIZA LA MEMORIA PRIMERO, LUEGO LOS AGENTES
-      await agentesNavegacion.init();
-      console.log("   ✅ 9 Agentes de Navegación: SUNAT, ADUANET, VUCE, INDECOPI, MTC, DIGESA, SENASA, MINAM, PRODUCE");
-
-      // Pequeño delay para asegurar que las tablas estén listas
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Inicializar Auto-Repair
-      await autoRepair.init();
-      console.log("   ✅ Auto-Repair: Agentes que se autocorrigen");
-
-      // Otro delay para asegurar que las tablas de auto-repair estén listas
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Contar total de agentes
-      this.agentes.total = this._contarAgentes();
-
-      this.inicializado = true;
-      console.log(`[SISTEMA AGENTES] ✅ ${this.agentes.total} agentes inicializados\n`);
-
-    } catch (e) {
-      console.error("[SISTEMA AGENTES] ❌ Error:", e.message);
-      throw e;
-    }
-  }
-
-  // ═══════════════════════════════════════════════════
-  // CONTAR TOTAL DE AGENTES
-  // ═══════════════════════════════════════════════════
-  _contarAgentes() {
-    // Agentes de navegación: 9
-    // Auto-Repair: 1 (sistema)
-    // Agentes originales: 18 (en otros módulos)
-    // Total: 29
-    return 29;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // OBTENER ESTADÍSTICAS GENERALES
-  // ═══════════════════════════════════════════════════
-  obtenerEstadisticas() {
     return {
-      total_agentes: this.agentes.total,
-      inicializado: this.inicializado,
-      agentes_navegacion: agentesNavegacion.obtenerEstadisticasGenerales(),
-      auto_repair: autoRepair.getEstadisticas ? autoRepair.getEstadisticas() : null,
+      conversacion,
+      base,
+      navegacion,
+      soporte,
+      total,
       resumen: {
-        navegacion: 9,
-        originales: 18,
-        soporte: 2,
-        total: 29
-      }
+        originales: conversacion.length + base.length,
+        navegacion: navegacion.length,
+        soporte: soporte.length,
+        total,
+      },
     };
   }
 
-  // ═══════════════════════════════════════════════════
-  // CONSULTAR DATOS DE GOBIERNO (unificado)
-  // ═══════════════════════════════════════════════════
+  _contarAgentes() {
+    return this.obtenerRegistroAgentes().total;
+  }
+
+  obtenerRegistroAgentes() {
+    const registro = this._buildRegistroAgentes();
+    this.agentes.registro = registro;
+    this.agentes.total = registro.total;
+    return registro;
+  }
+
+  _obtenerEstadisticasNavegacion() {
+    const agentesActivos = (agentesNavegacion.NAVEGACION_AGENT_REGISTRY || []).map((agent) => agent.nombre);
+
+    if (!this.inicializado) {
+      return {
+        agentes_activos: agentesActivos,
+        memoria: 'Pendiente de inicializacion',
+        total_agentes: agentesActivos.length,
+      };
+    }
+
+    try {
+      return agentesNavegacion.obtenerEstadisticasGenerales();
+    } catch (error) {
+      return {
+        agentes_activos: agentesActivos,
+        memoria: 'Inicializada con advertencias',
+        total_agentes: agentesActivos.length,
+        error: error.message,
+      };
+    }
+  }
+
+  _obtenerEstadisticasAutoRepair() {
+    if (!this.inicializado || !autoRepair.getEstadisticas) {
+      return {
+        estado: 'Pendiente de inicializacion',
+      };
+    }
+
+    try {
+      return autoRepair.getEstadisticas();
+    } catch (error) {
+      return {
+        estado: 'Inicializado con advertencias',
+        error: error.message,
+      };
+    }
+  }
+
+  async inicializar() {
+    if (this.inicializado) {
+      console.log('[SISTEMA AGENTES] OK Ya inicializado');
+      return;
+    }
+
+    const registro = this.obtenerRegistroAgentes();
+    console.log(`[SISTEMA AGENTES] Inicializando ${registro.total} agentes...`);
+
+    try {
+      await agentesNavegacion.init();
+      console.log(`   OK ${registro.resumen.navegacion} Agentes de Navegacion: ${registro.navegacion.map((agent) => agent.nombre).join(', ')}`);
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      await autoRepair.init();
+      console.log('   OK Auto-Repair: Agentes que se autocorrigen');
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      this.agentes.registro = this.obtenerRegistroAgentes();
+      this.agentes.total = this.agentes.registro.total;
+      this.inicializado = true;
+
+      console.log(`[SISTEMA AGENTES] OK ${this.agentes.total} agentes inicializados\n`);
+    } catch (error) {
+      console.error('[SISTEMA AGENTES] Error:', error.message);
+      throw error;
+    }
+  }
+
+  obtenerEstadisticas() {
+    const registro = this.obtenerRegistroAgentes();
+
+    return {
+      total_agentes: registro.total,
+      inicializado: this.inicializado,
+      registro_agentes: registro,
+      agentes_navegacion: this._obtenerEstadisticasNavegacion(),
+      auto_repair: this._obtenerEstadisticasAutoRepair(),
+      resumen: registro.resumen,
+    };
+  }
+
   async consultarGobierno(tipo, datos) {
     if (!this.inicializado) {
       await this.inicializar();
     }
 
     switch (tipo) {
-      case 'tipo_cambio':
-        return await agentesNavegacion.SUNAT.consultarTipoCambio();
+    case 'tipo_cambio':
+      return await agentesNavegacion.SUNAT.consultarTipoCambio();
 
-      case 'arancel':
-        return await agentesNavegacion.SUNAT.consultarArancel(datos.partida);
+    case 'arancel':
+      return await agentesNavegacion.SUNAT.consultarArancel(datos.partida);
 
-      case 'restricciones':
-        return await agentesNavegacion.VUCE.consultarRestricciones(datos.partida, datos.pais);
+    case 'restricciones':
+      return await agentesNavegacion.VUCE.consultarRestricciones(datos.partida, datos.pais);
 
-      case 'antidumping':
-        return await agentesNavegacion.INDECOPI.consultarAntidumping(datos.producto, datos.pais);
+    case 'antidumping':
+      return await agentesNavegacion.INDECOPI.consultarAntidumping(datos.producto, datos.pais);
 
-      case 'homologacion':
-        return await agentesNavegacion.MTC.consultarHomologacion(datos.producto, datos.marca, datos.modelo);
+    case 'homologacion':
+      return await agentesNavegacion.MTC.consultarHomologacion(datos.producto, datos.marca, datos.modelo);
 
-      case 'registro_sanitario':
-        return await agentesNavegacion.DIGESA.consultarRegistroSanitario(datos.producto, datos.laboratorio);
+    case 'registro_sanitario':
+      return await agentesNavegacion.DIGESA.consultarRegistroSanitario(datos.producto, datos.laboratorio);
 
-      case 'permiso_fitosanitario':
-        return await agentesNavegacion.SENASA.consultarPermisoFitosanitario(datos.producto, datos.pais);
+    case 'permiso_fitosanitario':
+      return await agentesNavegacion.SENASA.consultarPermisoFitosanitario(datos.producto, datos.pais);
 
-      case 'permiso_ambiental':
-        return await agentesNavegacion.MINAM.consultarPermisoAmbiental(datos.producto);
+    case 'permiso_ambiental':
+      return await agentesNavegacion.MINAM.consultarPermisoAmbiental(datos.producto);
 
-      case 'permiso_pesca':
-        return await agentesNavegacion.PRODUCE.consultarPermisoPesca(datos.producto);
+    case 'permiso_pesca':
+      return await agentesNavegacion.PRODUCE.consultarPermisoPesca(datos.producto);
 
-      default:
-        throw new Error(`Tipo de consulta no reconocido: ${tipo}`);
+    default:
+      throw new Error(`Tipo de consulta no reconocido: ${tipo}`);
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR REQUISITOS DE PRODUCTO (automático)
-  // ═══════════════════════════════════════════════════
   async detectarRequisitos(producto, categoria, pais) {
     if (!this.inicializado) {
       await this.inicializar();
@@ -148,76 +192,67 @@ class SistemaUnificadoDeAgentes {
       categoria,
       pais,
       permisos: [],
-      alertas: []
+      alertas: [],
     };
 
-    // Verificar MTC (homologación)
     const mtc = await agentesNavegacion.MTC.detectarSiRequiereHomologacion(producto, categoria);
     if (mtc.requiereHomologacion) {
       requisitos.permisos.push({
         entidad: 'MTC',
-        tramite: 'Certificado de Homologación',
-        obligatorio: true
+        tramite: 'Certificado de Homologacion',
+        obligatorio: true,
       });
     }
 
-    // Verificar DIGESA (registro sanitario)
     const digesa = await agentesNavegacion.DIGESA.detectarSiRequiereRegistro(producto, categoria);
     if (digesa.requiereRegistroSanitario) {
       requisitos.permisos.push({
         entidad: 'DIGESA',
         tramite: 'Registro Sanitario',
-        obligatorio: true
+        obligatorio: true,
       });
     }
 
-    // Verificar SENASA (permiso fitosanitario)
     const senasa = await agentesNavegacion.SENASA.detectarSiRequierePermiso(producto, categoria, pais);
     if (senasa.requierePermisoFitosanitario) {
       requisitos.permisos.push({
         entidad: 'SENASA',
         tramite: 'Permiso Fitosanitario',
-        obligatorio: true
+        obligatorio: true,
       });
     }
 
-    // Verificar MINAM (permiso ambiental)
     const minam = await agentesNavegacion.MINAM.detectarSiRequierePermiso(producto, categoria);
     if (minam.requierePermisoAmbiental) {
       requisitos.permisos.push({
         entidad: 'MINAM',
         tramite: 'Permiso Ambiental',
-        obligatorio: true
+        obligatorio: true,
       });
     }
 
-    // Verificar PRODUCE (pesca o IQBF)
     const producePesca = await agentesNavegacion.PRODUCE.detectarSiRequierePermisoPesca(producto, categoria);
     if (producePesca.esPesquero) {
       requisitos.permisos.push({
         entidad: 'PRODUCE-SANIPES',
-        tramite: 'Permiso de Importación de Productos Pesqueros',
-        obligatorio: true
+        tramite: 'Permiso de Importacion de Productos Pesqueros',
+        obligatorio: true,
       });
     }
 
-    // Verificar INDECOPI (antidumping)
     const indecopi = await agentesNavegacion.INDECOPI.consultarAntidumping(producto, pais);
     if (indecopi.tieneAntidumping) {
       requisitos.alertas.push({
         tipo: 'antidumping',
         entidad: 'INDECOPI',
         mensaje: `Antidumping aplicado: ${indecopi.tasa}%`,
-        nivel: 'alto'
+        nivel: 'alto',
       });
     }
 
     return requisitos;
   }
 
-  // ═══════════════════════════════════════════════════
-  // GENERAR REPORTE COMPLETO DE IMPORTACIÓN
-  // ═══════════════════════════════════════════════════
   async generarReporteImportacion(producto, partida, pais) {
     if (!this.inicializado) {
       await this.inicializar();
@@ -233,36 +268,26 @@ class SistemaUnificadoDeAgentes {
       restricciones: null,
       antidumping: null,
       permisos_requeridos: [],
-      alertas: []
+      alertas: [],
     };
 
     try {
-      // Consultar arancel
       reporte.arancel = await agentesNavegacion.SUNAT.consultarArancel(partida);
-
-      // Consultar tipo de cambio
       reporte.tipo_cambio = await agentesNavegacion.SUNAT.consultarTipoCambio();
-
-      // Consultar restricciones
       reporte.restricciones = await agentesNavegacion.VUCE.consultarRestricciones(partida, pais);
-
-      // Consultar antidumping
       reporte.antidumping = await agentesNavegacion.INDECOPI.consultarAntidumping(producto, pais);
 
-      // Detectar permisos requeridos
       const requisitos = await this.detectarRequisitos(producto, '', pais);
       reporte.permisos_requeridos = requisitos.permisos;
       reporte.alertas = requisitos.alertas;
-
-    } catch (e) {
-      reporte.error = e.message;
+    } catch (error) {
+      reporte.error = error.message;
     }
 
     return reporte;
   }
 }
 
-// Exportar instancia única
 const sistemaAgentes = new SistemaUnificadoDeAgentes();
 
 module.exports = sistemaAgentes;

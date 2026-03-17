@@ -9,8 +9,7 @@
 // - Detecta productos que requieren homologación
 // - Alertas de cambios normativos
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorMTC {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorMTC {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`homologacion_${producto}`);
     if (aprendizaje) {
-      console.log(`🧠 MTC: Usando aprendizaje previo`);
+      console.log('🧠 MTC: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 

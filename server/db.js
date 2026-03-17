@@ -5,13 +5,14 @@
 // - Linux
 // - macOS
 
-const path = require("path");
-const fs = require("fs");
-const initSqlJs = require("sql.js");
+const path = require('path');
+const fs = require('fs');
+const initSqlJs = require('sql.js');
 
-const DB_PATH = process.env.DB_PATH || "./data/cotizador.db";
+const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
 let db = null;
 let SQL = null;
+let autosaveInterval = null;
 
 // ═══════════════════════════════════════════════════
 // GUARDAR BASE DE DATOS
@@ -25,7 +26,27 @@ function guardarDB() {
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
   } catch (e) {
-    console.error("[DB] Error guardando:", e.message);
+    console.error('[DB] Error guardando:', e.message);
+  }
+}
+
+function getTableColumns(tableName) {
+  const stmt = db.prepare(`PRAGMA table_info(${tableName})`);
+  const columns = [];
+
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    columns.push(row.name);
+  }
+
+  stmt.free();
+  return columns;
+}
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = getTableColumns(tableName);
+  if (!columns.includes(columnName)) {
+    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
   }
 }
 
@@ -86,10 +107,21 @@ function runMigrations() {
         role TEXT DEFAULT 'user',
         company TEXT,
         ruc TEXT,
+        active INTEGER DEFAULT 1,
+        approved INTEGER DEFAULT 1,
         created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
         last_login TEXT
       )
     `);
+
+    ensureColumn('users', 'active', 'INTEGER DEFAULT 1');
+    ensureColumn('users', 'approved', 'INTEGER DEFAULT 1');
+    ensureColumn('users', 'updated_at', 'TEXT');
+
+    db.run('UPDATE users SET active = 1 WHERE active IS NULL');
+    db.run('UPDATE users SET approved = 1 WHERE approved IS NULL');
+    db.run('UPDATE users SET updated_at = COALESCE(updated_at, created_at, datetime(\'now\'))');
 
     db.run(`
       CREATE TABLE IF NOT EXISTS membresias (
@@ -134,9 +166,9 @@ function runMigrations() {
       )
     `);
 
-    console.log("[DB] ✅ Tablas creadas");
+    console.log('[DB] ✅ Tablas creadas');
   } catch (e) {
-    console.error("[DB] Error en migraciones:", e.message);
+    console.error('[DB] Error en migraciones:', e.message);
   }
 }
 
@@ -187,6 +219,8 @@ module.exports = {
   raw() { return db; },
 
   async init() {
+    if (db) return Promise.resolve();
+
     const dir = path.dirname(DB_PATH);
     fs.mkdirSync(dir, { recursive: true });
 
@@ -198,13 +232,13 @@ module.exports = {
       if (fs.existsSync(DB_PATH)) {
         const fileBuffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(fileBuffer);
-        console.log("[DB] ✅ Base de datos cargada desde", DB_PATH);
+        console.log('[DB] ✅ Base de datos cargada desde', DB_PATH);
       } else {
         db = new SQL.Database();
-        console.log("[DB] ✅ Nueva base de datos creada");
+        console.log('[DB] ✅ Nueva base de datos creada');
       }
     } catch (e) {
-      console.error("[DB] Error cargando DB:", e.message);
+      console.error('[DB] Error cargando DB:', e.message);
       db = new SQL.Database();
     }
 
@@ -212,17 +246,65 @@ module.exports = {
     runMigrations();
 
     // Guardar automáticamente cada 5 minutos
-    setInterval(() => {
-      guardarDB();
-    }, 300000);
+    if (!autosaveInterval) {
+      autosaveInterval = setInterval(() => {
+        guardarDB();
+      }, 300000);
+      autosaveInterval.unref?.();
+    }
 
-    console.log("[DB] ✅ sql.js inicializado (100% JavaScript)");
+    console.log('[DB] ✅ sql.js inicializado (100% JavaScript)');
+
+    // Devolver promesa resuelta para inicialización asíncrona
+    return Promise.resolve();
+  },
+
+  shutdown() {
+    if (autosaveInterval) {
+      clearInterval(autosaveInterval);
+      autosaveInterval = null;
+    }
+    guardarDB();
+    db = null;
+    SQL = null;
   },
 
   // Compatibilidad con better-sqlite3
   exec(sql) {
     if (!db) return;
     db.run(sql);
+  },
+
+  // Funciones para consultar
+  get(sql, params = []) {
+    if (!db) return null;
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return row;
+    }
+    stmt.free();
+    return null;
+  },
+
+  run(sql, params = []) {
+    if (!db) return { changes: 0 };
+    db.run(sql, params);
+    return { changes: 0 };
+  },
+
+  all(sql, params = []) {
+    if (!db) return [];
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
+    const results = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return results;
   },
 
   prepare(sql) {
@@ -239,47 +321,47 @@ module.exports = {
   // Métodos específicos usados en el código
   listQuotations(userId) {
     if (userId) {
-      return all("SELECT * FROM quotations WHERE user_id = ? ORDER BY created_at DESC LIMIT 100", [userId]);
+      return all('SELECT * FROM quotations WHERE user_id = ? ORDER BY created_at DESC LIMIT 100', [userId]);
     }
-    return all("SELECT * FROM quotations ORDER BY created_at DESC LIMIT 100");
+    return all('SELECT * FROM quotations ORDER BY created_at DESC LIMIT 100');
   },
 
   getQuotation(id) {
-    const row = get("SELECT * FROM quotations WHERE id = ?", [id]);
+    const row = get('SELECT * FROM quotations WHERE id = ?', [id]);
     if (!row) return null;
     return row;
   },
 
   saveQuotation(q) {
-    const id = q.id || "q_" + Date.now();
+    const id = q.id || 'q_' + Date.now();
     run(`
       INSERT OR REPLACE INTO quotations 
       (id, user_id, name, date, channel, origin_country, fob_total, total_landed, cpu, state_json, results_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      id, q.userId || "anon", q.name || "", q.date || new Date().toISOString(),
-      q.channel || "", q.originCountry || "", q.fobTotal || 0, q.totalLanded || 0,
+      id, q.userId || 'anon', q.name || '', q.date || new Date().toISOString(),
+      q.channel || '', q.originCountry || '', q.fobTotal || 0, q.totalLanded || 0,
       q.cpu || 0, JSON.stringify(q.state || {}), JSON.stringify(q.results || null)
     ]);
     return id;
   },
 
   deleteQuotation(id) {
-    run("DELETE FROM quotations WHERE id = ?", [id]);
+    run('DELETE FROM quotations WHERE id = ?', [id]);
   },
 
   listProducts() {
-    return all("SELECT * FROM products ORDER BY last_used DESC LIMIT 200");
+    return all('SELECT * FROM products ORDER BY last_used DESC LIMIT 200');
   },
 
   saveProduct(p) {
-    const id = p.id || "p_" + Date.now();
+    const id = p.id || 'p_' + Date.now();
     run(`
       INSERT OR REPLACE INTO products 
       (id, sku, description, hs, adv, weight, reference_price, last_used)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      id, p.sku || "", p.description || p.desc || "", p.hs || "",
+      id, p.sku || '', p.description || p.desc || '', p.hs || '',
       p.adv || 0, p.weight || 0, p.referencePrice || p.unit || 0,
       new Date().toISOString()
     ]);
@@ -287,15 +369,15 @@ module.exports = {
   },
 
   deleteProduct(id) {
-    run("DELETE FROM products WHERE id = ?", [id]);
+    run('DELETE FROM products WHERE id = ?', [id]);
   },
 
   getChangelog() {
-    return all("SELECT * FROM changelog ORDER BY created_at DESC LIMIT 50");
+    return all('SELECT * FROM changelog ORDER BY created_at DESC LIMIT 50');
   },
 
   addChangelog(type, message, details = []) {
-    run("INSERT INTO changelog (type, message, details_json) VALUES (?, ?, ?)", [
+    run('INSERT INTO changelog (type, message, details_json) VALUES (?, ?, ?)', [
       type, message, JSON.stringify(details)
     ]);
   }

@@ -10,11 +10,11 @@
 // - Estrategias de scraping adaptativas
 // - Cache inteligente
 
-const https = require("https");
-const http = require("http");
-const iconv = require("iconv-lite");
-const crypto = require("crypto");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const https = require('https');
+const http = require('http');
+const iconv = require('iconv-lite');
+const crypto = require('crypto');
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorSUNAT {
   constructor() {
@@ -33,8 +33,8 @@ class AgenteNavegadorSUNAT {
   async navegar(url, opciones = {}) {
     // Validar que memoria esté inicializada
     if (!this.memoria) {
-      console.error("[SUNAT] Error: memoria no inicializada. Llamar a init() primero.");
-      return { exito: false, error: "Memoria no inicializada", tiempo: 0 };
+      console.error('[SUNAT] Error: memoria no inicializada. Llamar a init() primero.');
+      return { exito: false, error: 'Memoria no inicializada', tiempo: 0 };
     }
 
     const startTime = Date.now();
@@ -45,7 +45,7 @@ class AgenteNavegadorSUNAT {
 
     // 2. Si tuvo éxito reciente, usar misma estrategia
     if (experiencias.length > 0 && experiencias[0].exito === 1) {
-      const estrategiaPrevia = JSON.parse(experiencias[0].estrategia_usada);
+      JSON.parse(experiencias[0].estrategia_usada);
       console.log(`🧠 SUNAT: Usando estrategia que funcionó (${experiencias[0].tiempo_respuesta_ms}ms antes)`);
 
       // Ajustar timeout según experiencia previa
@@ -141,7 +141,7 @@ class AgenteNavegadorSUNAT {
     // Verificar cache primero
     const cached = this._obtenerDeCache('tipo_cambio');
     if (cached) {
-      console.log("💾 SUNAT: Tipo de cambio de cache");
+      console.log('💾 SUNAT: Tipo de cambio de cache');
       return cached;
     }
 
@@ -211,7 +211,7 @@ class AgenteNavegadorSUNAT {
   // CONSULTA ARANCEL DE PARTIDA
   // ═══════════════════════════════════════════════════
   async consultarArancel(partida) {
-    const clean = partida.replace(/\./g, "").padEnd(10, "0");
+    const clean = partida.replace(/\./g, '').padEnd(10, '0');
     const url = `http://www.aduanet.gob.pe/itarancel/arancelS01Alias?accion=buscarPartida&cod_partida=${clean}&esframe=1`;
 
     // Verificar cache

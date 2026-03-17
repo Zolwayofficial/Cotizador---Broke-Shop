@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "jest --coverage --detectOpenHandles --forceExit",
+    "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --open",
     "test:unit": "jest tests/unit --coverage",
@@ -14,6 +14,10 @@
     "test:e2e": "jest tests/e2e --coverage",
     "lint": "eslint server/**/*.js",
     "lint:fix": "eslint server/**/*.js --fix",
+    "production:check": "node scripts/validate-production-env.js",
+    "cleanup:weekly": "node scripts/weekly-cleanup.js",
+    "backup:secure": "node scripts/create-secure-backup.js",
+    "backup:restore": "node scripts/restore-secure-backup.js",
     "docs": "jsdoc -c jsdoc.json -r server -d docs/api",
     "client:install": "cd client && npm install",
     "client:dev": "cd client && npm run dev",
@@ -33,12 +37,15 @@
     "groq-sdk": "^0.3.2",
     "helmet": "^7.1.0",
     "iconv-lite": "^0.6.3",
+    "jszip": "^3.10.1",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^8.0.2",
+    "open": "^11.0.0",
     "pdf-parse": "^1.1.1",
     "sql.js": "^1.10.3",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "eslint": "^8.56.0",
