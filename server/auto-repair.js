@@ -9,12 +9,20 @@
 //
 // ESTO ES AUTO-REPARACIÓN - NADIE LO TIENE EN 2026
 
-const path = require("path");
-const fs = require("fs");
+const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = process.env.DB_PATH || "./data/cotizador.db";
+const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
 let db = null;
 let useBetterSqlite3 = false;
+
+function buildKnowledgeKey(agente, clave) {
+  return `${agente}::${clave}`;
+}
+
+function isDbReady() {
+  return !!db;
+}
 
 // ═══════════════════════════════════════════════════
 // INICIALIZACIÓN (con fallback a sql.js)
@@ -25,28 +33,28 @@ async function init() {
 
   try {
     // Intentar con better-sqlite3
-    const Database = require("better-sqlite3");
+    const Database = require('better-sqlite3');
     db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
+    db.pragma('journal_mode = WAL');
     useBetterSqlite3 = true;
-    console.log("[AUTO-REPAIR] ✅ better-sqlite3 cargado");
+    console.log('[AUTO-REPAIR] ✅ better-sqlite3 cargado');
   } catch (e) {
     // Fallback a sql.js
     try {
-      const initSqlJs = require("sql.js");
+      const initSqlJs = require('sql.js');
       const SQL = await initSqlJs();
 
       if (fs.existsSync(DB_PATH)) {
         const fileBuffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(fileBuffer);
-        console.log("[AUTO-REPAIR] ✅ sql.js cargado (DB existente)");
+        console.log('[AUTO-REPAIR] ✅ sql.js cargado (DB existente)');
       } else {
         db = new SQL.Database();
-        console.log("[AUTO-REPAIR] ✅ sql.js cargado (DB nueva)");
+        console.log('[AUTO-REPAIR] ✅ sql.js cargado (DB nueva)');
       }
       useBetterSqlite3 = false;
     } catch (e2) {
-      console.error("[AUTO-REPAIR] ❌ Error cargando DB:", e2.message);
+      console.error('[AUTO-REPAIR] ❌ Error cargando DB:', e2.message);
       return;
     }
   }
@@ -101,12 +109,19 @@ async function init() {
     )
   `);
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_failures_agente ON agent_failures(agente)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_failures_tipo ON agent_failures(error_type)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_agente ON agent_patterns(agente)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_agente ON agent_knowledge(agente)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_failures_agente ON agent_failures(agente)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_failures_tipo ON agent_failures(error_type)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_patterns_agente ON agent_patterns(agente)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_knowledge_agente ON agent_knowledge(agente)');
+  db.exec(`
+    DELETE FROM agent_patterns
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM agent_patterns GROUP BY agente, patron
+    )
+  `);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_patterns_unique ON agent_patterns(agente, patron)');
 
-  console.log("[AUTO-REPAIR] ✅ Base de datos inicializada");
+  console.log('[AUTO-REPAIR] ✅ Base de datos inicializada');
 }
 
 // ═══════════════════════════════════════════════════
@@ -143,8 +158,10 @@ function dbRun(sql, params = []) {
   if (useBetterSqlite3) {
     return db.prepare(sql).run(...params);
   } else {
-    db.exec(sql);
-    return { changes: db.getRowsModified() };
+    db.run(sql, params);
+    const lastInsert = db.exec('SELECT last_insert_rowid() AS id');
+    const lastInsertRowid = lastInsert?.[0]?.values?.[0]?.[0] || 0;
+    return { changes: db.getRowsModified(), lastInsertRowid };
   }
 }
 
@@ -152,6 +169,7 @@ function dbRun(sql, params = []) {
 // REGISTRAR FALLO
 // ═══════════════════════════════════════════════════
 function registrarFallo(agente, error, contexto = {}) {
+  if (!isDbReady()) return null;
   try {
     const failureId = dbRun(`
       INSERT INTO agent_failures (agente, error_type, error_message, contexto, intento_numero)
@@ -165,7 +183,7 @@ function registrarFallo(agente, error, contexto = {}) {
 
     return failureId;
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error registrando fallo:", e.message);
+    console.error('[AUTO-REPAIR] Error registrando fallo:', e.message);
     return null;
   }
 }
@@ -174,6 +192,7 @@ function registrarFallo(agente, error, contexto = {}) {
 // REGISTRAR SOLUCIÓN
 // ═══════════════════════════════════════════════════
 function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
+  if (!isDbReady()) return false;
   try {
     dbRun(`
       INSERT INTO agent_solutions (failure_id, solucion, funciono, tiempo_ejecucion_ms)
@@ -189,7 +208,7 @@ function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
 
     return true;
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error registrando solución:", e.message);
+    console.error('[AUTO-REPAIR] Error registrando solución:', e.message);
     return false;
   }
 }
@@ -198,6 +217,7 @@ function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
 // OBTENER SOLUCIONES PREVIAS (AUTO-CORRECCIÓN)
 // ═══════════════════════════════════════════════════
 function obtenerSolucionesPrevias(agente, errorType) {
+  if (!isDbReady()) return [];
   try {
     const results = dbAll(`
       SELECT s.solucion, s.tiempo_ejecucion_ms, COUNT(*) as veces_usado,
@@ -217,7 +237,7 @@ function obtenerSolucionesPrevias(agente, errorType) {
 
     return results;
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error obteniendo soluciones:", e.message);
+    console.error('[AUTO-REPAIR] Error obteniendo soluciones:', e.message);
     return [];
   }
 }
@@ -226,6 +246,7 @@ function obtenerSolucionesPrevias(agente, errorType) {
 // VERIFICAR PATRÓN REPETITIVO
 // ═══════════════════════════════════════════════════
 function verificarPatronRepetitivo(agente, errorType) {
+  if (!isDbReady()) return;
   try {
     const count = dbGet(`
       SELECT COUNT(*) as count FROM agent_failures
@@ -246,7 +267,7 @@ function verificarPatronRepetitivo(agente, errorType) {
       `, [agente, errorType]);
     }
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error verificando patrón:", e.message);
+    console.error('[AUTO-REPAIR] Error verificando patrón:', e.message);
   }
 }
 
@@ -254,8 +275,9 @@ function verificarPatronRepetitivo(agente, errorType) {
 // APRENDER PATRÓN EXITOSO
 // ═══════════════════════════════════════════════════
 function aprenderPatronExitoso(failureId, solucion) {
+  if (!isDbReady()) return;
   try {
-    const failure = dbGet(`SELECT * FROM agent_failures WHERE id = ?`, [failureId]);
+    const failure = dbGet('SELECT * FROM agent_failures WHERE id = ?', [failureId]);
 
     if (failure) {
       dbRun(`
@@ -269,7 +291,7 @@ function aprenderPatronExitoso(failureId, solucion) {
       `, [failure.agente, failure.error_type, solucion]);
     }
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error aprendiendo patrón:", e.message);
+    console.error('[AUTO-REPAIR] Error aprendiendo patrón:', e.message);
   }
 }
 
@@ -277,6 +299,7 @@ function aprenderPatronExitoso(failureId, solucion) {
 // OBTENER PATRONES (para prevención)
 // ═══════════════════════════════════════════════════
 function obtenerPatrones(agente) {
+  if (!isDbReady()) return [];
   try {
     return dbAll(`
       SELECT patron, solucion_recomendada, frecuencia, exit_rate
@@ -286,7 +309,7 @@ function obtenerPatrones(agente) {
       LIMIT 10
     `, [agente]);
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error obteniendo patrones:", e.message);
+    console.error('[AUTO-REPAIR] Error obteniendo patrones:', e.message);
     return [];
   }
 }
@@ -295,18 +318,21 @@ function obtenerPatrones(agente) {
 // GUARDAR CONOCIMIENTO (aprendizaje permanente)
 // ═══════════════════════════════════════════════════
 function guardarConocimiento(agente, clave, valor, confianza = 1.0) {
+  if (!isDbReady()) return;
   try {
+    const storageKey = buildKnowledgeKey(agente, clave);
     dbRun(`
       INSERT INTO agent_knowledge (agente, clave, valor, confianza)
       VALUES (?, ?, ?, ?)
-      ON CONFLICT(agente, clave) DO UPDATE SET
+      ON CONFLICT(clave) DO UPDATE SET
+        agente = excluded.agente,
         valor = excluded.valor,
         confianza = excluded.confianza,
         veces_usado = veces_usado + 1,
         updated_at = datetime('now')
-    `, [agente, clave, JSON.stringify(valor), confianza]);
+    `, [agente, storageKey, JSON.stringify(valor), confianza]);
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error guardando conocimiento:", e.message);
+    console.error('[AUTO-REPAIR] Error guardando conocimiento:', e.message);
   }
 }
 
@@ -314,12 +340,14 @@ function guardarConocimiento(agente, clave, valor, confianza = 1.0) {
 // OBTENER CONOCIMIENTO
 // ═══════════════════════════════════════════════════
 function obtenerConocimiento(agente, clave) {
+  if (!isDbReady()) return null;
   try {
+    const storageKey = buildKnowledgeKey(agente, clave);
     const row = dbGet(`
       SELECT valor, confianza, veces_usado
       FROM agent_knowledge
       WHERE agente = ? AND clave = ? AND confianza > 0.7
-    `, [agente, clave]);
+    `, [agente, storageKey]);
 
     if (row) {
       // Incrementar veces_usado
@@ -328,7 +356,7 @@ function obtenerConocimiento(agente, clave) {
         SET veces_usado = veces_usado + 1,
             ultima_verificacion = datetime('now')
         WHERE agente = ? AND clave = ?
-      `, [agente, clave]);
+      `, [agente, storageKey]);
 
       return {
         ...row,
@@ -338,7 +366,7 @@ function obtenerConocimiento(agente, clave) {
 
     return null;
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error obteniendo conocimiento:", e.message);
+    console.error('[AUTO-REPAIR] Error obteniendo conocimiento:', e.message);
     return null;
   }
 }
@@ -368,7 +396,7 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
       const duracion = Date.now() - startTime;
 
       // Aprender que este camino funcionó
-      guardarConocimiento(agente, `ultimo_exito`, {
+      guardarConocimiento(agente, 'ultimo_exito', {
         contexto: Object.keys(contexto),
         duracion_promedio: duracion
       });
@@ -390,7 +418,7 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
         console.error(`[AUTO-REPAIR] ❌ ${agente}: Falló después de ${maxIntentos} intentos`);
 
         // Guardar conocimiento del fallo
-        guardarConocimiento(agente, `ultimo_fallo`, {
+        guardarConocimiento(agente, 'ultimo_fallo', {
           error: error.message,
           contexto: Object.keys(contexto),
           intento: maxIntentos
@@ -412,12 +440,13 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
 // ESTADÍSTICAS DE AUTO-REPARACIÓN
 // ═══════════════════════════════════════════════════
 function getEstadisticas() {
+  if (!isDbReady()) return null;
   try {
-    const fallosTotales = dbGet(`SELECT COUNT(*) as count FROM agent_failures`).count;
-    const solucionesTotales = dbGet(`SELECT COUNT(*) as count FROM agent_solutions`).count;
-    const solucionesExitosas = dbGet(`SELECT COUNT(*) as count FROM agent_solutions WHERE funciono = 1`).count;
-    const patrones = dbGet(`SELECT COUNT(*) as count FROM agent_patterns`).count;
-    const conocimiento = dbGet(`SELECT COUNT(*) as count FROM agent_knowledge`).count;
+    const fallosTotales = dbGet('SELECT COUNT(*) as count FROM agent_failures').count;
+    const solucionesTotales = dbGet('SELECT COUNT(*) as count FROM agent_solutions').count;
+    const solucionesExitosas = dbGet('SELECT COUNT(*) as count FROM agent_solutions WHERE funciono = 1').count;
+    const patrones = dbGet('SELECT COUNT(*) as count FROM agent_patterns').count;
+    const conocimiento = dbGet('SELECT COUNT(*) as count FROM agent_knowledge').count;
 
     const fallosPorAgente = dbAll(`
       SELECT agente, COUNT(*) as count,
@@ -442,7 +471,7 @@ function getEstadisticas() {
       fallos_por_agente: fallosPorAgente
     };
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error obteniendo estadísticas:", e.message);
+    console.error('[AUTO-REPAIR] Error obteniendo estadísticas:', e.message);
     return null;
   }
 }
@@ -451,6 +480,7 @@ function getEstadisticas() {
 // LIMPIEZA DE DATOS ANTIGUOS
 // ═══════════════════════════════════════════════════
 function limpiarDatosAntiguos(dias = 30) {
+  if (!isDbReady()) return null;
   try {
     const fallosEliminados = dbRun(`
       DELETE FROM agent_failures
@@ -469,7 +499,7 @@ function limpiarDatosAntiguos(dias = 30) {
       soluciones_eliminadas: solucionesEliminadas
     };
   } catch (e) {
-    console.error("[AUTO-REPAIR] Error en limpieza:", e.message);
+    console.error('[AUTO-REPAIR] Error en limpieza:', e.message);
     return null;
   }
 }

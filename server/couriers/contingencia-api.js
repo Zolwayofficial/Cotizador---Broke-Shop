@@ -70,6 +70,35 @@ const API_LIMITS = {
   }
 };
 
+const API_NAME_ALIASES = {
+  shippo: 'shippo',
+  'shippo (multi-courier)': 'shippo',
+  easypost: 'easypost',
+  'easypost (multi-courier)': 'easypost',
+  aftership: 'aftership',
+  'aftership (700+ couriers)': 'aftership',
+  'pack & send': 'packsend',
+  packsend: 'packsend',
+  'pack & send (15+ couriers)': 'packsend',
+  interparcel: 'interparcel',
+  'interparcel (25+ couriers)': 'interparcel',
+  'parcel monkey': 'parcelmonkey',
+  parcelmonkey: 'parcelmonkey',
+  'parcel monkey (unlimited)': 'parcelmonkey',
+  maersk: 'maersk',
+  'maersk spot api': 'maersk',
+  msc: 'msc',
+  'msc spot api': 'msc'
+};
+
+function resolveApiKey(api) {
+  const normalized = String(api || '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  return API_NAME_ALIASES[normalized] || (API_LIMITS[normalized] ? normalized : null);
+}
+
 // ═══════════════════════════════════════════════════
 // CLASE DE CONTINGENCIA
 // ═══════════════════════════════════════════════════
@@ -172,9 +201,9 @@ class ContingenciaAPI {
   // ═══════════════════════════════════════════════════
 
   registrarUso(api) {
-    const apiLower = api.toLowerCase();
+    const apiLower = resolveApiKey(api);
     
-    if (!this.uso[apiLower]) {
+    if (!apiLower || !this.uso[apiLower]) {
       console.warn(`[CONTINGENCIA] API ${api} no configurada`);
       return;
     }
@@ -229,10 +258,10 @@ class ContingenciaAPI {
   // ═══════════════════════════════════════════════════
 
   estaDisponible(api) {
-    const apiLower = api.toLowerCase();
+    const apiLower = resolveApiKey(api);
     
-    if (!this.uso[apiLower]) {
-      return false;
+    if (!apiLower || !this.uso[apiLower]) {
+      return true;
     }
     
     // APIs ilimitadas siempre disponibles
@@ -272,9 +301,9 @@ class ContingenciaAPI {
   // ═══════════════════════════════════════════════════
 
   resetearUso(api) {
-    const apiLower = api.toLowerCase();
+    const apiLower = resolveApiKey(api);
     
-    if (!this.uso[apiLower]) {
+    if (!apiLower || !this.uso[apiLower]) {
       return false;
     }
     
@@ -378,8 +407,10 @@ class ContingenciaAPI {
 const contingencia = new ContingenciaAPI();
 
 // Verificar resets cada hora
-setInterval(() => {
+const contingenciaResetInterval = setInterval(() => {
   contingencia.verificarResets();
 }, 3600000);
+
+contingenciaResetInterval.unref?.();
 
 module.exports = contingencia;

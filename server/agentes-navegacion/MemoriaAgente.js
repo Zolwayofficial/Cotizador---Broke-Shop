@@ -8,12 +8,16 @@
 // - Comparte conocimiento entre agentes
 // - Detecta anomalías automáticamente
 
-const path = require("path");
-const fs = require("fs");
+const path = require('path');
+const fs = require('fs');
 
-const DB_PATH = process.env.DB_PATH || "./data/cotizador.db";
+const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
 let db = null;
 let useBetterSqlite3 = false;
+
+function buildLearningKey(agente, clave) {
+  return `${agente}::${clave}`;
+}
 
 // ═══════════════════════════════════════════════════
 // INICIALIZACIÓN
@@ -24,28 +28,28 @@ async function init() {
 
   try {
     // Intentar con better-sqlite3
-    const Database = require("better-sqlite3");
+    const Database = require('better-sqlite3');
     db = new Database(DB_PATH);
-    db.pragma("journal_mode = WAL");
+    db.pragma('journal_mode = WAL');
     useBetterSqlite3 = true;
-    console.log("[MEMORIA AGENTE] ✅ better-sqlite3 cargado");
+    console.log('[MEMORIA AGENTE] ✅ better-sqlite3 cargado');
   } catch (e) {
     // Fallback a sql.js
     try {
-      const initSqlJs = require("sql.js");
+      const initSqlJs = require('sql.js');
       const SQL = await initSqlJs();
 
       if (fs.existsSync(DB_PATH)) {
         const fileBuffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(fileBuffer);
-        console.log("[MEMORIA AGENTE] ✅ sql.js cargado (DB existente)");
+        console.log('[MEMORIA AGENTE] ✅ sql.js cargado (DB existente)');
       } else {
         db = new SQL.Database();
-        console.log("[MEMORIA AGENTE] ✅ sql.js cargado (DB nueva)");
+        console.log('[MEMORIA AGENTE] ✅ sql.js cargado (DB nueva)');
       }
       useBetterSqlite3 = false;
     } catch (e2) {
-      console.error("[MEMORIA AGENTE] ❌ Error:", e2.message);
+      console.error('[MEMORIA AGENTE] ❌ Error:', e2.message);
       throw e2;
     }
   }
@@ -116,11 +120,11 @@ async function init() {
     )
   `);
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_exp_agente ON agente_experiencias(agente)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_exp_url ON agente_experiencias(url)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_aprendizajes_agente ON agente_aprendizajes(agente)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_patrones_agente ON agente_patrones(agente)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_alertas_leido ON agente_alertas(leido)`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_exp_agente ON agente_experiencias(agente)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_exp_url ON agente_experiencias(url)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_aprendizajes_agente ON agente_aprendizajes(agente)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_patrones_agente ON agente_patrones(agente)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_alertas_leido ON agente_alertas(leido)');
 
   try {
     db.exec(`
@@ -135,7 +139,7 @@ async function init() {
     // Ignorar error si las tablas no existen aún
   }
 
-  console.log("[MEMORIA AGENTE] ✅ Inicializada");
+  console.log('[MEMORIA AGENTE] ✅ Inicializada');
 }
 
 // ═══════════════════════════════════════════════════
@@ -172,8 +176,10 @@ function dbRun(sql, params = []) {
   if (useBetterSqlite3) {
     return db.prepare(sql).run(...params);
   } else {
-    db.exec(sql);
-    return { changes: db.getRowsModified() };
+    db.run(sql, params);
+    const lastInsert = db.exec('SELECT last_insert_rowid() AS id');
+    const lastInsertRowid = lastInsert?.[0]?.values?.[0]?.[0] || 0;
+    return { changes: db.getRowsModified(), lastInsertRowid };
   }
 }
 
@@ -192,7 +198,7 @@ class MemoriaAgente {
   guardarExperiencia(url, exito, tiempoMs, estrategia, error = null, htmlHash = null) {
     // Validar que this.agente esté definido
     if (!this.agente) {
-      console.error("[MEMORIA AGENTE] Error: agente no definido al guardar experiencia");
+      console.error('[MEMORIA AGENTE] Error: agente no definido al guardar experiencia');
       return;
     }
 
@@ -204,7 +210,7 @@ class MemoriaAgente {
     } catch (e) {
       // Si falla (ej: tablas no existen), ignorar silenciosamente
       // Esto puede pasar durante la inicialización
-      console.log(`[MEMORIA AGENTE] Info: Experiencia no guardada (tablas no listas)`);
+      console.log('[MEMORIA AGENTE] Info: Experiencia no guardada (tablas no listas)');
     }
 
     // Aprender de la experiencia
@@ -244,15 +250,16 @@ class MemoriaAgente {
   guardarAprendizaje(clave, valor, confianza = 1.0) {
     // Validar que this.agente esté definido
     if (!this.agente) {
-      console.error("[MEMORIA AGENTE] Error: agente no definido al guardar aprendizaje");
+      console.error('[MEMORIA AGENTE] Error: agente no definido al guardar aprendizaje');
       return;
     }
 
     try {
+      const storageKey = buildLearningKey(this.agente, clave);
       const existing = dbGet(`
         SELECT * FROM agente_aprendizajes
         WHERE agente = ? AND clave = ?
-      `, [this.agente, clave]);
+      `, [this.agente, storageKey]);
 
       if (existing) {
         dbRun(`
@@ -260,16 +267,16 @@ class MemoriaAgente {
           SET valor = ?, confianza = ?, veces_verificado = veces_verificado + 1,
               ultima_verificacion = datetime('now'), updated_at = datetime('now')
           WHERE agente = ? AND clave = ?
-        `, [valor, confianza, this.agente, clave]);
+        `, [JSON.stringify(valor), confianza, this.agente, storageKey]);
       } else {
         dbRun(`
           INSERT INTO agente_aprendizajes (agente, clave, valor, confianza)
           VALUES (?, ?, ?, ?)
-        `, [this.agente, clave, JSON.stringify(valor), confianza]);
+        `, [this.agente, storageKey, JSON.stringify(valor), confianza]);
       }
     } catch (e) {
       // Si falla (ej: tablas no existen), ignorar silenciosamente
-      console.log(`[MEMORIA AGENTE] Info: Aprendizaje no guardado (tablas no listas)`);
+      console.log('[MEMORIA AGENTE] Info: Aprendizaje no guardado (tablas no listas)');
     }
   }
 
@@ -277,11 +284,12 @@ class MemoriaAgente {
   // OBTENER APRENDIZAJE
   // ═══════════════════════════════════════════════════
   obtenerAprendizaje(clave) {
+    const storageKey = buildLearningKey(this.agente, clave);
     const row = dbGet(`
       SELECT valor, confianza, veces_verificado 
       FROM agente_aprendizajes 
       WHERE agente = ? AND clave = ? AND confianza > 0.7
-    `, [this.agente, clave]);
+    `, [this.agente, storageKey]);
 
     if (row) {
       return {
@@ -298,7 +306,7 @@ class MemoriaAgente {
   detectarPatron(patron, descripcion) {
     // Validar que this.agente esté definido
     if (!this.agente) {
-      console.error("[MEMORIA AGENTE] Error: agente no definido al detectar patrón");
+      console.error('[MEMORIA AGENTE] Error: agente no definido al detectar patrón');
       return;
     }
 
@@ -322,7 +330,7 @@ class MemoriaAgente {
       }
     } catch (e) {
       // Si falla (ej: tablas no existen), ignorar silenciosamente
-      console.log(`[MEMORIA AGENTE] Info: Patrón no guardado (tablas no listas)`);
+      console.log('[MEMORIA AGENTE] Info: Patrón no guardado (tablas no listas)');
     }
   }
 
@@ -344,7 +352,7 @@ class MemoriaAgente {
   enviarAlerta(tipo, mensaje, datos = {}, agenteDestino = null) {
     // Validar que this.agente esté definido
     if (!this.agente) {
-      console.error("[MEMORIA AGENTE] Error: agente no definido al enviar alerta");
+      console.error('[MEMORIA AGENTE] Error: agente no definido al enviar alerta');
       return;
     }
 

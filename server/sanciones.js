@@ -1,12 +1,12 @@
 // server/sanciones.js — Denied Party Screening (OFAC, ONU, UE)
 // Uses OpenSanctions.org free API to check if a party is sanctioned
-const https = require("https");
-const autoRepair = require("./auto-repair"); // Auto-corrección
+const https = require('https');
+const autoRepair = require('./auto-repair'); // Auto-corrección
 
-const OPENSANCTIONS_API = "https://api.opensanctions.org/match/default";
+const OPENSANCTIONS_API = 'https://api.opensanctions.org/match/default';
 // Free tier: 500 lookups/month. For more, get API key at opensanctions.org
 
-let _cache = {};
+const _cache = {};
 const CACHE_TTL = 86400000 * 7; // 7 days
 const CACHE_MAX = 500;
 
@@ -27,16 +27,16 @@ function httpsPost(url, body) {
     const data = JSON.stringify(body);
     const u = new URL(url);
     const req = https.request({
-      hostname: u.hostname, path: u.pathname, method: "POST",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+      hostname: u.hostname, path: u.pathname, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
       timeout: 15000,
     }, (res) => {
       const chunks = [];
-      res.on("data", c => chunks.push(c));
-      res.on("end", () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
     });
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("Timeout")); });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
     req.write(data);
     req.end();
   });
@@ -45,16 +45,16 @@ function httpsPost(url, body) {
 // Screen a company or person against sanctions lists (CON AUTO-REPAIR)
 async function verificar(nombre, pais, tipo) {
   return await autoRepair.ejecutarConAutoReparacion(
-    "sanciones",
+    'sanciones',
     async () => {
-      if (!nombre || nombre.length < 3) return { error: "Nombre muy corto" };
+      if (!nombre || nombre.length < 3) return { error: 'Nombre muy corto' };
 
-      const cacheKey = `${nombre}:${pais || ""}`.toLowerCase();
+      const cacheKey = `${nombre}:${pais || ''}`.toLowerCase();
       if (_cache[cacheKey] && Date.now() - _cache[cacheKey].ts < CACHE_TTL) return _cache[cacheKey].data;
 
       try {
         const query = {
-          schema: tipo === "persona" ? "Person" : "Company",
+          schema: tipo === 'persona' ? 'Person' : 'Company',
           properties: {
             name: [nombre],
             ...(pais ? { country: [pais] } : {}),
@@ -63,7 +63,7 @@ async function verificar(nombre, pais, tipo) {
 
         const resp = await httpsPost(OPENSANCTIONS_API, query);
         if (!resp || !resp.responses) {
-          return { verificado: false, error: "API no disponible", fallback: true };
+          return { verificado: false, error: 'API no disponible', fallback: true };
         }
 
         const matches = (resp.responses || [])
@@ -72,9 +72,9 @@ async function verificar(nombre, pais, tipo) {
             nombre: r.caption,
             score: r.score,
             listas: r.datasets || [],
-            pais: r.properties?.country?.[0] || "—",
+            pais: r.properties?.country?.[0] || '—',
             tipo: r.schema,
-            motivo: r.properties?.notes?.[0] || r.properties?.summary?.[0] || "—",
+            motivo: r.properties?.notes?.[0] || r.properties?.summary?.[0] || '—',
           }));
 
         const result = {
@@ -84,18 +84,18 @@ async function verificar(nombre, pais, tipo) {
           pais: pais || null,
           enListaNegra: matches.length > 0,
           matches,
-          riesgo: matches.length === 0 ? "limpio" : matches.some(m => m.score > 0.9) ? "alto" : "medio",
+          riesgo: matches.length === 0 ? 'limpio' : matches.some(m => m.score > 0.9) ? 'alto' : 'medio',
           mensaje: matches.length === 0
-            ? "✅ No se encontraron coincidencias en listas de sanciones internacionales."
+            ? '✅ No se encontraron coincidencias en listas de sanciones internacionales.'
             : `🔴 ${matches.length} coincidencia(s) en listas de sanciones. NO proceder sin verificación legal.`,
-          fuentes: "OpenSanctions (OFAC SDN, ONU, UE, UK, y 30+ listas)",
+          fuentes: 'OpenSanctions (OFAC SDN, ONU, UE, UK, y 30+ listas)',
         };
 
         _cache[cacheKey] = { data: result, ts: Date.now() };
         pruneCache();
         return result;
       } catch (e) {
-        return { verificado: false, error: e.message, mensaje: "⚠ No se pudo verificar. Verificar manualmente en sanctionssearch.ofac.treas.gov" };
+        return { verificado: false, error: e.message, mensaje: '⚠ No se pudo verificar. Verificar manualmente en sanctionssearch.ofac.treas.gov' };
       }
     },
     { nombre, pais, tipo }
@@ -104,12 +104,12 @@ async function verificar(nombre, pais, tipo) {
 
 // Quick check for a supplier name
 async function verificarProveedor(nombre, pais) {
-  return verificar(nombre, pais, "empresa");
+  return verificar(nombre, pais, 'empresa');
 }
 
 // Quick check for an importer
 async function verificarImportador(nombre, pais) {
-  return verificar(nombre, pais || "PE", "empresa");
+  return verificar(nombre, pais || 'PE', 'empresa');
 }
 
 module.exports = { verificar, verificarProveedor, verificarImportador };

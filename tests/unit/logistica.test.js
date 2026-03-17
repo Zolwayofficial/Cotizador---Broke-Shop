@@ -43,6 +43,16 @@ describe('Integrador Logística', () => {
       expect(integrador.navieras.length).toBeGreaterThan(0);
     });
 
+    it('debería conservar navieras API sin convertirlas a manuales', () => {
+      const integrador = new integradorLogistica.IntegradorLogistica();
+      const maersk = new integradorLogistica.MaerskNaviera('token-demo');
+
+      integrador.agregarNaviera(maersk);
+
+      expect(integrador.navieras[0]).toBe(maersk);
+      expect(integrador.navieras[0] instanceof integradorLogistica.MaerskNaviera).toBe(true);
+    });
+
     it('debería listar empresas', () => {
       const integrador = new integradorLogistica.IntegradorLogistica();
       const empresas = integrador.listarEmpresas();
@@ -74,6 +84,26 @@ describe('Integrador Logística', () => {
       expect(Array.isArray(cotizaciones)).toBe(true);
       expect(cotizaciones.length).toBeGreaterThan(0);
       expect(cotizaciones[0].precio).toBeGreaterThan(0);
+    });
+
+    it('debería usarse en cotizarTodo sin caer al fallback por contingencia', async () => {
+      const integrador = new integradorLogistica.IntegradorLogistica();
+
+      integrador.agregarCourierPersonalizado({
+        nombre: 'DHL Directo (Contrato)',
+        tarifas: { base: 10, porKg: 5, minimo: 20 }
+      });
+
+      const resultado = await integrador.cotizarTodo({
+        origen: 'CN',
+        destino: 'PE',
+        tipo: 'aereo',
+        peso: 10,
+        valor: 1000
+      });
+
+      expect(resultado.couriers[0].courier).toBe('DHL Directo (Contrato)');
+      expect(resultado.mejorOpcion.courier).toBe('DHL Directo (Contrato)');
     });
   });
 

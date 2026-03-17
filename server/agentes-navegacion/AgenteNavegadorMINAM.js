@@ -9,8 +9,7 @@
 // - Alertas de restricciones ambientales
 // - Detecta sustancias controladas
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorMINAM {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorMINAM {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_ambiental_${producto}`);
     if (aprendizaje) {
-      console.log(`🧠 MINAM: Usando aprendizaje previo`);
+      console.log('🧠 MINAM: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 

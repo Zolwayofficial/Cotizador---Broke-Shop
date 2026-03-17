@@ -9,8 +9,7 @@
 // - Alertas de restricciones pesqueras
 // - Detecta sustancias fiscalizadas
 
-const https = require("https");
-const { MemoriaAgente } = require("./MemoriaAgente");
+const { MemoriaAgente } = require('./MemoriaAgente');
 
 class AgenteNavegadorPRODUCE {
   constructor() {
@@ -39,7 +38,7 @@ class AgenteNavegadorPRODUCE {
     // Verificar aprendizaje previo
     const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_pesca_${producto}`);
     if (aprendizaje) {
-      console.log(`🧠 PRODUCE: Usando aprendizaje previo`);
+      console.log('🧠 PRODUCE: Usando aprendizaje previo');
       return aprendizaje.valor;
     }
 
