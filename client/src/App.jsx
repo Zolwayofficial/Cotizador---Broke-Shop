@@ -163,6 +163,17 @@ const DASHBOARD_CHART_COLORS = [
   '#f6bd60'
 ]
 
+const DASHBOARD_SERIES_MARKERS = [
+  'solid',
+  'split',
+  'ring',
+  'diagonal',
+  'diamond',
+  'stripe',
+  'square',
+  'dot'
+]
+
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
@@ -209,6 +220,14 @@ function defaultDashboardScopeFor(role) {
 
 function chartColor(index) {
   return DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length]
+}
+
+function chartSeriesMarker(index) {
+  return DASHBOARD_SERIES_MARKERS[index % DASHBOARD_SERIES_MARKERS.length]
+}
+
+function chartSeriesBadge(index) {
+  return String(index + 1).padStart(2, '0')
 }
 
 function formatPercent(value) {
@@ -393,12 +412,17 @@ function DashboardDonutChart({ title, data, valueKey, labelKey }) {
           {items.map((item, index) => {
             const value = toNumber(item[valueKey])
             const percent = total > 0 ? (value / total) * 100 : 0
+            const marker = chartSeriesMarker(index)
             return (
               <div key={`${item[labelKey]}-${index}`} className="legend-row">
-                <span className="legend-swatch" style={{ background: chartColor(index) }} />
+                <span className="legend-index">{chartSeriesBadge(index)}</span>
+                <span
+                  className={`legend-swatch legend-swatch-${marker}`}
+                  style={{ '--series-color': chartColor(index) }}
+                />
                 <div className="legend-copy">
                   <strong>{item[labelKey]}</strong>
-                  <span>{value} · {formatPercent(percent)}</span>
+                  <span className="legend-value">{value} · {formatPercent(percent)}</span>
                 </div>
               </div>
             )
@@ -426,10 +450,19 @@ function DashboardBarChart({ title, data, valueKey, labelKey }) {
         {items.map((item, index) => {
           const value = toNumber(item[valueKey])
           const width = `${(value / maxValue) * 100}%`
+          const marker = chartSeriesMarker(index)
           return (
             <div key={`${item[labelKey]}-${index}`} className="bar-chart-row">
               <div className="bar-chart-copy">
-                <strong>{item[labelKey]}</strong>
+                <div className="bar-chart-label-group">
+                  <span
+                    className={`bar-chart-index bar-chart-index-${marker}`}
+                    style={{ '--series-color': chartColor(index) }}
+                  >
+                    {chartSeriesBadge(index)}
+                  </span>
+                  <strong>{item[labelKey]}</strong>
+                </div>
                 <span>{value}</span>
               </div>
               <div className="bar-chart-track">
@@ -728,13 +761,13 @@ function App() {
   const isAdmin = currentUser?.role === 'admin'
   const heroContent = isAdmin
     ? {
-        title: 'Cotiza con precision, valida requisitos y dirige tu operacion con mas claridad.',
+        title: 'Cotiza con precision, valida requisitos y toma decisiones de importacion con mas claridad.',
         text:
-          'El chat sigue siendo el centro operativo, pero ahora tu comunidad trabaja con acceso controlado, historial real y una vista secundaria para monitorear actividad.',
+          'Tu workspace reune cotizacion guiada, historial real y un panel claro para seguir la actividad de tu comunidad sin perder el foco operativo.',
         railA: {
-          label: 'Operacion privada',
-          title: 'Control total de acceso',
-          text: 'Apruebas, suspendes y acompanias a tu comunidad sin sacar el foco de la cotizacion.'
+          label: 'Operacion coordinada',
+          title: 'Control sin friccion',
+          text: 'Gestionas accesos, acompanias a tus miembros y sigues el avance de la comunidad desde la misma vista.'
         },
         railB: {
           label: 'Tu ventaja',
@@ -742,9 +775,9 @@ function App() {
           text: 'Cotizacion guiada, precision por componente y un panel real para seguir la operacion.'
         },
         status: {
-          label: 'Acceso',
-          title: 'Solo miembros aprobados',
-          text: 'El ingreso queda reservado a personas que habilitas directamente desde tu comunidad.'
+          label: 'Visibilidad',
+          title: 'Comunidad + actividad propia',
+          text: 'Alternas entre la vista de comunidad y tu actividad para detectar movimiento, vacios y oportunidades mas rapido.'
         }
       }
     : {
@@ -1498,7 +1531,7 @@ function App() {
                 <div className="document-intake-head">
                   <div>
                     <p className="panel-kicker">Documento del proveedor</p>
-                    <h3>Sube la cotizacion del chino</h3>
+                    <h3>Sube la cotizacion del proveedor</h3>
                     <p>PDF, DOCX, XLSX, CSV o imagen. Si tienes valores reales, puedes corregirlos antes de calcular.</p>
                   </div>
 
