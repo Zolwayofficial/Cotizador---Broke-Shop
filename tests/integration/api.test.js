@@ -347,8 +347,75 @@ describe('API REST Integration Tests', () => {
     });
   });
 
+  describe('Memoria y operaciones sensibles', () => {
+    it('deberia exigir auth para memoria y bloquear acceso cruzado entre usuarios', async () => {
+      const unauth = await request(app).get('/api/memoria/cotizaciones');
+      expect(unauth.status).toBe(401);
+
+      const userA = await createUser(Date.now());
+      const userB = await createUser(Date.now() + 1);
+
+      const saveContext = await request(app)
+        .post('/api/memoria/contexto')
+        .set('Authorization', `Bearer ${userA.token}`)
+        .send({
+          usuario_id: userA.id,
+          tipo_importador: 'general',
+          margen_preferido: 32,
+          canal_preferido: 'AEREO',
+          pais_preferido: 'CN',
+        });
+
+      expect(saveContext.status).toBe(200);
+
+      const ownContext = await request(app)
+        .get(`/api/memoria/contexto/${userA.id}`)
+        .set('Authorization', `Bearer ${userA.token}`);
+
+      expect(ownContext.status).toBe(200);
+      expect(ownContext.body.tipo_importador).toBe('general');
+
+      const crossContext = await request(app)
+        .get(`/api/memoria/contexto/${userA.id}`)
+        .set('Authorization', `Bearer ${userB.token}`);
+
+      expect(crossContext.status).toBe(403);
+      expect(crossContext.body.error).toMatch(/otro usuario/i);
+    });
+
+    it('deberia reservar auto-repair y reset logistica para admin', async () => {
+      const admin = await createAdmin(Date.now());
+      const member = await createUser(Date.now() + 1);
+
+      const memberStats = await request(app)
+        .get('/api/auto-repair/stats')
+        .set('Authorization', `Bearer ${member.token}`);
+
+      expect(memberStats.status).toBe(403);
+
+      const adminStats = await request(app)
+        .get('/api/auto-repair/stats')
+        .set('Authorization', `Bearer ${admin.token}`);
+
+      expect(adminStats.status).toBe(200);
+
+      const memberReset = await request(app)
+        .post('/api/logistica/reset/shippo')
+        .set('Authorization', `Bearer ${member.token}`);
+
+      expect(memberReset.status).toBe(403);
+
+      const adminReset = await request(app)
+        .post('/api/logistica/reset/shippo')
+        .set('Authorization', `Bearer ${admin.token}`);
+
+      expect(adminReset.status).toBe(200);
+      expect(adminReset.body.ok).toBeDefined();
+    });
+  });
+
   describe('POST /api/agente/calcular', () => {
-    it('deberia calcular una cotizacion simple sin romper el rate limiter', async () => {
+    it('deberia exigir autenticacion para cotizar', async () => {
       const response = await request(app)
         .post('/api/agente/calcular')
         .send({
@@ -361,9 +428,7 @@ describe('API REST Integration Tests', () => {
           moneda: 'USD',
         });
 
-      expect(response.status).toBe(200);
-      expect(response.body.exito).toBe(true);
-      expect(response.body.totales.totalReal).toBeGreaterThan(0);
+      expect(response.status).toBe(401);
     });
 
     it('deberia guardar la cotizacion autenticada y reflejarla en el dashboard', async () => {
@@ -401,8 +466,10 @@ describe('API REST Integration Tests', () => {
     });
 
     it('deberia aceptar el caso benchmark avanzado sin romper compatibilidad', async () => {
+      const user = await createUser(Date.now());
       const response = await request(app)
         .post('/api/agente/calcular')
+        .set('Authorization', `Bearer ${user.token}`)
         .send(benchmarkCase);
 
       expect(response.status).toBe(200);
@@ -418,12 +485,16 @@ describe('API REST Integration Tests', () => {
 
   describe('POST /api/agente-0/chat', () => {
     it('deberia seguir el nuevo arbol sin perder el producto al responder opciones', async () => {
-      const inicio = await request(app).post('/api/agente-0/iniciar');
+      const user = await createUser(Date.now());
+      const inicio = await request(app)
+        .post('/api/agente-0/iniciar')
+        .set('Authorization', `Bearer ${user.token}`);
       expect(inicio.status).toBe(200);
       expect(inicio.body.paso).toBe('productos');
 
       const productos = await request(app)
         .post('/api/agente-0/chat')
+        .set('Authorization', `Bearer ${user.token}`)
         .send({
           mensaje: '500 camisetas de algodon',
           contexto: inicio.body.contexto,
@@ -434,6 +505,7 @@ describe('API REST Integration Tests', () => {
 
       const pais = await request(app)
         .post('/api/agente-0/chat')
+        .set('Authorization', `Bearer ${user.token}`)
         .send({
           mensaje: 'China',
           contexto: productos.body.contexto,
@@ -444,6 +516,7 @@ describe('API REST Integration Tests', () => {
 
       const sujeto = await request(app)
         .post('/api/agente-0/chat')
+        .set('Authorization', `Bearer ${user.token}`)
         .send({
           mensaje: 'Empresa',
           contexto: pais.body.contexto,
@@ -454,6 +527,7 @@ describe('API REST Integration Tests', () => {
 
       const canal = await request(app)
         .post('/api/agente-0/chat')
+        .set('Authorization', `Bearer ${user.token}`)
         .send({
           mensaje: 'Aereo',
           contexto: sujeto.body.contexto,
@@ -468,8 +542,10 @@ describe('API REST Integration Tests', () => {
 
   describe('Carga de documentos', () => {
     it('deberia responder 422 para .doc legacy en vez de 500', async () => {
+      const user = await createUser(Date.now());
       const response = await request(app)
         .post('/api/auto-cotizar/extraer')
+        .set('Authorization', `Bearer ${user.token}`)
         .attach('file', Buffer.from('legacy doc'), {
           filename: 'proveedor.doc',
           contentType: 'application/msword',
@@ -495,7 +571,10 @@ describe('API REST Integration Tests', () => {
 
   describe('GET /api/logistica/empresas', () => {
     it('deberia retornar empresas configuradas', async () => {
-      const response = await request(app).get('/api/logistica/empresas');
+      const user = await createUser(Date.now());
+      const response = await request(app)
+        .get('/api/logistica/empresas')
+        .set('Authorization', `Bearer ${user.token}`);
 
       expect(response.status).toBe(200);
       expect(response.body.couriers).toBeDefined();
@@ -505,7 +584,10 @@ describe('API REST Integration Tests', () => {
 
   describe('GET /api/logistica/contingencia', () => {
     it('deberia retornar estado de contingencia', async () => {
-      const response = await request(app).get('/api/logistica/contingencia');
+      const admin = await createAdmin(Date.now());
+      const response = await request(app)
+        .get('/api/logistica/contingencia')
+        .set('Authorization', `Bearer ${admin.token}`);
 
       expect(response.status).toBe(200);
       expect(response.body.total_usos).toBeDefined();
@@ -514,6 +596,7 @@ describe('API REST Integration Tests', () => {
 
   describe('POST /api/logistica/cotizar', () => {
     it('deberia cotizar con todos los couriers', async () => {
+      const user = await createUser(Date.now());
       const datos = {
         origen: 'US',
         destino: 'PE',
@@ -524,6 +607,7 @@ describe('API REST Integration Tests', () => {
 
       const response = await request(app)
         .post('/api/logistica/cotizar')
+        .set('Authorization', `Bearer ${user.token}`)
         .send(datos);
 
       expect(response.status).toBe(200);
@@ -532,8 +616,10 @@ describe('API REST Integration Tests', () => {
     });
 
     it('deberia retornar error sin datos requeridos', async () => {
+      const user = await createUser(Date.now());
       const response = await request(app)
         .post('/api/logistica/cotizar')
+        .set('Authorization', `Bearer ${user.token}`)
         .send({});
 
       expect(response.status).toBe(400);

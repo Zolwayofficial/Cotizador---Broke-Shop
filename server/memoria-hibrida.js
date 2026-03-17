@@ -1,186 +1,379 @@
-// server/memoria-hibrida.js — Memoria HÍBRIDA simplificada (CON AUTO-REPAIR)
-// 
-// 3 Tipos de Memoria:
-// 1. ESTRUCTURAL (SQLite) — Datos de cotizaciones
-// 2. SEMÁNTICA (Embeddings ML) — Búsqueda semántica
-// 3. CONTEXTO (SQLite) — Preferencias de usuario
-//
-// CON AUTO-REPAIR: Aprende de fallos y se auto-corrige
+// server/memoria-hibrida.js - Memoria hibrida para cotizaciones y contexto
 
-const path = require('path');
-const fs = require('fs');
+const db = require('./db');
 const autoRepair = require('./auto-repair');
 
-const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
-let db = null;
-let useBetterSqlite3 = false;
-
-// ═══════════════════════════════════════════════════
-// INICIALIZACIÓN (con fallback a sql.js)
-// ═══════════════════════════════════════════════════
-async function init() {
-  const dir = path.dirname(DB_PATH);
-  fs.mkdirSync(dir, { recursive: true });
-
+function parseJson(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
   try {
-    const Database = require('better-sqlite3');
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    useBetterSqlite3 = true;
-    console.log('[MEMORIA] ✅ better-sqlite3 cargado');
-  } catch (e) {
-    try {
-      const initSqlJs = require('sql.js');
-      const SQL = await initSqlJs();
-
-      if (fs.existsSync(DB_PATH)) {
-        const fileBuffer = fs.readFileSync(DB_PATH);
-        db = new SQL.Database(fileBuffer);
-        console.log('[MEMORIA] ✅ sql.js cargado (DB existente)');
-      } else {
-        db = new SQL.Database();
-        console.log('[MEMORIA] ✅ sql.js cargado (DB nueva)');
-      }
-      useBetterSqlite3 = false;
-    } catch (e2) {
-      console.error('[MEMORIA] ❌ Error:', e2.message);
-    }
-  }
-
-  // Crear tablas
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS memoria_cotizaciones (
-      id TEXT PRIMARY KEY,
-      usuario_id TEXT,
-      ip TEXT,
-      productos JSON,
-      pais_origen TEXT,
-      canal TEXT,
-      incoterm TEXT,
-      total_landed REAL,
-      fob_total REAL,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_cot_usuario ON memoria_cotizaciones(usuario_id);
-    CREATE INDEX IF NOT EXISTS idx_cot_pais ON memoria_cotizaciones(pais_origen);
-
-    CREATE TABLE IF NOT EXISTS memoria_documentos (
-      id TEXT PRIMARY KEY,
-      producto TEXT,
-      descripcion TEXT,
-      hs_code TEXT,
-      embedding_json JSON,
-      metadata JSON,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_doc_producto ON memoria_documentos(producto);
-
-    CREATE TABLE IF NOT EXISTS memoria_contexto (
-      usuario_id TEXT PRIMARY KEY,
-      tipo_importador TEXT,
-      margen_preferido REAL DEFAULT 30,
-      canal_preferido TEXT,
-      pais_preferido TEXT,
-      incoterm_preferido TEXT,
-      productos_frecuentes JSON,
-      veces_uso INTEGER DEFAULT 1,
-      last_used TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS memoria_aprendizajes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tipo TEXT,
-      dato TEXT,
-      valor REAL DEFAULT 0,
-      frecuencia INTEGER DEFAULT 1,
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_aprendizajes_tipo ON memoria_aprendizajes(tipo);
-
-    console.log("[MEMORIA] ✅ Tablas creadas");
-  `);
-
-  // Auto-guardado para sql.js
-  if (!useBetterSqlite3) {
-    const memoriaAutosaveInterval = setInterval(() => {
-      try {
-        const data = db.export();
-        fs.writeFileSync(DB_PATH, Buffer.from(data));
-      } catch (e) {
-        console.error('[MEMORIA] Error guardando:', e.message);
-      }
-    }, 60000);
-    memoriaAutosaveInterval.unref?.();
+    return JSON.parse(value);
+  } catch (_error) {
+    return fallback;
   }
 }
 
-// ═══════════════════════════════════════════════════
-// CLASE MemoriaHibrida (wrapper)
-// ═══════════════════════════════════════════════════
+function normalizeText(value) {
+  return String(value || '').trim();
+}
+
+function createCotizacionId() {
+  return `cot_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 class MemoriaHibrida {
   constructor() {
-    this.vecDisponible = false; // sqlite-vec no disponible con sql.js
+    this.vecDisponible = false;
+    this.initialized = false;
   }
 
   async init() {
-    await init();
+    if (this.initialized) return;
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memoria_cotizaciones (
+        id TEXT PRIMARY KEY,
+        usuario_id TEXT,
+        ip TEXT,
+        productos TEXT,
+        pais_origen TEXT,
+        canal TEXT,
+        incoterm TEXT,
+        total_landed REAL,
+        fob_total REAL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_cot_usuario ON memoria_cotizaciones(usuario_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_cot_pais ON memoria_cotizaciones(pais_origen)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_cot_canal ON memoria_cotizaciones(canal)');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memoria_documentos (
+        id TEXT PRIMARY KEY,
+        producto TEXT,
+        descripcion TEXT,
+        hs_code TEXT,
+        embedding_json TEXT,
+        metadata TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_doc_producto ON memoria_documentos(producto)');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memoria_contexto (
+        usuario_id TEXT PRIMARY KEY,
+        tipo_importador TEXT,
+        margen_preferido REAL DEFAULT 30,
+        canal_preferido TEXT,
+        pais_preferido TEXT,
+        incoterm_preferido TEXT,
+        productos_frecuentes TEXT,
+        veces_uso INTEGER DEFAULT 1,
+        last_used TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memoria_aprendizajes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT,
+        dato TEXT,
+        valor REAL DEFAULT 0,
+        frecuencia INTEGER DEFAULT 1,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_aprendizajes_tipo ON memoria_aprendizajes(tipo)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_aprendizajes_tipo_dato ON memoria_aprendizajes(tipo, dato)');
+
+    this.initialized = true;
+    console.log('[MEMORIA] Tablas listas');
+  }
+
+  registrarAprendizaje(tipo, dato, incremento = 1) {
+    const normalizedTipo = normalizeText(tipo);
+    const normalizedDato = normalizeText(dato);
+
+    if (!normalizedTipo || !normalizedDato) return;
+
+    const existing = db.get(
+      'SELECT id, frecuencia, valor FROM memoria_aprendizajes WHERE tipo = ? AND dato = ?',
+      [normalizedTipo, normalizedDato]
+    );
+
+    if (existing) {
+      db.run(
+        'UPDATE memoria_aprendizajes SET frecuencia = ?, valor = ?, updated_at = datetime(\'now\') WHERE id = ?',
+        [Number(existing.frecuencia || 0) + incremento, Number(existing.valor || 0) + incremento, existing.id]
+      );
+      return;
+    }
+
+    db.run(
+      'INSERT INTO memoria_aprendizajes (tipo, dato, valor, frecuencia) VALUES (?, ?, ?, ?)',
+      [normalizedTipo, normalizedDato, incremento, incremento]
+    );
   }
 
   guardarCotizacion(data) {
     return autoRepair.ejecutarConAutoReparacion(
       'memoria-hibrida',
       () => {
-        const id = `cot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        db.prepare(`
-          INSERT INTO memoria_cotizaciones (id, usuario_id, ip, productos, pais_origen, canal, incoterm, total_landed, fob_total)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          id, data.usuario_id || 'anon', data.ip,
-          JSON.stringify(data.productos || []), data.pais_origen,
-          data.canal, data.incoterm, data.total_landed, data.fob_total
+        const id = createCotizacionId();
+        const productos = Array.isArray(data.productos) ? data.productos : [];
+
+        db.run(
+          `
+            INSERT INTO memoria_cotizaciones
+            (id, usuario_id, ip, productos, pais_origen, canal, incoterm, total_landed, fob_total)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            id,
+            data.usuario_id || 'anon',
+            data.ip || '',
+            JSON.stringify(productos),
+            data.pais_origen || '',
+            data.canal || '',
+            data.incoterm || '',
+            Number(data.total_landed || 0),
+            Number(data.fob_total || 0),
+          ]
         );
+
+        if (data.pais_origen) this.registrarAprendizaje('pais_origen', data.pais_origen);
+        if (data.canal) this.registrarAprendizaje('canal', data.canal);
+        if (data.incoterm) this.registrarAprendizaje('incoterm', data.incoterm);
+
+        for (const producto of productos) {
+          const nombre = normalizeText(producto?.producto || producto?.desc || producto?.descripcion || producto);
+          if (nombre) this.registrarAprendizaje('producto', nombre);
+        }
+
         return { id, tipo: 'estructural' };
       },
       data
     );
   }
 
-  buscarCotizaciones(filtros) {
+  buscarCotizaciones(filtros = {}) {
     let query = 'SELECT * FROM memoria_cotizaciones WHERE 1=1';
     const params = [];
-    if (filtros.usuario_id) { query += ' AND usuario_id = ?'; params.push(filtros.usuario_id); }
-    if (filtros.pais_origen) { query += ' AND pais_origen = ?'; params.push(filtros.pais_origen); }
-    query += ' ORDER BY created_at DESC LIMIT ?'; params.push(filtros.limite || 50);
 
-    const stmt = db.prepare(query);
-    const results = params.length > 0 ? stmt.all(...params) : stmt.all();
-    return results.map(r => ({ ...r, productos: JSON.parse(r.productos || '[]') }));
+    if (filtros.usuario_id) {
+      query += ' AND usuario_id = ?';
+      params.push(filtros.usuario_id);
+    }
+    if (filtros.pais_origen) {
+      query += ' AND pais_origen = ?';
+      params.push(filtros.pais_origen);
+    }
+    if (filtros.canal) {
+      query += ' AND canal = ?';
+      params.push(filtros.canal);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(Number(filtros.limite || 50));
+
+    return db.all(query, params).map((row) => ({
+      ...row,
+      productos: parseJson(row.productos, []),
+    }));
+  }
+
+  buscarDocumentos(query, topK = 5) {
+    const normalizedQuery = normalizeText(query).toLowerCase();
+    if (!normalizedQuery) return [];
+
+    const like = `%${normalizedQuery}%`;
+    const rows = db.all(
+      `
+        SELECT *
+        FROM memoria_documentos
+        WHERE lower(COALESCE(producto, '')) LIKE ?
+           OR lower(COALESCE(descripcion, '')) LIKE ?
+           OR lower(COALESCE(hs_code, '')) LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `,
+      [like, like, like, Number(topK || 5)]
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      metadata: parseJson(row.metadata, {}),
+      embedding_json: parseJson(row.embedding_json, []),
+    }));
   }
 
   guardarContexto(data) {
-    if (!data.usuario_id) return { error: 'usuario_id requerido' };
-    const existing = db.prepare('SELECT * FROM memoria_contexto WHERE usuario_id = ?').get(data.usuario_id);
-    if (existing) {
-      db.prepare('UPDATE memoria_contexto SET tipo_importador = COALESCE(?, tipo_importador), margen_preferido = COALESCE(?, margen_preferido), veces_uso = veces_uso + 1, last_used = datetime(\'now\') WHERE usuario_id = ?')
-        .run(data.tipo_importador, data.margen_preferido, data.usuario_id);
-    } else {
-      db.prepare('INSERT INTO memoria_contexto (usuario_id, tipo_importador, margen_preferido) VALUES (?, ?, ?)')
-        .run(data.usuario_id, data.tipo_importador, data.margen_preferido);
+    const usuarioId = normalizeText(data.usuario_id);
+    if (!usuarioId) {
+      return { error: 'usuario_id requerido' };
     }
-    return { usuario_id: data.usuario_id, tipo: 'contexto' };
+
+    const existing = db.get('SELECT * FROM memoria_contexto WHERE usuario_id = ?', [usuarioId]);
+    const productosFrecuentes = JSON.stringify(data.productos_frecuentes || parseJson(existing?.productos_frecuentes, []));
+
+    if (existing) {
+      db.run(
+        `
+          UPDATE memoria_contexto
+          SET tipo_importador = COALESCE(?, tipo_importador),
+              margen_preferido = COALESCE(?, margen_preferido),
+              canal_preferido = COALESCE(?, canal_preferido),
+              pais_preferido = COALESCE(?, pais_preferido),
+              incoterm_preferido = COALESCE(?, incoterm_preferido),
+              productos_frecuentes = ?,
+              veces_uso = veces_uso + 1,
+              last_used = datetime('now')
+          WHERE usuario_id = ?
+        `,
+        [
+          data.tipo_importador ?? null,
+          data.margen_preferido ?? null,
+          data.canal_preferido ?? null,
+          data.pais_preferido ?? null,
+          data.incoterm_preferido ?? null,
+          productosFrecuentes,
+          usuarioId,
+        ]
+      );
+    } else {
+      db.run(
+        `
+          INSERT INTO memoria_contexto
+          (usuario_id, tipo_importador, margen_preferido, canal_preferido, pais_preferido, incoterm_preferido, productos_frecuentes)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          usuarioId,
+          data.tipo_importador || '',
+          data.margen_preferido ?? 30,
+          data.canal_preferido || '',
+          data.pais_preferido || '',
+          data.incoterm_preferido || '',
+          productosFrecuentes,
+        ]
+      );
+    }
+
+    return { usuario_id: usuarioId, tipo: 'contexto' };
   }
 
-  obtenerContexto(usuario_id) {
-    return db.prepare('SELECT * FROM memoria_contexto WHERE usuario_id = ?').get(usuario_id);
+  obtenerContexto(usuarioId) {
+    const contexto = db.get('SELECT * FROM memoria_contexto WHERE usuario_id = ?', [usuarioId]);
+    if (!contexto) return null;
+
+    return {
+      ...contexto,
+      productos_frecuentes: parseJson(contexto.productos_frecuentes, []),
+    };
+  }
+
+  obtenerSugerencias(usuarioId) {
+    const sugerencias = [];
+    const contexto = this.obtenerContexto(usuarioId);
+
+    if (contexto?.pais_preferido) {
+      sugerencias.push({
+        tipo: 'pais',
+        valor: contexto.pais_preferido,
+        razon: 'pais_preferido',
+      });
+    }
+
+    if (contexto?.canal_preferido) {
+      sugerencias.push({
+        tipo: 'canal',
+        valor: contexto.canal_preferido,
+        razon: 'canal_preferido',
+      });
+    }
+
+    const productos = db.all(
+      `
+        SELECT dato, frecuencia
+        FROM memoria_aprendizajes
+        WHERE tipo = 'producto'
+        ORDER BY frecuencia DESC, updated_at DESC
+        LIMIT 5
+      `
+    );
+
+    for (const producto of productos) {
+      sugerencias.push({
+        tipo: 'producto',
+        valor: producto.dato,
+        frecuencia: Number(producto.frecuencia || 0),
+      });
+    }
+
+    return sugerencias;
   }
 
   obtenerEstadisticas() {
     return {
-      total_cotizaciones: db.prepare('SELECT COUNT(*) as count FROM memoria_cotizaciones').get().count,
-      total_documentos: db.prepare('SELECT COUNT(*) as count FROM memoria_documentos').get().count,
-      total_usuarios: db.prepare('SELECT COUNT(DISTINCT usuario_id) as count FROM memoria_contexto').get().count,
-      paises_mas_comunes: db.prepare('SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = \'pais_origen\' ORDER BY frecuencia DESC LIMIT 5').all(),
-      productos_mas_cotizados: db.prepare('SELECT dato, frecuencia FROM memoria_aprendizajes WHERE tipo = \'producto\' ORDER BY frecuencia DESC LIMIT 10').all()
+      total_cotizaciones: Number(db.get('SELECT COUNT(*) as count FROM memoria_cotizaciones')?.count || 0),
+      total_documentos: Number(db.get('SELECT COUNT(*) as count FROM memoria_documentos')?.count || 0),
+      total_usuarios: Number(db.get('SELECT COUNT(*) as count FROM memoria_contexto')?.count || 0),
+      paises_mas_comunes: db.all(
+        `
+          SELECT dato, frecuencia
+          FROM memoria_aprendizajes
+          WHERE tipo = 'pais_origen'
+          ORDER BY frecuencia DESC
+          LIMIT 5
+        `
+      ),
+      productos_mas_cotizados: db.all(
+        `
+          SELECT dato, frecuencia
+          FROM memoria_aprendizajes
+          WHERE tipo = 'producto'
+          ORDER BY frecuencia DESC
+          LIMIT 10
+        `
+      ),
+    };
+  }
+
+  limpiarMemoriaAntigua(dias = 90) {
+    const threshold = `-${Number(dias || 90)} days`;
+    const beforeCotizaciones = Number(db.get('SELECT COUNT(*) as count FROM memoria_cotizaciones')?.count || 0);
+    const beforeDocumentos = Number(db.get('SELECT COUNT(*) as count FROM memoria_documentos')?.count || 0);
+
+    db.run(
+      'DELETE FROM memoria_cotizaciones WHERE created_at < datetime(\'now\', ?)',
+      [threshold]
+    );
+    db.run(
+      'DELETE FROM memoria_documentos WHERE created_at < datetime(\'now\', ?)',
+      [threshold]
+    );
+
+    const afterCotizaciones = Number(db.get('SELECT COUNT(*) as count FROM memoria_cotizaciones')?.count || 0);
+    const afterDocumentos = Number(db.get('SELECT COUNT(*) as count FROM memoria_documentos')?.count || 0);
+
+    return {
+      cotizaciones_eliminadas: beforeCotizaciones - afterCotizaciones,
+      documentos_eliminados: beforeDocumentos - afterDocumentos,
+      dias,
+    };
+  }
+
+  exportarDatos(usuarioId) {
+    return {
+      usuario_id: usuarioId,
+      contexto: this.obtenerContexto(usuarioId),
+      sugerencias: this.obtenerSugerencias(usuarioId),
+      cotizaciones: this.buscarCotizaciones({ usuario_id: usuarioId, limite: 500 }),
+      exportado_en: new Date().toISOString(),
     };
   }
 }

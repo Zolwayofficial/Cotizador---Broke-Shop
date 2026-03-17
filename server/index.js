@@ -393,6 +393,35 @@ app.post('/api/auth/login', (req, res) => {
 app.get('/api/auth/me', auth.requireAuth, (req, res) => {
   res.json(req.user);
 });
+
+function resolveScopedUserId(req, explicitUserId) {
+  if (req.user?.role === 'admin' && explicitUserId) {
+    return explicitUserId;
+  }
+
+  if (explicitUserId && req.user?.id && explicitUserId !== req.user.id) {
+    const error = new Error('No puedes acceder a datos de otro usuario.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return req.user?.id || explicitUserId;
+}
+
+function resolveScopedEmail(req, explicitEmail) {
+  if (req.user?.role === 'admin' && explicitEmail) {
+    return String(explicitEmail).trim().toLowerCase();
+  }
+
+  if (explicitEmail && req.user?.email && explicitEmail !== req.user.email) {
+    const error = new Error('No puedes suscribir un email distinto al de tu cuenta.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return String(req.user?.email || explicitEmail || '').trim().toLowerCase();
+}
+
 app.get('/api/admin/users', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     res.json({ users: auth.listUsers() });
@@ -536,7 +565,7 @@ app.get('/api/consulta/:hs/:country', (req, res) => {
 });
 
 // Batch TLC for all items in a quotation
-app.post('/api/tlc/batch', (req, res) => {
+app.post('/api/tlc/batch', auth.requireAuth, (req, res) => {
   const { items, country } = req.body;
   if (!items || !country) return res.json([]);
   res.json(items.map(item => {
@@ -552,14 +581,14 @@ app.post('/api/tlc/batch', (req, res) => {
 // ══════════════════════════════════════════════════
 // DUDA RAZONABLE / VALORACIÓN
 // ══════════════════════════════════════════════════
-app.get('/api/valoracion/estadisticas/:hs', async (req, res) => {
+app.get('/api/valoracion/estadisticas/:hs', auth.requireAuth, async (req, res) => {
   try {
     const stats = await valoracion.getEstadisticas(req.params.hs, req.query.year);
     res.json(stats);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/valoracion/analizar', async (req, res) => {
+app.post('/api/valoracion/analizar', auth.requireAuth, async (req, res) => {
   try {
     const { hs, fobUnitario, pesoKg, paisOrigen, year } = req.body;
     const stats = await valoracion.getEstadisticas(hs, year);
@@ -568,7 +597,7 @@ app.post('/api/valoracion/analizar', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/valoracion/riesgo/:hs/:fob/:peso/:pais', async (req, res) => {
+app.get('/api/valoracion/riesgo/:hs/:fob/:peso/:pais', auth.requireAuth, async (req, res) => {
   try {
     const { hs, fob, peso, pais } = req.params;
     const stats = await valoracion.getEstadisticas(hs);
@@ -579,7 +608,7 @@ app.get('/api/valoracion/riesgo/:hs/:fob/:peso/:pais', async (req, res) => {
 // ══════════════════════════════════════════════════
 // SANCIONES (OFAC, ONU, UE)
 // ══════════════════════════════════════════════════
-app.post('/api/sanciones/verificar', async (req, res) => {
+app.post('/api/sanciones/verificar', auth.requireAuth, async (req, res) => {
   try {
     const { nombre, pais, tipo } = req.body;
     const result = await sanciones.verificar(nombre, pais, tipo);
@@ -590,7 +619,7 @@ app.post('/api/sanciones/verificar', async (req, res) => {
 // ══════════════════════════════════════════════════
 // IA: Clasificación multi-agente + extracción
 // ══════════════════════════════════════════════════
-app.post('/api/ai/classify', async (req, res) => {
+app.post('/api/ai/classify', auth.requireAuth, async (req, res) => {
   try {
     const { messages, provider } = req.body;
     const result = await aiProxy.classify(messages, provider || 'groq');
@@ -599,7 +628,7 @@ app.post('/api/ai/classify', async (req, res) => {
 });
 
 // Multi-agent classification (high precision)
-app.post('/api/ai/classify-multi', async (req, res) => {
+app.post('/api/ai/classify-multi', auth.requireAuth, async (req, res) => {
   try {
     const { descripcion, imagen } = req.body;
     if (!descripcion && !imagen) return res.status(400).json({ error: 'Descripción o imagen requerida' });
@@ -608,7 +637,7 @@ app.post('/api/ai/classify-multi', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/ai/extract', async (req, res) => {
+app.post('/api/ai/extract', auth.requireAuth, async (req, res) => {
   try {
     const { content, type } = req.body;
     const result = await aiProxy.extract(content, type);
@@ -619,7 +648,7 @@ app.post('/api/ai/extract', async (req, res) => {
 // ══════════════════════════════════════════════════
 // FLETE: Estimador inteligente (API real + fallback)
 // ══════════════════════════════════════════════════
-app.post('/api/flete/estimar', async (req, res) => {
+app.post('/api/flete/estimar', auth.requireAuth, async (req, res) => {
   try {
     const { origen, destino, canal, pesoKg, valorFOB } = req.body;
 
@@ -650,7 +679,7 @@ app.post('/api/flete/estimar', async (req, res) => {
   }
 });
 
-app.get('/api/flete/tarifas', (req, res) => {
+app.get('/api/flete/tarifas', auth.requireAuth, (req, res) => {
   res.json({
     aereo: flete.TARIFAS.aereo,
     maritimo: flete.TARIFAS.maritimo,
@@ -661,7 +690,7 @@ app.get('/api/flete/tarifas', (req, res) => {
 });
 
 // Endpoint para verificar si hay API de fletes configurada
-app.get('/api/flete/status', (req, res) => {
+app.get('/api/flete/status', auth.requireAuth, (req, res) => {
   res.json({
     trackingmore: !!process.env.TRACKINGMORE_API_KEY,
     searates: !!process.env.SEARATES_API_KEY,
@@ -671,7 +700,7 @@ app.get('/api/flete/status', (req, res) => {
 });
 
 // Endpoint para ver uso diario de TrackingMore
-app.get('/api/flete/usage', (req, res) => {
+app.get('/api/flete/usage', auth.requireAuth, auth.requireAdmin, (req, res) => {
   // El módulo flete-api tiene el contador interno
   res.json({
     nota: 'El contador de uso diario se resetea automáticamente a medianoche UTC',
@@ -682,13 +711,13 @@ app.get('/api/flete/usage', (req, res) => {
 // ══════════════════════════════════════════════════
 // TRACKING: Rastreo de embarques
 // ══════════════════════════════════════════════════
-app.get('/api/tracking/detect/:number', (req, res) => {
+app.get('/api/tracking/detect/:number', auth.requireAuth, (req, res) => {
   const carrier = tracking.detectCarrier(req.params.number);
   const urls = tracking.getTrackingUrls(req.params.number);
   res.json({ carrier, urls: urls.urls, recommended: urls.recommended });
 });
 
-app.get('/api/tracking/:number', async (req, res) => {
+app.get('/api/tracking/:number', auth.requireAuth, async (req, res) => {
   try {
     const result = await tracking.rastrear(req.params.number);
     res.json(result);
@@ -698,28 +727,28 @@ app.get('/api/tracking/:number', async (req, res) => {
 // ══════════════════════════════════════════════════
 // PDF: Documentos profesionales
 // ══════════════════════════════════════════════════
-app.post('/api/pdf/cotizacion', (req, res) => {
+app.post('/api/pdf/cotizacion', auth.requireAuth, (req, res) => {
   try {
     const html = pdfDocs.generarCotizacion(req.body);
     res.type('html').send(html);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/pdf/packing-list', (req, res) => {
+app.post('/api/pdf/packing-list', auth.requireAuth, (req, res) => {
   try {
     const html = pdfDocs.generarPackingList(req.body);
     res.type('html').send(html);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/pdf/invoice', (req, res) => {
+app.post('/api/pdf/invoice', auth.requireAuth, (req, res) => {
   try {
     const html = pdfDocs.generarInvoice(req.body);
     res.type('html').send(html);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/pdf/permisos', (req, res) => {
+app.post('/api/pdf/permisos', auth.requireAuth, (req, res) => {
   try {
     const html = pdfDocs.generarResumenPermisos(req.body);
     res.type('html').send(html);
@@ -733,7 +762,7 @@ app.post('/api/pdf/permisos', (req, res) => {
 // Guía al usuario paso a paso hasta tener toda la información para
 // pasarla al Orquestador (agentes 1-16).
 
-app.post('/api/agente-0/chat', async (req, res) => {
+app.post('/api/agente-0/chat', auth.requireAuth, async (req, res) => {
   try {
     const { mensaje, contexto } = req.body;
 
@@ -750,7 +779,7 @@ app.post('/api/agente-0/chat', async (req, res) => {
   }
 });
 
-app.post('/api/agente-0/iniciar', async (req, res) => {
+app.post('/api/agente-0/iniciar', auth.requireAuth, async (req, res) => {
   try {
     // Iniciar nueva conversación
     const primeraPregunta = agenteConversador.generarPregunta({ datos_previos: {} });
@@ -763,11 +792,11 @@ app.post('/api/agente-0/iniciar', async (req, res) => {
       contexto: { datos_previos: {}, paso_actual: primeraPregunta.paso }
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
-app.get('/api/agente-0/estado', (req, res) => {
+app.get('/api/agente-0/estado', auth.requireAuth, (req, res) => {
   const stats = sistemaAgentes.obtenerEstadisticas?.() || {};
   const resumen = stats.resumen || {};
   const totalAgentes = stats.total_agentes || resumen.total || 30;
@@ -789,26 +818,27 @@ app.get('/api/agente-0/estado', (req, res) => {
 // MEMORIA HÍBRIDA — Endpoints
 // ═══════════════════════════════════════════════════
 
-// Guardar cotización en memoria
-app.post('/api/memoria/cotizacion', async (req, res) => {
+// Guardar cotizacion en memoria
+app.post('/api/memoria/cotizacion', auth.requireAuth, async (req, res) => {
   try {
     const data = req.body;
-    const resultado = memoria.guardarCotizacion({
+    const resultado = await memoria.guardarCotizacion({
       ...data,
+      usuario_id: resolveScopedUserId(req, data.usuario_id),
       ip: req.ip
     });
     res.json(resultado);
   } catch (e) {
     console.error('[MEMORIA] Error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Buscar cotizaciones
-app.get('/api/memoria/cotizaciones', async (req, res) => {
+app.get('/api/memoria/cotizaciones', auth.requireAuth, async (req, res) => {
   try {
     const filtros = {
-      usuario_id: req.query.usuario_id,
+      usuario_id: resolveScopedUserId(req, req.query.usuario_id),
       pais_origen: req.query.pais,
       canal: req.query.canal,
       limite: parseInt(req.query.limite) || 50
@@ -816,12 +846,12 @@ app.get('/api/memoria/cotizaciones', async (req, res) => {
     const resultados = memoria.buscarCotizaciones(filtros);
     res.json(resultados);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
-// Búsqueda semántica de productos
-app.post('/api/memoria/buscar', async (req, res) => {
+// Busqueda semantica de productos
+app.post('/api/memoria/buscar', auth.requireAuth, async (req, res) => {
   try {
     const { query, topK = 5 } = req.body;
 
@@ -838,31 +868,32 @@ app.post('/api/memoria/buscar', async (req, res) => {
     });
   } catch (e) {
     console.error('[MEMORIA] Búsqueda error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Obtener contexto de usuario
-app.get('/api/memoria/contexto/:usuario_id', async (req, res) => {
+app.get('/api/memoria/contexto/:usuario_id', auth.requireAuth, async (req, res) => {
   try {
-    const contexto = memoria.obtenerContexto(req.params.usuario_id);
+    const contexto = memoria.obtenerContexto(resolveScopedUserId(req, req.params.usuario_id));
     res.json(contexto || {});
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Guardar contexto de usuario
-app.post('/api/memoria/contexto', async (req, res) => {
+app.post('/api/memoria/contexto', auth.requireAuth, async (req, res) => {
   try {
     const { usuario_id, tipo_importador, margen_preferido, canal_preferido, pais_preferido } = req.body;
+    const scopedUserId = resolveScopedUserId(req, usuario_id);
 
-    if (!usuario_id) {
+    if (!scopedUserId) {
       return res.status(400).json({ error: 'usuario_id requerido' });
     }
 
     const resultado = memoria.guardarContexto({
-      usuario_id,
+      usuario_id: scopedUserId,
       tipo_importador,
       margen_preferido,
       canal_preferido,
@@ -870,48 +901,48 @@ app.post('/api/memoria/contexto', async (req, res) => {
     });
     res.json(resultado);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Obtener sugerencias inteligentes
-app.get('/api/memoria/sugerencias/:usuario_id', async (req, res) => {
+app.get('/api/memoria/sugerencias/:usuario_id', auth.requireAuth, async (req, res) => {
   try {
-    const sugerencias = memoria.obtenerSugerencias(req.params.usuario_id);
+    const sugerencias = memoria.obtenerSugerencias(resolveScopedUserId(req, req.params.usuario_id));
     res.json({ sugerencias });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
-// Estadísticas de memoria
-app.get('/api/memoria/estadisticas', async (req, res) => {
+// Estadisticas de memoria
+app.get('/api/memoria/estadisticas', auth.requireAuth, auth.requireAdmin, async (req, res) => {
   try {
     const estadisticas = memoria.obtenerEstadisticas();
     res.json(estadisticas);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Limpieza de memoria antigua
-app.post('/api/memoria/limpiar', async (req, res) => {
+app.post('/api/memoria/limpiar', auth.requireAuth, auth.requireAdmin, async (req, res) => {
   try {
     const { dias = 90 } = req.body;
     const resultado = memoria.limpiarMemoriaAntigua(dias);
     res.json(resultado);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Exportar datos de usuario
-app.get('/api/memoria/exportar/:usuario_id', async (req, res) => {
+app.get('/api/memoria/exportar/:usuario_id', auth.requireAuth, async (req, res) => {
   try {
-    const datos = memoria.exportarDatos(req.params.usuario_id);
+    const datos = memoria.exportarDatos(resolveScopedUserId(req, req.params.usuario_id));
     res.json(datos);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
@@ -920,7 +951,7 @@ app.get('/api/memoria/exportar/:usuario_id', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Visualizar estado de state machines
-app.get('/api/state/status', (req, res) => {
+app.get('/api/state/status', auth.requireAuth, (req, res) => {
   res.json({
     disponible: true,
     patron: 'LangGraph-inspired',
@@ -938,22 +969,22 @@ app.get('/api/state/status', (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Obtener estadísticas de embeddings
-app.get('/api/embeddings/stats', (req, res) => {
+app.get('/api/embeddings/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   res.json(embeddings.getEmbeddingStats());
 });
 
 // Precalentar modelo (para producción)
-app.post('/api/embeddings/warmup', async (req, res) => {
+app.post('/api/embeddings/warmup', auth.requireAuth, auth.requireAdmin, async (req, res) => {
   try {
     await embeddings.precalentarModelo();
     res.json({ ok: true, mensaje: 'Modelo precalentado' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(e.statusCode || 500).json({ error: e.message });
   }
 });
 
 // Generar embedding para texto custom
-app.post('/api/embeddings/generate', async (req, res) => {
+app.post('/api/embeddings/generate', auth.requireAuth, async (req, res) => {
   try {
     const { texto } = req.body;
 
@@ -975,7 +1006,7 @@ app.post('/api/embeddings/generate', async (req, res) => {
 });
 
 // Búsqueda semántica con ML real
-app.post('/api/embeddings/search', async (req, res) => {
+app.post('/api/embeddings/search', auth.requireAuth, async (req, res) => {
   try {
     const { query, documentos, topK = 5 } = req.body;
 
@@ -1000,7 +1031,7 @@ app.post('/api/embeddings/search', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Consultar TODO para una cotización (arancel + TC + restricciones + antidumping)
-app.get('/api/conectores/consultar-todo', async (req, res) => {
+app.get('/api/conectores/consultar-todo', auth.requireAuth, async (req, res) => {
   try {
     const { partida, producto, pais } = req.query;
 
@@ -1016,7 +1047,7 @@ app.get('/api/conectores/consultar-todo', async (req, res) => {
 });
 
 // SUNAT — Tipo de cambio
-app.get('/api/conectores/sunat/tipo-cambio', async (req, res) => {
+app.get('/api/conectores/sunat/tipo-cambio', auth.requireAuth, async (req, res) => {
   try {
     const tc = await conectores.SUNAT.consultarTipoCambio();
     res.json(tc);
@@ -1026,7 +1057,7 @@ app.get('/api/conectores/sunat/tipo-cambio', async (req, res) => {
 });
 
 // SUNAT — Arancel de partida
-app.get('/api/conectores/sunat/arancel/:partida', async (req, res) => {
+app.get('/api/conectores/sunat/arancel/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const arancel = await conectores.SUNAT.consultarArancel(partida);
@@ -1037,7 +1068,7 @@ app.get('/api/conectores/sunat/arancel/:partida', async (req, res) => {
 });
 
 // VUCE — Restricciones por partida
-app.get('/api/conectores/vuce/restricciones/:partida', async (req, res) => {
+app.get('/api/conectores/vuce/restricciones/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const { pais } = req.query;
@@ -1049,7 +1080,7 @@ app.get('/api/conectores/vuce/restricciones/:partida', async (req, res) => {
 });
 
 // MTC — Homologación de producto
-app.get('/api/conectores/mtc/homologacion', async (req, res) => {
+app.get('/api/conectores/mtc/homologacion', auth.requireAuth, async (req, res) => {
   try {
     const { producto, marca, modelo } = req.query;
 
@@ -1065,7 +1096,7 @@ app.get('/api/conectores/mtc/homologacion', async (req, res) => {
 });
 
 // DIGESA — Registro sanitario
-app.get('/api/conectores/digesa/registro', async (req, res) => {
+app.get('/api/conectores/digesa/registro', auth.requireAuth, async (req, res) => {
   try {
     const { producto, laboratorio } = req.query;
 
@@ -1081,7 +1112,7 @@ app.get('/api/conectores/digesa/registro', async (req, res) => {
 });
 
 // SENASA — Permiso fitosanitario
-app.get('/api/conectores/senasa/permiso', async (req, res) => {
+app.get('/api/conectores/senasa/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto, pais } = req.query;
 
@@ -1097,7 +1128,7 @@ app.get('/api/conectores/senasa/permiso', async (req, res) => {
 });
 
 // MINAM — Permiso ambiental
-app.get('/api/conectores/minam/permiso', async (req, res) => {
+app.get('/api/conectores/minam/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto } = req.query;
 
@@ -1113,7 +1144,7 @@ app.get('/api/conectores/minam/permiso', async (req, res) => {
 });
 
 // PRODUCE — Permiso de pesca
-app.get('/api/conectores/produce/permiso', async (req, res) => {
+app.get('/api/conectores/produce/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto } = req.query;
 
@@ -1129,7 +1160,7 @@ app.get('/api/conectores/produce/permiso', async (req, res) => {
 });
 
 // INDECOPI — Antidumping
-app.get('/api/conectores/indecopi/antidumping', async (req, res) => {
+app.get('/api/conectores/indecopi/antidumping', auth.requireAuth, async (req, res) => {
   try {
     const { producto, pais } = req.query;
 
@@ -1145,7 +1176,7 @@ app.get('/api/conectores/indecopi/antidumping', async (req, res) => {
 });
 
 // ADUANET — Arancel en tiempo real
-app.get('/api/conectores/aduanet/arancel/:partida', async (req, res) => {
+app.get('/api/conectores/aduanet/arancel/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const arancel = await conectores.ADUANET.consultarArancelTiempoReal(partida);
@@ -1156,13 +1187,13 @@ app.get('/api/conectores/aduanet/arancel/:partida', async (req, res) => {
 });
 
 // Limpiar cache de conectores
-app.post('/api/conectores/limpiar-cache', (req, res) => {
+app.post('/api/conectores/limpiar-cache', auth.requireAuth, auth.requireAdmin, (req, res) => {
   conectores.limpiarCache();
   res.json({ ok: true, mensaje: 'Cache limpiada' });
 });
 
 // Estadísticas de cache
-app.get('/api/conectores/cache-stats', (req, res) => {
+app.get('/api/conectores/cache-stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   res.json(conectores.getCacheStats());
 });
 
@@ -1171,12 +1202,12 @@ app.get('/api/conectores/cache-stats', (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Estadísticas generales de agentes
-app.get('/api/agentes/stats', (req, res) => {
+app.get('/api/agentes/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   res.json(agentesNavegacion.obtenerEstadisticasGenerales());
 });
 
 // SUNAT — Tipo de cambio con agente especialista
-app.get('/api/agentes/sunat/tipo-cambio', async (req, res) => {
+app.get('/api/agentes/sunat/tipo-cambio', auth.requireAuth, async (req, res) => {
   try {
     const tc = await agentesNavegacion.SUNAT.consultarTipoCambio();
     res.json(tc);
@@ -1186,7 +1217,7 @@ app.get('/api/agentes/sunat/tipo-cambio', async (req, res) => {
 });
 
 // SUNAT — Arancel con agente especialista
-app.get('/api/agentes/sunat/arancel/:partida', async (req, res) => {
+app.get('/api/agentes/sunat/arancel/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const arancel = await agentesNavegacion.SUNAT.consultarArancel(partida);
@@ -1197,12 +1228,12 @@ app.get('/api/agentes/sunat/arancel/:partida', async (req, res) => {
 });
 
 // SUNAT — Estadísticas del agente
-app.get('/api/agentes/sunat/stats', (req, res) => {
+app.get('/api/agentes/sunat/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   res.json(agentesNavegacion.SUNAT.obtenerEstadisticas());
 });
 
 // ADUANET — Arancel con agente especialista
-app.get('/api/agentes/aduanet/arancel/:partida', async (req, res) => {
+app.get('/api/agentes/aduanet/arancel/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const arancel = await agentesNavegacion.ADUANET.consultarArancel(partida);
@@ -1213,7 +1244,7 @@ app.get('/api/agentes/aduanet/arancel/:partida', async (req, res) => {
 });
 
 // VUCE — Restricciones con agente especialista
-app.get('/api/agentes/vuce/restricciones/:partida', async (req, res) => {
+app.get('/api/agentes/vuce/restricciones/:partida', auth.requireAuth, async (req, res) => {
   try {
     const { partida } = req.params;
     const { pais } = req.query;
@@ -1225,7 +1256,7 @@ app.get('/api/agentes/vuce/restricciones/:partida', async (req, res) => {
 });
 
 // INDECOPI — Antidumping con agente especialista
-app.get('/api/agentes/indecopi/antidumping', async (req, res) => {
+app.get('/api/agentes/indecopi/antidumping', auth.requireAuth, async (req, res) => {
   try {
     const { producto, pais } = req.query;
     if (!producto) {
@@ -1239,7 +1270,7 @@ app.get('/api/agentes/indecopi/antidumping', async (req, res) => {
 });
 
 // MTC — Homologación con agente especialista
-app.get('/api/agentes/mtc/homologacion', async (req, res) => {
+app.get('/api/agentes/mtc/homologacion', auth.requireAuth, async (req, res) => {
   try {
     const { producto, marca, modelo } = req.query;
     if (!producto) {
@@ -1253,7 +1284,7 @@ app.get('/api/agentes/mtc/homologacion', async (req, res) => {
 });
 
 // DIGESA — Registro sanitario con agente especialista
-app.get('/api/agentes/digesa/registro', async (req, res) => {
+app.get('/api/agentes/digesa/registro', auth.requireAuth, async (req, res) => {
   try {
     const { producto, laboratorio } = req.query;
     if (!producto) {
@@ -1267,7 +1298,7 @@ app.get('/api/agentes/digesa/registro', async (req, res) => {
 });
 
 // SENASA — Permiso fitosanitario con agente especialista
-app.get('/api/agentes/senasa/permiso', async (req, res) => {
+app.get('/api/agentes/senasa/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto, pais } = req.query;
     if (!producto) {
@@ -1281,7 +1312,7 @@ app.get('/api/agentes/senasa/permiso', async (req, res) => {
 });
 
 // MINAM — Permiso ambiental con agente especialista
-app.get('/api/agentes/minam/permiso', async (req, res) => {
+app.get('/api/agentes/minam/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto } = req.query;
     if (!producto) {
@@ -1295,7 +1326,7 @@ app.get('/api/agentes/minam/permiso', async (req, res) => {
 });
 
 // PRODUCE — Permiso de pesca con agente especialista
-app.get('/api/agentes/produce/permiso', async (req, res) => {
+app.get('/api/agentes/produce/permiso', auth.requireAuth, async (req, res) => {
   try {
     const { producto } = req.query;
     if (!producto) {
@@ -1313,12 +1344,12 @@ app.get('/api/agentes/produce/permiso', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Estadísticas generales de TODOS los agentes
-app.get('/api/sistema/stats', (req, res) => {
+app.get('/api/sistema/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   res.json(sistemaAgentes.obtenerEstadisticas());
 });
 
 // Consulta unificada de gobierno (tipo dinámico)
-app.get('/api/sistema/consulta', async (req, res) => {
+app.get('/api/sistema/consulta', auth.requireAuth, async (req, res) => {
   try {
     const { tipo, partida, producto, pais } = req.query;
 
@@ -1334,7 +1365,7 @@ app.get('/api/sistema/consulta', async (req, res) => {
 });
 
 // Detectar requisitos automáticos de producto
-app.get('/api/sistema/requisitos', async (req, res) => {
+app.get('/api/sistema/requisitos', auth.requireAuth, async (req, res) => {
   try {
     const { producto, categoria, pais } = req.query;
 
@@ -1350,7 +1381,7 @@ app.get('/api/sistema/requisitos', async (req, res) => {
 });
 
 // Generar reporte completo de importación
-app.get('/api/sistema/reporte', async (req, res) => {
+app.get('/api/sistema/reporte', auth.requireAuth, async (req, res) => {
   try {
     const { producto, partida, pais } = req.query;
 
@@ -1369,26 +1400,26 @@ app.get('/api/sistema/reporte', async (req, res) => {
 // AUTO-REPAIR — Endpoints (AGENTES QUE SE AUTOCORRIGEN)
 // ═══════════════════════════════════════════════════
 
-// Estadísticas de auto-reparación
-app.get('/api/auto-repair/stats', (req, res) => {
+// Estadisticas de auto-reparacion
+app.get('/api/auto-repair/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   const stats = autoRepair.getEstadisticas();
   res.json(stats);
 });
 
 // Obtener patrones de fallos por agente
-app.get('/api/auto-repair/patrones/:agente', (req, res) => {
+app.get('/api/auto-repair/patrones/:agente', auth.requireAuth, auth.requireAdmin, (req, res) => {
   const patrones = autoRepair.obtenerPatrones(req.params.agente);
   res.json({ agente: req.params.agente, patrones });
 });
 
 // Obtener conocimiento de un agente
-app.get('/api/auto-repair/knowledge/:agente/:clave', (req, res) => {
+app.get('/api/auto-repair/knowledge/:agente/:clave', auth.requireAuth, auth.requireAdmin, (req, res) => {
   const conocimiento = autoRepair.obtenerConocimiento(req.params.agente, req.params.clave);
   res.json({ agente: req.params.agente, clave: req.params.clave, conocimiento });
 });
 
 // Guardar conocimiento manualmente
-app.post('/api/auto-repair/knowledge', (req, res) => {
+app.post('/api/auto-repair/knowledge', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { agente, clave, valor, confianza } = req.body;
 
@@ -1404,7 +1435,7 @@ app.post('/api/auto-repair/knowledge', (req, res) => {
 });
 
 // Limpiar datos antiguos
-app.post('/api/auto-repair/cleanup', (req, res) => {
+app.post('/api/auto-repair/cleanup', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { dias = 30 } = req.body;
     const resultado = autoRepair.limpiarDatosAntiguos(dias);
@@ -1418,20 +1449,20 @@ app.post('/api/auto-repair/cleanup', (req, res) => {
 // ALERTAS NORMATIVAS — Endpoints (CAMBIOS NORMATIVOS)
 // ═══════════════════════════════════════════════════
 
-// Obtener estadísticas de alertas
-app.get('/api/alertas/stats', (req, res) => {
+// Obtener estadisticas de alertas
+app.get('/api/alertas/stats', auth.requireAuth, auth.requireAdmin, (req, res) => {
   const stats = alertasNormativas.obtenerEstadisticas();
   res.json(stats);
 });
 
 // Obtener alertas no leídas
-app.get('/api/alertas/no-leidas', (req, res) => {
+app.get('/api/alertas/no-leidas', auth.requireAuth, (req, res) => {
   const alertas = alertasNormativas.obtenerAlertasNoLeidas();
   res.json({ alertas, total: alertas.length });
 });
 
 // Obtener todas las alertas (con paginación)
-app.get('/api/alertas', (req, res) => {
+app.get('/api/alertas', auth.requireAuth, (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -1449,8 +1480,8 @@ app.get('/api/alertas', (req, res) => {
   }
 });
 
-// Marcar alerta como leída
-app.post('/api/alertas/leida/:id', (req, res) => {
+// Marcar alerta como leida
+app.post('/api/alertas/leida/:id', auth.requireAuth, (req, res) => {
   try {
     const exito = alertasNormativas.marcarAlertaLeida(req.params.id);
     res.json({ ok: exito });
@@ -1459,8 +1490,8 @@ app.post('/api/alertas/leida/:id', (req, res) => {
   }
 });
 
-// Marcar todas las alertas como leídas
-app.post('/api/alertas/todas-leidas', (req, res) => {
+// Marcar todas las alertas como leidas
+app.post('/api/alertas/todas-leidas', auth.requireAuth, (req, res) => {
   try {
     const cantidad = alertasNormativas.marcarTodasLeidas();
     res.json({ ok: true, cantidad });
@@ -1470,15 +1501,16 @@ app.post('/api/alertas/todas-leidas', (req, res) => {
 });
 
 // Suscribirse a alertas
-app.post('/api/alertas/suscribir', (req, res) => {
+app.post('/api/alertas/suscribir', auth.requireAuth, (req, res) => {
   try {
     const { email, tipos, telegram_chat_id } = req.body;
+    const scopedEmail = resolveScopedEmail(req, email);
 
-    if (!email) {
+    if (!scopedEmail) {
       return res.status(400).json({ error: 'email requerido' });
     }
 
-    const id = alertasNormativas.suscribirAlertas(email, tipos || [], telegram_chat_id);
+    const id = alertasNormativas.suscribirAlertas(scopedEmail, tipos || [], telegram_chat_id);
     res.json({ ok: true, id, mensaje: 'Suscrito correctamente' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1486,7 +1518,7 @@ app.post('/api/alertas/suscribir', (req, res) => {
 });
 
 // Crear alerta manualmente (para testing)
-app.post('/api/alertas/crear', (req, res) => {
+app.post('/api/alertas/crear', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { tipo, entidad, titulo, descripcion, nivel, partida_afectada, pais_afectado } = req.body;
 
@@ -1505,8 +1537,8 @@ app.post('/api/alertas/crear', (req, res) => {
   }
 });
 
-// Detectar cambios automáticamente (trigger manual)
-app.post('/api/alertas/detectar-cambios', async (req, res) => {
+// Detectar cambios automaticamente (trigger manual)
+app.post('/api/alertas/detectar-cambios', auth.requireAuth, auth.requireAdmin, async (req, res) => {
   try {
     await alertasNormativas.detectarCambiosAutomaticos();
     res.json({ ok: true, mensaje: 'Detección completada' });
@@ -1516,7 +1548,7 @@ app.post('/api/alertas/detectar-cambios', async (req, res) => {
 });
 
 // Limpiar alertas antiguas
-app.post('/api/alertas/limpiar', (req, res) => {
+app.post('/api/alertas/limpiar', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { dias = 90 } = req.body;
     const resultado = alertasNormativas.limpiarAlertasAntiguas(dias);
@@ -1531,7 +1563,7 @@ app.post('/api/alertas/limpiar', (req, res) => {
 // ═══════════════════════════════════════════════════
 
 // Cotizar con todos los couriers y navieras
-app.post('/api/logistica/cotizar', async (req, res) => {
+app.post('/api/logistica/cotizar', auth.requireAuth, async (req, res) => {
   try {
     const datos = req.body;
 
@@ -1547,7 +1579,7 @@ app.post('/api/logistica/cotizar', async (req, res) => {
 });
 
 // Listar todas las empresas configuradas
-app.get('/api/logistica/empresas', (req, res) => {
+app.get('/api/logistica/empresas', auth.requireAuth, (req, res) => {
   try {
     const empresas = integradorLogistica.listarEmpresas();
     res.json(empresas);
@@ -1557,7 +1589,7 @@ app.get('/api/logistica/empresas', (req, res) => {
 });
 
 // Obtener estado de contingencia de APIs
-app.get('/api/logistica/contingencia', (req, res) => {
+app.get('/api/logistica/contingencia', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const contingencia = integradorLogistica.obtenerContingencia();
     res.json(contingencia);
@@ -1567,7 +1599,7 @@ app.get('/api/logistica/contingencia', (req, res) => {
 });
 
 // Obtener prioridad de couriers
-app.get('/api/logistica/prioridad', (req, res) => {
+app.get('/api/logistica/prioridad', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const prioridad = integradorLogistica.obtenerPrioridad();
     res.json(prioridad);
@@ -1577,7 +1609,7 @@ app.get('/api/logistica/prioridad', (req, res) => {
 });
 
 // Resetear uso de API (admin)
-app.post('/api/logistica/reset/:api', (req, res) => {
+app.post('/api/logistica/reset/:api', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { api } = req.params;
     const contingencia = require('./couriers/contingencia-api');
@@ -1592,8 +1624,8 @@ app.post('/api/logistica/reset/:api', (req, res) => {
 // COTIZACIÓN PERSONALIZADA — Endpoints (Email, Tel, WhatsApp)
 // ═══════════════════════════════════════════════════
 
-// Cotizar por email automático
-app.post('/api/logistica/cotizar-email', async (req, res) => {
+// Cotizar por email automatico
+app.post('/api/logistica/cotizar-email', auth.requireAuth, async (req, res) => {
   try {
     const { courier, datos } = req.body;
 
@@ -1608,8 +1640,8 @@ app.post('/api/logistica/cotizar-email', async (req, res) => {
   }
 });
 
-// Cotizar por teléfono
-app.post('/api/logistica/cotizar-telefono', (req, res) => {
+// Cotizar por telefono
+app.post('/api/logistica/cotizar-telefono', auth.requireAuth, (req, res) => {
   try {
     const { courier, datos } = req.body;
 
@@ -1625,7 +1657,7 @@ app.post('/api/logistica/cotizar-telefono', (req, res) => {
 });
 
 // Cotizar por WhatsApp
-app.post('/api/logistica/cotizar-whatsapp', (req, res) => {
+app.post('/api/logistica/cotizar-whatsapp', auth.requireAuth, (req, res) => {
   try {
     const { courier, datos } = req.body;
 
@@ -1641,7 +1673,7 @@ app.post('/api/logistica/cotizar-whatsapp', (req, res) => {
 });
 
 // Obtener tarifas negociadas (contratos)
-app.post('/api/logistica/tarifas-negociadas', (req, res) => {
+app.post('/api/logistica/tarifas-negociadas', auth.requireAuth, (req, res) => {
   try {
     const { courier, datos } = req.body;
 
@@ -1657,7 +1689,7 @@ app.post('/api/logistica/tarifas-negociadas', (req, res) => {
 });
 
 // Cotizar con fallback referencial
-app.post('/api/logistica/cotizar-fallback', (req, res) => {
+app.post('/api/logistica/cotizar-fallback', auth.requireAuth, (req, res) => {
   try {
     const datos = req.body;
 
@@ -1673,7 +1705,7 @@ app.post('/api/logistica/cotizar-fallback', (req, res) => {
 });
 
 // Obtener cotizaciones personalizadas
-app.get('/api/logistica/cotizaciones-personalizadas', (req, res) => {
+app.get('/api/logistica/cotizaciones-personalizadas', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const filtros = {
       courier: req.query.courier,
@@ -1687,8 +1719,8 @@ app.get('/api/logistica/cotizaciones-personalizadas', (req, res) => {
   }
 });
 
-// Obtener cotización por ID
-app.get('/api/logistica/cotizacion-personalizada/:id', (req, res) => {
+// Obtener cotizacion por ID
+app.get('/api/logistica/cotizacion-personalizada/:id', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const cotizacion = cotizadorPersonalizado.obtenerCotizacion(req.params.id);
 
@@ -1702,8 +1734,8 @@ app.get('/api/logistica/cotizacion-personalizada/:id', (req, res) => {
   }
 });
 
-// Actualizar cotización (respuesta)
-app.post('/api/logistica/cotizacion-personalizada/:id/respuesta', (req, res) => {
+// Actualizar cotizacion (respuesta)
+app.post('/api/logistica/cotizacion-personalizada/:id/respuesta', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { respuesta } = req.body;
 
@@ -1719,7 +1751,7 @@ app.post('/api/logistica/cotizacion-personalizada/:id/respuesta', (req, res) => 
 });
 
 // Obtener contactos de couriers
-app.get('/api/logistica/contactos', (req, res) => {
+app.get('/api/logistica/contactos', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const contactos = cotizadorPersonalizado.obtenerContactos();
     res.json(contactos);
@@ -1729,7 +1761,7 @@ app.get('/api/logistica/contactos', (req, res) => {
 });
 
 // Agregar contacto de courier
-app.post('/api/logistica/contactos', (req, res) => {
+app.post('/api/logistica/contactos', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { slug, datos } = req.body;
 
@@ -1744,8 +1776,8 @@ app.post('/api/logistica/contactos', (req, res) => {
   }
 });
 
-// Obtener estadísticas de cotización personalizada
-app.get('/api/logistica/estadisticas-personalizadas', (req, res) => {
+// Obtener estadisticas de cotizacion personalizada
+app.get('/api/logistica/estadisticas-personalizadas', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const estadisticas = cotizadorPersonalizado.obtenerEstadisticas();
     res.json(estadisticas);
@@ -1917,8 +1949,8 @@ app.get('/api/monitor/health', (req, res) => {
   }
 });
 
-// Métricas detalladas
-app.get('/api/monitor/metricas', (req, res) => {
+// Metricas detalladas
+app.get('/api/monitor/metricas', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const metricas = monitorService.obtenerMetricas();
     res.json(metricas);
@@ -1928,7 +1960,7 @@ app.get('/api/monitor/metricas', (req, res) => {
 });
 
 // Alertas del sistema
-app.get('/api/monitor/alertas', (req, res) => {
+app.get('/api/monitor/alertas', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const alertas = monitorService.obtenerAlertas();
     res.json(alertas);
@@ -1937,8 +1969,8 @@ app.get('/api/monitor/alertas', (req, res) => {
   }
 });
 
-// Marcar alerta como leída
-app.post('/api/monitor/alertas/:id/leida', (req, res) => {
+// Marcar alerta como leida
+app.post('/api/monitor/alertas/:id/leida', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const exito = monitorService.marcarAlertaLeida(parseInt(req.params.id));
     res.json({ ok: exito });
@@ -1947,8 +1979,8 @@ app.post('/api/monitor/alertas/:id/leida', (req, res) => {
   }
 });
 
-// Limpiar alertas leídas
-app.post('/api/monitor/alertas/limpiar', (req, res) => {
+// Limpiar alertas leidas
+app.post('/api/monitor/alertas/limpiar', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const resultado = monitorService.limpiarAlertasLeidas();
     res.json(resultado);
@@ -1958,7 +1990,7 @@ app.post('/api/monitor/alertas/limpiar', (req, res) => {
 });
 
 // Agregar courier personalizado
-app.post('/api/logistica/courier', (req, res) => {
+app.post('/api/logistica/courier', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const config = req.body;
 
@@ -1974,7 +2006,7 @@ app.post('/api/logistica/courier', (req, res) => {
 });
 
 // Agregar naviera personalizada
-app.post('/api/logistica/naviera', (req, res) => {
+app.post('/api/logistica/naviera', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const config = req.body;
 
@@ -2100,7 +2132,7 @@ app.post('/api/membresias/pago/:id/actualizar', auth.requireAuth, auth.requireAd
 // ═══════════════════════════════════════════════════
 
 // Exportar cotización a PDF
-app.post('/api/exportar/pdf', (req, res) => {
+app.post('/api/exportar/pdf', auth.requireAuth, (req, res) => {
   try {
     const cotizacion = req.body;
 
@@ -2123,7 +2155,7 @@ app.post('/api/exportar/pdf', (req, res) => {
 });
 
 // Exportar cotización a Excel (CSV)
-app.post('/api/exportar/excel', (req, res) => {
+app.post('/api/exportar/excel', auth.requireAuth, (req, res) => {
   try {
     const cotizacion = req.body;
 
@@ -2142,7 +2174,7 @@ app.post('/api/exportar/excel', (req, res) => {
 });
 
 // Obtener documentación requerida
-app.post('/api/exportar/documentacion', (req, res) => {
+app.post('/api/exportar/documentacion', auth.requireAuth, (req, res) => {
   try {
     const cotizacion = req.body;
     const documentacion = exportarCotizacion.generarDocumentacion(cotizacion);
@@ -2153,7 +2185,7 @@ app.post('/api/exportar/documentacion', (req, res) => {
 });
 
 // Obtener recomendaciones
-app.post('/api/exportar/recomendaciones', (req, res) => {
+app.post('/api/exportar/recomendaciones', auth.requireAuth, (req, res) => {
   try {
     const cotizacion = req.body;
     const recomendaciones = exportarCotizacion.generarRecomendaciones(cotizacion);
@@ -2164,7 +2196,7 @@ app.post('/api/exportar/recomendaciones', (req, res) => {
 });
 
 // Obtener apuntes importantes
-app.post('/api/exportar/apuntes', (req, res) => {
+app.post('/api/exportar/apuntes', auth.requireAuth, (req, res) => {
   try {
     const cotizacion = req.body;
     const apuntes = exportarCotizacion.generarApuntes(cotizacion);
@@ -2175,7 +2207,7 @@ app.post('/api/exportar/apuntes', (req, res) => {
 });
 
 // Simular fallo y solución (para testing)
-app.post('/api/auto-repair/test', (req, res) => {
+app.post('/api/auto-repair/test', auth.requireAuth, auth.requireAdmin, (req, res) => {
   try {
     const { agente, error, solucion } = req.body;
 
@@ -2203,7 +2235,7 @@ app.post('/api/auto-repair/test', (req, res) => {
 // =================================================================
 // El usuario manda lo que tenga (PDF, DOCX, XLSX, imagen, texto o items).
 
-app.post('/api/agente/extraer', upload.single('file'), async (req, res) => {
+app.post('/api/agente/extraer', auth.requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!checkRate(req.ip)) return res.status(429).json({ error: 'Limite alcanzado' });
     let contenido, tipo;
@@ -2230,7 +2262,7 @@ app.post('/api/agente/extraer', upload.single('file'), async (req, res) => {
   }
 });
 
-app.post('/api/agente/calcular', auth.optionalAuth, async (req, res) => {
+app.post('/api/agente/calcular', auth.requireAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const resultado = await agente.orquestar(req.body);
@@ -2244,7 +2276,7 @@ app.post('/api/agente/calcular', auth.optionalAuth, async (req, res) => {
   }
 });
 
-app.post('/api/agente', auth.optionalAuth, async (req, res) => {
+app.post('/api/agente', auth.requireAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const resultado = await agente.orquestar(req.body);
@@ -2294,7 +2326,7 @@ const rateLimitCleanupInterval = setInterval(() => {
 
 rateLimitCleanupInterval.unref?.();
 
-app.post('/api/auto-cotizar/extraer', upload.single('file'), async (req, res) => {
+app.post('/api/auto-cotizar/extraer', auth.requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!checkRate(req.ip)) return res.status(429).json({ error: 'Limite de consultas alcanzado. Intenta en 1 hora.' });
     let contenido, tipo;
@@ -2322,7 +2354,7 @@ app.post('/api/auto-cotizar/extraer', upload.single('file'), async (req, res) =>
   }
 });
 
-app.post('/api/auto-cotizar/calcular', auth.optionalAuth, async (req, res) => {
+app.post('/api/auto-cotizar/calcular', auth.requireAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const { items, pais, canal, incoterm, flete, seguro, tc, proveedor,
@@ -2350,7 +2382,7 @@ app.post('/api/auto-cotizar/calcular', auth.optionalAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/auto-cotizar/directo', auth.optionalAuth, async (req, res) => {
+app.post('/api/auto-cotizar/directo', auth.requireAuth, async (req, res) => {
   try {
     if (!checkRate(req.ip, 500)) return res.status(429).json({ error: 'Limite alcanzado' });
     const { items, pais, canal, incoterm, flete, seguro, tc, proveedor,
@@ -2394,7 +2426,7 @@ app.get('/api/incoterms', (req, res) => {
 });
 
 // Incoterm adjustment preview
-app.post('/api/incoterms/ajustar', (req, res) => {
+app.post('/api/incoterms/ajustar', auth.requireAuth, (req, res) => {
   try {
     const { precio, incoterm, flete, seguro } = req.body;
     const resultado = autoCotizar.ajustarIncoterm(
@@ -2409,7 +2441,7 @@ app.post('/api/incoterms/ajustar', (req, res) => {
 });
 
 // TC Sensitivity analysis
-app.post('/api/sensibilidad-tc', (req, res) => {
+app.post('/api/sensibilidad-tc', auth.requireAuth, (req, res) => {
   try {
     const { totalUSD, tc, variaciones } = req.body;
     const result = autoCotizar.calcularSensibilidadTC(
@@ -2446,7 +2478,7 @@ app.get('/api/regimenes/:codigo', (req, res) => {
 });
 
 // Drawback calculator
-app.post('/api/regimenes/drawback', (req, res) => {
+app.post('/api/regimenes/drawback', auth.requireAuth, (req, res) => {
   try {
     const { fobExportacion, insumosImportados } = req.body;
     if (!fobExportacion) return res.status(400).json({ error: 'fobExportacion requerido' });
@@ -2455,7 +2487,7 @@ app.post('/api/regimenes/drawback', (req, res) => {
 });
 
 // Admisión Temporal calculator (guarantee amount)
-app.post('/api/regimenes/admision-temporal', (req, res) => {
+app.post('/api/regimenes/admision-temporal', auth.requireAuth, (req, res) => {
   try {
     const { cif, adValorem, isc, igv, ipm, plazoMeses } = req.body;
     if (!cif) return res.status(400).json({ error: 'cif requerido' });
@@ -2464,7 +2496,7 @@ app.post('/api/regimenes/admision-temporal', (req, res) => {
 });
 
 // Perfeccionamiento Pasivo calculator
-app.post('/api/regimenes/perfeccionamiento-pasivo', (req, res) => {
+app.post('/api/regimenes/perfeccionamiento-pasivo', auth.requireAuth, (req, res) => {
   try {
     const { valorOriginal, costoReparacion, adValoremPct } = req.body;
     if (!valorOriginal) return res.status(400).json({ error: 'valorOriginal requerido' });
@@ -2473,7 +2505,7 @@ app.post('/api/regimenes/perfeccionamiento-pasivo', (req, res) => {
 });
 
 // Regime recommendation based on use case
-app.post('/api/regimenes/recomendar', (req, res) => {
+app.post('/api/regimenes/recomendar', auth.requireAuth, (req, res) => {
   try {
     res.json(regimenes.recomendarRegimen(req.body));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2809,6 +2841,7 @@ async function startBackgroundServices() {
 
     await Promise.allSettled([
       safeInit('Auto-Repair', () => autoRepair.init()),
+      safeInit('Memoria Hibrida', () => memoria.init()),
       safeInit('Agentes de Navegación', () => agentesNavegacion.init()),
       safeInit('Sistema de Agentes', () => sistemaAgentes.inicializar()),
       safeInit('Alertas Normativas', () => alertasNormativas.init()),
@@ -2958,6 +2991,12 @@ async function init() {
         await nandinaService.init();
         console.log(`[INIT] NANDINA lista (${nandinaService.getData().length} partidas)`);
       })()
+    ]);
+
+    await Promise.allSettled([
+      safeInit('Auto-Repair', () => autoRepair.init()),
+      safeInit('Memoria Hibrida', () => memoria.init()),
+      safeInit('Alertas Normativas', () => alertasNormativas.init()),
     ]);
 
     const initState = {
