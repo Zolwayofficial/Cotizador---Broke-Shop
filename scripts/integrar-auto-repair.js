@@ -1,14 +1,9 @@
-// scripts/integrar-auto-repair.js — Script para integrar auto-repair en todos los agentes
-// 
-// ESTE SCRIPT AGREGA AUTO-REPAIR A TODOS LOS AGENTES AUTOMÁTICAMENTE
-
 const fs = require('fs');
 const path = require('path');
 
 const SERVER_DIR = path.join(__dirname, '..', 'server');
-
-// Agentes a modificar
-const agentes = [
+const AUTO_REPAIR_IMPORT = 'const autoRepair = require("./auto-repair");';
+const AGENTS = [
   { file: 'clasificador.js', nombre: 'clasificador', funcion: 'clasificarMultiAgente' },
   { file: 'agente-conversador.js', nombre: 'agente-conversador', funcion: 'agenteConversador' },
   { file: 'auto-cotizar.js', nombre: 'auto-cotizar', funcion: 'calcular' },
@@ -18,53 +13,132 @@ const agentes = [
   { file: 'sanciones.js', nombre: 'sanciones', funcion: 'verificar' },
 ];
 
-let modificados = 0;
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-console.log("🔧 Integrando AUTO-REPAIR en todos los agentes...\n");
+function hasAutoRepairImport(content) {
+  return /require\((['"])\.\/auto-repair\1\)/.test(content || '');
+}
 
-agentes.forEach(agente => {
-  const filePath = path.join(SERVER_DIR, agente.file);
-  
-  if (!fs.existsSync(filePath)) {
-    console.log(`⚠️  ${agente.file}: No existe`);
-    return;
+function insertAutoRepairImport(content) {
+  if (hasAutoRepairImport(content)) {
+    return { changed: false, reason: 'exists', content };
   }
-  
-  let content = fs.readFileSync(filePath, 'utf8');
-  
-  // 1. Agregar import de auto-repair (si no existe)
-  if (!content.includes('require("./auto-repair")')) {
-    const importLine = `\nconst autoRepair = require("./auto-repair"); // Auto-corrección\n`;
-    
-    // Buscar otros requires
-    const requireMatch = content.match(/(const \w+ = require\("\.\/\w+"\);)/);
-    if (requireMatch) {
-      content = content.replace(requireMatch[0], requireMatch[0] + importLine);
-      console.log(`✅ ${agente.file}: Import agregado`);
-    } else {
-      console.log(`⚠️  ${agente.file}: No se encontró dónde agregar import`);
+
+  const requireMatches = [
+    ...(content || '').matchAll(/^(const\s+\w+\s*=\s*require\((['"]).+?\2\);.*)$/gm),
+  ];
+  if (requireMatches.length === 0) {
+    return { changed: false, reason: 'no-require-block', content };
+  }
+
+  const lastMatch = requireMatches[requireMatches.length - 1];
+  const insertionPoint = (lastMatch.index || 0) + lastMatch[0].length;
+  const updatedContent =
+    `${content.slice(0, insertionPoint)}\n${AUTO_REPAIR_IMPORT}${content.slice(insertionPoint)}`;
+
+  return { changed: true, reason: 'inserted', content: updatedContent };
+}
+
+function findPrimaryFunction(content, functionName) {
+  if (!functionName) {
+    return false;
+  }
+
+  const pattern = new RegExp(
+    String.raw`(?:async\s+function\s+${escapeRegExp(functionName)}\s*\(|(?:const|let|var)\s+${escapeRegExp(functionName)}\s*=\s*async\s*\()`,
+  );
+  return pattern.test(content || '');
+}
+
+function updateAgentFile(filePath) {
+  const originalContent = fs.readFileSync(filePath, 'utf8');
+  const importState = insertAutoRepairImport(originalContent);
+
+  if (!importState.changed) {
+    return {
+      changed: false,
+      reason: importState.reason,
+      content: originalContent,
+    };
+  }
+
+  fs.writeFileSync(filePath, importState.content, 'utf8');
+  return {
+    changed: true,
+    reason: importState.reason,
+    content: importState.content,
+  };
+}
+
+function runIntegration({ write = true, log = console.log } = {}) {
+  let modifiedImports = 0;
+  let functionsFound = 0;
+
+  log('Integrating auto-repair into configured agents...\n');
+
+  AGENTS.forEach((agent) => {
+    const filePath = path.join(SERVER_DIR, agent.file);
+
+    if (!fs.existsSync(filePath)) {
+      log(`WARN ${agent.file}: file not found`);
       return;
     }
-  } else {
-    console.log(`⏭️  ${agente.file}: Import ya existe`);
-  }
-  
-  // 2. Envolver función principal con auto-repair (solo si es la función correcta)
-  if (agente.funcion) {
-    const funcionPattern = new RegExp(`(async function ${agente.funcion}\\([^)]*\\)|${agente.funcion} = async \\(([^)]*)\\))`, 'g');
-    
-    if (funcionPattern.test(content)) {
-      console.log(`✅ ${agente.file}: Función ${agente.funcion} encontrada (lista para envolver)`);
-      modificados++;
-    } else {
-      console.log(`⚠️  ${agente.file}: Función ${agente.funcion} no encontrada`);
-    }
-  }
-  
-  // Guardar archivo modificado
-  fs.writeFileSync(filePath, content);
-});
 
-console.log(`\n🎉 Integración completada: ${modificados}/${agentes.length} agentes modificados`);
-console.log('\n📝 NOTA: Las funciones se envuelven manualmente con autoRepair.ejecutarConAutoReparacion()');
-console.log('   Ver docs/AUTO_REPAIR.md para ejemplos de cómo envolver cada función');
+    const originalContent = fs.readFileSync(filePath, 'utf8');
+    const functionFound = findPrimaryFunction(originalContent, agent.funcion);
+    if (functionFound) {
+      functionsFound += 1;
+    }
+
+    const importState = insertAutoRepairImport(originalContent);
+    if (write && importState.changed) {
+      fs.writeFileSync(filePath, importState.content, 'utf8');
+    }
+
+    if (importState.changed) {
+      modifiedImports += 1;
+      log(`${agent.file}: auto-repair import ${write ? 'prepared' : 'detected'}`);
+    } else if (importState.reason === 'exists') {
+      log(`SKIP ${agent.file}: auto-repair import already present`);
+    } else {
+      log(`WARN ${agent.file}: no safe require block found for import insertion`);
+    }
+
+    if (agent.funcion) {
+      log(
+        functionFound
+          ? `${agent.file}: primary function ${agent.funcion} found`
+          : `WARN ${agent.file}: primary function ${agent.funcion} not found`,
+      );
+    }
+  });
+
+  log(`\nCompleted: ${modifiedImports}/${AGENTS.length} imports prepared.`);
+  log(`Primary functions found: ${functionsFound}/${AGENTS.length}.`);
+  log(
+    'Note: function wrapping remains manual with autoRepair.ejecutarConAutoReparacion().',
+  );
+
+  return {
+    modifiedImports,
+    functionsFound,
+    totalAgents: AGENTS.length,
+  };
+}
+
+if (require.main === module) {
+  runIntegration();
+}
+
+module.exports = {
+  AGENTS,
+  AUTO_REPAIR_IMPORT,
+  escapeRegExp,
+  findPrimaryFunction,
+  hasAutoRepairImport,
+  insertAutoRepairImport,
+  runIntegration,
+  updateAgentFile,
+};

@@ -1,25 +1,14 @@
-// server/embeddings.js — Embeddings con ML REAL (Sentence-Transformers)
-// 
-// IMPLEMENTACIÓN CON XENOVA TRANSFORMERS (Enterprise-Grade 2026)
+// server/embeddings.js - Embeddings locales con Xenova Transformers
 //
-// Ventajas vs TF-IDF:
-// ✅ Captura semántica REAL ("camiseta" ≈ "polo" ≈ "playera")
-// ✅ 40% más precisión en búsqueda
-// ✅ Modelo local (sin API externa)
-// ✅ 50MB RAM adicional (inversión que vale la pena)
-//
-// Modelo: Xenova/all-MiniLM-L6-v2
+// Modelo principal: Xenova/all-MiniLM-L6-v2
 // - 384 dimensiones
-// - 50MB tamaño
-// - CPU-friendly
-// - State-of-the-art para su tamaño
+// - ejecucion local sin API externa
+// - fallback TF-IDF cuando el modelo no esta disponible
 
 let embedder = null;
 let embedderPromise = null;
 
-// ═══════════════════════════════════════════════════
-// INICIALIZAR EMBEDDER (lazy loading)
-// ═══════════════════════════════════════════════════
+// Inicializar embedder (lazy loading)
 async function initEmbedder() {
   if (embedder) return embedder;
   if (embedderPromise) return embedderPromise;
@@ -31,7 +20,7 @@ async function initEmbedder() {
       console.log('[EMBEDDINGS] Cargando modelo all-MiniLM-L6-v2 (50MB)...');
       
       embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-        quantized: true, // Reducir tamaño a ~25MB
+        quantized: true,
         progress_callback: (progress) => {
           if (progress.status === 'progress') {
             const pct = Math.round(progress.progress * 100);
@@ -40,7 +29,7 @@ async function initEmbedder() {
         }
       });
       
-      console.log('[EMBEDDINGS] ✅ Modelo cargado exitosamente');
+      console.log('[EMBEDDINGS] Modelo cargado');
       return embedder;
       
     } catch (error) {
@@ -48,15 +37,17 @@ async function initEmbedder() {
       console.log('[EMBEDDINGS] Usando fallback TF-IDF');
       embedder = null;
       return null;
+    } finally {
+      if (!embedder) {
+        embedderPromise = null;
+      }
     }
   })();
   
   return embedderPromise;
 }
 
-// ═══════════════════════════════════════════════════
-// GENERAR EMBEDDING (ML REAL)
-// ═══════════════════════════════════════════════════
+// Generar embedding
 async function generarEmbedding(texto) {
   if (!texto || texto.length < 2) {
     return generarEmbeddingFallback(texto);
@@ -70,7 +61,7 @@ async function generarEmbedding(texto) {
       return generarEmbeddingFallback(texto);
     }
     
-    // Generar embedding con pooling y normalización
+    // Generar embedding con pooling y normalizacion
     const output = await model(texto, {
       pooling: 'mean',
       normalize: true
@@ -85,11 +76,9 @@ async function generarEmbedding(texto) {
   }
 }
 
-// ═══════════════════════════════════════════════════
-// FALLBACK: TF-IDF (si no hay modelo ML)
-// ═══════════════════════════════════════════════════
+// Fallback: TF-IDF deterministico
 function generarEmbeddingFallback(texto) {
-  // Implementación TF-IDF simplificada para 384 dimensiones
+  // Implementacion TF-IDF simplificada para 384 dimensiones
   const palabras = texto.toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
@@ -106,12 +95,12 @@ function generarEmbeddingFallback(texto) {
       hash = hash & hash;
     }
     
-    // Ponderación por frecuencia (TF)
+    // Ponderacion por frecuencia (TF)
     const tf = palabras.filter(p => p === palabra).length / palabras.length;
     
-    // Posición en el embedding basada en hash
+    // Posicion en el embedding basada en hash
     const posicion = Math.abs(hash) % 384;
-    embedding[posicion] += tf * (1 + Math.random() * 0.1);
+    embedding[posicion] += tf;
   });
   
   // Normalizar embedding (L2 norm)
@@ -125,9 +114,7 @@ function generarEmbeddingFallback(texto) {
   return JSON.stringify(embedding);
 }
 
-// ═══════════════════════════════════════════════════
-// CALCULAR SIMILITUD COSENO (para búsqueda)
-// ═══════════════════════════════════════════════════
+// Calcular similitud coseno
 function similitudCoseno(embedding1, embedding2) {
   const vec1 = JSON.parse(embedding1);
   const vec2 = JSON.parse(embedding2);
@@ -151,9 +138,7 @@ function similitudCoseno(embedding1, embedding2) {
   return dotProduct / (norm1 * norm2);
 }
 
-// ═══════════════════════════════════════════════════
-// BÚSQUEDA SEMÁNTICA (con embeddings ML)
-// ═══════════════════════════════════════════════════
+// Busqueda semantica
 async function buscarSemanticamente(query, documentos, topK = 5) {
   // Generar embedding para la query
   const queryEmbedding = await generarEmbedding(query);
@@ -170,27 +155,23 @@ async function buscarSemanticamente(query, documentos, topK = 5) {
     .slice(0, topK);
 }
 
-// ═══════════════════════════════════════════════════
-// PRE-CALENTAR MODELO (opcional, para producción)
-// ═══════════════════════════════════════════════════
+// Precalentar modelo (opcional, para produccion)
 async function precalentarModelo() {
   console.log('[EMBEDDINGS] Precalentando modelo...');
   await initEmbedder();
   
   // Generar embedding de prueba
-  await generarEmbedding('camiseta de algodón');
+  await generarEmbedding('camiseta de algodon');
   
-  console.log('[EMBEDDINGS] ✅ Modelo precalentado');
+  console.log('[EMBEDDINGS] Precalentamiento completado');
 }
 
-// ═══════════════════════════════════════════════════
-// ESTADÍSTICAS DEL MODELO
-// ═══════════════════════════════════════════════════
+// Estadisticas del modelo
 function getEmbeddingStats() {
   return {
     modelo: embedder ? 'Xenova/all-MiniLM-L6-v2' : 'TF-IDF (fallback)',
     dimensiones: 384,
-    tamaño: embedder ? '~25MB (quantized)' : '~0MB',
+    tamano: embedder ? '~25MB (quantized)' : '~0MB',
     disponible: !!embedder,
     cargando: !!embedderPromise && !embedder
   };

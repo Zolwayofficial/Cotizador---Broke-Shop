@@ -1,4 +1,4 @@
-// server/db.js — SQLite con sql.js (100% JavaScript, sin compilación)
+// server/db.js - SQLite con sql.js, sin compilacion nativa obligatoria
 // 
 // COMPATIBLE CON:
 // - Windows (sin necesidad de Visual Studio)
@@ -9,14 +9,19 @@ const path = require('path');
 const fs = require('fs');
 const initSqlJs = require('sql.js');
 
-const DB_PATH = process.env.DB_PATH || './data/cotizador.db';
+const DEFAULT_DB_PATH = path.resolve(__dirname, '..', 'data', 'cotizador.db');
+const DB_PATH = process.env.DB_PATH
+  ? (path.isAbsolute(process.env.DB_PATH)
+    ? process.env.DB_PATH
+    : path.resolve(__dirname, '..', process.env.DB_PATH))
+  : DEFAULT_DB_PATH;
 let db = null;
 let SQL = null;
 let autosaveInterval = null;
 
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 // GUARDAR BASE DE DATOS
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 function guardarDB() {
   if (!db) return;
@@ -50,9 +55,21 @@ function ensureColumn(tableName, columnName, definition) {
   }
 }
 
-// ═══════════════════════════════════════════════════
+function getWriteMetadata(sql) {
+  if (!db) return { changes: 0, lastInsertRowid: 0 };
+
+  const changes = Number(get('SELECT changes() AS count')?.count || 0);
+  const isInsertLike = /^\s*INSERT\b/i.test(sql);
+  const lastInsertRowid = isInsertLike
+    ? Number(get('SELECT last_insert_rowid() AS id')?.id || 0)
+    : 0;
+
+  return { changes, lastInsertRowid };
+}
+
+// -----------------------------------------------------------------------------
 // EJECUTAR MIGRACIONES
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 function runMigrations() {
   try {
@@ -166,20 +183,20 @@ function runMigrations() {
       )
     `);
 
-    console.log('[DB] ✅ Tablas creadas');
+    console.log('[DB] Tablas preparadas');
   } catch (e) {
     console.error('[DB] Error en migraciones:', e.message);
   }
 }
 
-// ═══════════════════════════════════════════════════
-// MÉTODOS DE CONSULTA
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
+// METODOS DE CONSULTA
+// -----------------------------------------------------------------------------
 
 function run(sql, params = []) {
-  if (!db) return { changes: 0 };
+  if (!db) return { changes: 0, lastInsertRowid: 0 };
   db.run(sql, params);
-  return { changes: 0 };
+  return getWriteMetadata(sql);
 }
 
 function get(sql, params = []) {
@@ -211,9 +228,9 @@ function all(sql, params = []) {
   return results;
 }
 
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 // EXPORTAR API
-// ═══════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 module.exports = {
   raw() { return db; },
@@ -232,10 +249,10 @@ module.exports = {
       if (fs.existsSync(DB_PATH)) {
         const fileBuffer = fs.readFileSync(DB_PATH);
         db = new SQL.Database(fileBuffer);
-        console.log('[DB] ✅ Base de datos cargada desde', DB_PATH);
+        console.log('[DB] Base de datos cargada desde', DB_PATH);
       } else {
         db = new SQL.Database();
-        console.log('[DB] ✅ Nueva base de datos creada');
+        console.log('[DB] Nueva base de datos creada');
       }
     } catch (e) {
       console.error('[DB] Error cargando DB:', e.message);
@@ -245,7 +262,7 @@ module.exports = {
     // Ejecutar migraciones
     runMigrations();
 
-    // Guardar automáticamente cada 5 minutos
+    // Guardar automaticamente cada 5 minutos
     if (!autosaveInterval) {
       autosaveInterval = setInterval(() => {
         guardarDB();
@@ -253,9 +270,9 @@ module.exports = {
       autosaveInterval.unref?.();
     }
 
-    console.log('[DB] ✅ sql.js inicializado (100% JavaScript)');
+    console.log('[DB] sql.js inicializado (sin compilacion nativa obligatoria)');
 
-    // Devolver promesa resuelta para inicialización asíncrona
+    // Devolver promesa resuelta para inicializacion asincrona
     return Promise.resolve();
   },
 
@@ -290,9 +307,9 @@ module.exports = {
   },
 
   run(sql, params = []) {
-    if (!db) return { changes: 0 };
+    if (!db) return { changes: 0, lastInsertRowid: 0 };
     db.run(sql, params);
-    return { changes: 0 };
+    return getWriteMetadata(sql);
   },
 
   all(sql, params = []) {
@@ -309,16 +326,13 @@ module.exports = {
 
   prepare(sql) {
     return {
-      run: (...params) => {
-        run(sql, params);
-        return { lastInsertRowid: 0, changes: 0 };
-      },
+      run: (...params) => run(sql, params),
       get: (...params) => get(sql, params),
       all: (...params) => all(sql, params)
     };
   },
 
-  // Métodos específicos usados en el código
+  // Metodos especificos usados en el codigo
   listQuotations(userId) {
     if (userId) {
       return all('SELECT * FROM quotations WHERE user_id = ? ORDER BY created_at DESC LIMIT 100', [userId]);
@@ -356,13 +370,14 @@ module.exports = {
 
   saveProduct(p) {
     const id = p.id || 'p_' + Date.now();
+    const referencePrice = p.referencePrice ?? p.unit ?? 0;
     run(`
       INSERT OR REPLACE INTO products 
       (id, sku, description, hs, adv, weight, reference_price, last_used)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id, p.sku || '', p.description || p.desc || '', p.hs || '',
-      p.adv || 0, p.weight || 0, p.referencePrice || p.unit || 0,
+      p.adv || 0, p.weight || 0, referencePrice,
       new Date().toISOString()
     ]);
     return id;

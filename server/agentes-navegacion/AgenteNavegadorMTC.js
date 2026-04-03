@@ -1,15 +1,16 @@
-// server/agentes-navegacion/AgenteNavegadorMTC.js
-// 
-// AGENTE ESPECIALISTA EN MTC (Ministerio de Transportes y Comunicaciones)
-// 
-// Características:
-// - Navega en mtc.gob.pe
-// - Aprende homologaciones
-// - Busca en tablas de productos
-// - Detecta productos que requieren homologación
-// - Alertas de cambios normativos
-
 const { MemoriaAgente } = require('./MemoriaAgente');
+
+function cloneSerializable(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
 
 class AgenteNavegadorMTC {
   constructor() {
@@ -22,75 +23,65 @@ class AgenteNavegadorMTC {
     this.memoria = new MemoriaAgente(this.nombreAgente);
   }
 
-  // ═══════════════════════════════════════════════════
-  // CONSULTAR HOMOLOGACIÓN DE PRODUCTO
-  // ═══════════════════════════════════════════════════
   async consultarHomologacion(producto, marca, modelo) {
-    const cacheKey = `mtc_${producto}_${marca}_${modelo}`;
+    const productKey = this._normalizarClave(producto);
+    const brandKey = this._normalizarClave(marca);
+    const modelKey = this._normalizarClave(modelo);
+    const cacheKey = `mtc_${productKey}_${brandKey}_${modelKey}`;
 
-    // Verificar cache
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
-      console.log(`💾 MTC: Homologación de cache para ${producto}`);
+      console.log(`[MTC] Cache para ${productKey}`);
       return cached;
     }
 
-    // Verificar aprendizaje previo
-    const aprendizaje = this.memoria.obtenerAprendizaje(`homologacion_${producto}`);
+    const aprendizajeKey = `homologacion_${productKey}_${brandKey}_${modelKey}`;
+    const aprendizaje = this.memoria ? this.memoria.obtenerAprendizaje(aprendizajeKey) : null;
     if (aprendizaje) {
-      console.log('🧠 MTC: Usando aprendizaje previo');
-      return aprendizaje.valor;
+      console.log('[MTC] Usando aprendizaje previo');
+      return cloneSerializable(aprendizaje.valor);
     }
 
-    // Consultar (en producción sería scraping real)
     const resultado = await this._consultarHomologacionLocal(producto, marca, modelo);
 
-    // Guardar
     this._guardarEnCache(cacheKey, resultado, 86400000);
-    this.memoria.guardarAprendizaje(`homologacion_${producto}`, resultado, 0.9);
+    if (this.memoria) {
+      this.memoria.guardarAprendizaje(aprendizajeKey, cloneSerializable(resultado), 0.9);
+    }
 
-    return resultado;
+    return cloneSerializable(resultado);
   }
 
-  // ═══════════════════════════════════════════════════
-  // LISTAR PRODUCTOS HOMOLOGADOS
-  // ═══════════════════════════════════════════════════
   async listarProductosHomologados() {
     const cacheKey = 'mtc_homologados';
-
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Fallback: usar datos locales
     const resultado = {
       total: 0,
       productos: [],
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
 
     this._guardarEnCache(cacheKey, resultado, 86400000);
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR SI REQUIERE HOMOLOGACIÓN
-  // ═══════════════════════════════════════════════════
   async detectarSiRequiereHomologacion(producto, categoria) {
-    // Productos que SIEMPRE requieren homologación MTC
     const productosRequierenHomologacion = [
       'router', 'switch', 'modem', 'antena', 'radio',
       'celular', 'telefono', 'smartphone',
       'wifi', 'bluetooth', 'gps', 'transmisor',
-      'equipos de telecomunicaciones', 'equipos de radio'
+      'equipos de telecomunicaciones', 'equipos de radio',
     ];
 
-    const productoLower = producto.toLowerCase();
-    const categoriaLower = categoria.toLowerCase();
+    const productoLower = this._normalizarTexto(producto).toLowerCase();
+    const categoriaLower = this._normalizarTexto(categoria).toLowerCase();
 
-    const requiere = productosRequierenHomologacion.some(p =>
-      productoLower.includes(p) || categoriaLower.includes(p)
+    const requiere = productosRequierenHomologacion.some((keyword) =>
+      productoLower.includes(keyword) || categoriaLower.includes(keyword)
     );
 
     const resultado = {
@@ -98,21 +89,18 @@ class AgenteNavegadorMTC {
       categoria,
       requiereHomologacion: requiere,
       entidad: 'MTC',
-      tramite: 'Certificado de Homologación',
-      actualizado: new Date().toISOString()
+      tramite: 'Certificado de Homologacion',
+      actualizado: new Date().toISOString(),
     };
 
-    // Guardar aprendizaje
-    this.memoria.guardarAprendizaje(`requiere_homologacion_${producto}`, resultado, 0.95);
+    if (this.memoria) {
+      this.memoria.guardarAprendizaje(`requiere_homologacion_${this._normalizarClave(producto)}`, resultado, 0.95);
+    }
 
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
-  // PRIVADOS
-  // ═══════════════════════════════════════════════════
   async _consultarHomologacionLocal(producto, marca, modelo) {
-    // Simular consulta (en producción sería scraping real)
     return {
       producto,
       marca,
@@ -120,31 +108,40 @@ class AgenteNavegadorMTC {
       requiereHomologacion: true,
       estado: 'pendiente_verificacion',
       fuente: 'MTC',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
+  }
+
+  _normalizarClave(valor) {
+    return this._normalizarTexto(valor).toUpperCase();
+  }
+
+  _normalizarTexto(valor) {
+    return String(valor || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   _guardarEnCache(clave, valor, ttlMs) {
     this.cache.set(clave, {
-      valor,
-      expira: Date.now() + ttlMs
+      valor: cloneSerializable(valor),
+      expira: Date.now() + ttlMs,
     });
   }
 
   _obtenerDeCache(clave) {
     const cached = this.cache.get(clave);
     if (cached && Date.now() < cached.expira) {
-      return cached.valor;
+      return cloneSerializable(cached.valor);
     }
     this.cache.delete(clave);
     return null;
   }
 
-  // ═══════════════════════════════════════════════════
-  // ESTADÍSTICAS
-  // ═══════════════════════════════════════════════════
   obtenerEstadisticas() {
-    return this.memoria.obtenerEstadisticas();
+    return this.memoria ? this.memoria.obtenerEstadisticas() : {};
   }
 }
 

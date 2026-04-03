@@ -5,6 +5,18 @@ const crypto = require('crypto');
 const { MemoriaAgente } = require('./MemoriaAgente');
 const sunatProxy = require('../sunat-proxy');
 
+function cloneSerializable(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
+
 class AgenteNavegadorSUNAT {
   constructor() {
     this.nombreAgente = 'SUNAT';
@@ -118,11 +130,11 @@ class AgenteNavegadorSUNAT {
       this._guardarEnCache('tipo_cambio', resultado, Number(process.env.OFFICIAL_FX_CACHE_TTL_MS || 900000));
 
       if (this.memoria) {
-        this.memoria.guardarAprendizaje('ultimo_tc', resultado, resultado.oficial ? 1.0 : 0.8);
+        this.memoria.guardarAprendizaje('ultimo_tc', cloneSerializable(resultado), resultado.oficial ? 1.0 : 0.8);
         this.memoria.guardarAprendizaje('tc_fecha', resultado.actualizado, 1.0);
       }
 
-      return resultado;
+      return cloneSerializable(resultado);
     } catch (error) {
       return {
         exito: false,
@@ -153,14 +165,15 @@ class AgenteNavegadorSUNAT {
 
     if (resultado.exito) {
       const arancel = this._parsearArancelAduanet(resultado.html, clean);
-      this._guardarEnCache(cacheKey, arancel, 3600000);
-
-      return {
+      const arancelResultado = {
         exito: true,
         ...arancel,
         fuente: 'ADUANET/SUNAT',
         actualizado: new Date().toISOString(),
       };
+      this._guardarEnCache(cacheKey, arancelResultado, 3600000);
+
+      return cloneSerializable(arancelResultado);
     }
 
     return {
@@ -249,7 +262,7 @@ class AgenteNavegadorSUNAT {
 
   _guardarEnCache(clave, valor, ttlMs) {
     this.cache.set(clave, {
-      valor,
+      valor: cloneSerializable(valor),
       expira: Date.now() + ttlMs,
     });
   }
@@ -257,7 +270,7 @@ class AgenteNavegadorSUNAT {
   _obtenerDeCache(clave) {
     const cached = this.cache.get(clave);
     if (cached && Date.now() < cached.expira) {
-      return cached.valor;
+      return cloneSerializable(cached.valor);
     }
     this.cache.delete(clave);
     return null;

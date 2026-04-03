@@ -1,12 +1,12 @@
-// server/auto-cotizar.js — Motor de cálculo completo para importación Perú
+// server/auto-cotizar.js - Motor de calculo completo para importacion Peru
 //
 // 7 FEATURES IMPLEMENTADAS:
-//   1. Percepción diferenciada (10% nuevo, 5% usado, 3.5% general)
+//   1. Percepcion diferenciada (10% nuevo, 5% usado, 3.5% general)
 //   2. Costos operativos (agente, almacenaje, transporte, banco)
-//   3. Antidumping automático (medidas INDECOPI vigentes)
-//   4. Conversión de moneda (CNY/EUR/JPY → USD)
+//   3. Antidumping automatico (medidas INDECOPI aplicables)
+//   4. Conversion de moneda (CNY/EUR/JPY -> USD)
 //   5. Margen de venta (precio venta sugerido con % utilidad)
-//   6. Modo simplificado DSI (FOB < $2,000 → 4% AV flat)
+//   6. Modo simplificado DSI (FOB < $2,000 -> 4% AV flat)
 //   7. Alertas de cambio normativo
 
 const aiProxy = require('./ai-proxy');
@@ -30,40 +30,40 @@ const {
 const IPM_RATE = 0.02;
 const SEGURO_DEFAULT = 0.015;
 
-async function resolverValidacionOficial(resultado, items, pais, log) {
+async function resolverConsultaOficial(resultado, items, pais, log) {
   try {
-    const validacionOficial = await construirValidacionOficialImportacion({ items, pais });
-    if (validacionOficial?.subpartidas?.length) {
-      resultado.validacionOficial = validacionOficial;
-      agregarAlertaTributariaOficial(resultado, validacionOficial);
+    const consultaOficial = await construirValidacionOficialImportacion({ items, pais });
+    if (consultaOficial?.subpartidas?.length) {
+      resultado.validacionOficial = consultaOficial;
+      agregarAlertaConsultaTributaria(resultado, consultaOficial);
       if (Array.isArray(log)) {
         log.push(
-          `✓ Validacion oficial ADUANET: ${validacionOficial.subpartidas.length} subpartida(s)` +
-          `${validacionOficial.truncado ? ' (limitado para mantener tiempo de respuesta)' : ''}`
+          `[ADUANET] Consulta oficial: ${consultaOficial.subpartidas.length} subpartida(s)` +
+          `${consultaOficial.truncado ? ' (limitado para mantener tiempo de respuesta)' : ''}`
         );
       }
-    } else if (validacionOficial?.error && Array.isArray(log)) {
-      agregarAlertaTributariaOficial(resultado, validacionOficial);
-      log.push(`Validacion oficial no disponible: ${validacionOficial.error}`);
+    } else if (consultaOficial?.error && Array.isArray(log)) {
+      agregarAlertaConsultaTributaria(resultado, consultaOficial);
+      log.push(`Consulta oficial no disponible: ${consultaOficial.error}`);
     }
-    return validacionOficial;
+    return consultaOficial;
   } catch (error) {
     if (Array.isArray(log)) {
-      log.push(`Validacion oficial omitida: ${error.message}`);
+      log.push(`Consulta oficial omitida: ${error.message}`);
     }
     return null;
   }
 }
 
-function agregarAlertaTributariaOficial(resultado, validacionOficial) {
-  if (!resultado || !Array.isArray(resultado.alertas) || !validacionOficial) return;
+function agregarAlertaConsultaTributaria(resultado, consultaOficial) {
+  if (!resultado || !Array.isArray(resultado.alertas) || !consultaOficial) return;
 
   resultado.alertas = resultado.alertas.filter(
     (alerta) => alerta?.tipo !== 'normativo_tributario_oficial'
   );
 
-  const subpartidas = Array.isArray(validacionOficial.subpartidas)
-    ? validacionOficial.subpartidas
+  const subpartidas = Array.isArray(consultaOficial.subpartidas)
+    ? consultaOficial.subpartidas
     : [];
   const conFuenteOficial = subpartidas.filter((subpartida) => subpartida?.oficialEnVivo).length;
 
@@ -78,37 +78,37 @@ function agregarAlertaTributariaOficial(resultado, validacionOficial) {
       tipo: 'normativo_tributario_oficial',
       nivel: conFuenteOficial > 0 ? 'info' : 'medio',
       mensaje: conFuenteOficial > 0
-        ? `Validacion tributaria oficial: ADUANET confirmo gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como vigente el bloque "Validacion oficial en vivo".`
-        : 'No se obtuvo confirmacion oficial en vivo para esta corrida. Confirma IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
+        ? `Consulta tributaria oficial: ADUANET devolvio gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como referencia de trabajo el bloque "Consulta oficial en vivo".`
+        : 'No hubo respuesta oficial en vivo para esta corrida. Revisa IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
     });
     return;
   }
 
-  if (validacionOficial.error) {
+  if (consultaOficial.error) {
     resultado.alertas.push({
       tipo: 'normativo_tributario_oficial',
       nivel: 'medio',
-      mensaje: 'Validacion oficial tributaria no disponible en esta consulta. Confirma en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
+      mensaje: 'Consulta oficial tributaria no disponible en esta corrida. Revisa en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
     });
   }
 }
 
-// ══════════════════════════════════════════
-// INCOTERMS — Ajuste del precio según término comercial
-// ══════════════════════════════════════════
+// ==========================================
+// INCOTERMS - Ajuste del precio segun termino comercial
+// ==========================================
 // El problema: SUNAT calcula tributos sobre CIF (Costo + Seguro + Flete).
 // Si el proveedor cotiza en EXW, hay costos que SUMAR al precio para llegar a FOB.
-// Si cotiza en CIF, el flete y seguro YA están incluidos y NO deben sumarse otra vez.
+// Si cotiza en CIF, el flete y seguro YA estan incluidos y NO deben sumarse otra vez.
 //
 // Grupos:
-//   E (EXW)   → Precio en fábrica. Falta: transporte local origen + despacho export + flete + seguro
-//   F (FCA/FAS/FOB) → Entregado al transportista. Falta: flete internacional + seguro
-//   C (CFR/CIF/CPT/CIP) → Flete pagado. CIF/CIP incluyen seguro.
-//   D (DAP/DPU/DDP) → Entregado en destino. Ya incluye casi todo.
+//   E (EXW)   -> Precio en fabrica. Falta: transporte local origen + despacho export + flete + seguro
+//   F (FCA/FAS/FOB) -> Entregado al transportista. Falta: flete internacional + seguro
+//   C (CFR/CIF/CPT/CIP) -> Flete pagado. CIF/CIP incluyen seguro.
+//   D (DAP/DPU/DDP) -> Entregado en destino. Ya incluye casi todo.
 
 const INCOTERM_INFO = {
   EXW: { grupo: 'E', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: false,
-    ajusteDesc: 'Precio en fábrica. Se suman: transporte a puerto origen, despacho exportación, flete internacional, seguro.',
+    ajusteDesc: 'Precio en fabrica. Se suman: transporte a puerto origen, despacho exportacion, flete internacional, seguro.',
     costoExtraEstimado: 0.08 }, // ~8% del valor para transporte local + despacho export
   FCA: { grupo: 'F', incluyeFlete: false, incluyeSeguro: false, incluyeDespachoExport: true,
     ajusteDesc: 'Entregado al transportista. Se suman: flete internacional, seguro.',
@@ -147,7 +147,7 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fob
   const info = INCOTERM_INFO[(incoterm || 'FOB').toUpperCase()];
   const precision = {
     codigo: (incoterm || 'FOB').toUpperCase(),
-    estado: 'exacto',
+    estado: 'con_respaldo',
     fobEstimado: false,
     fleteEstimado: false,
     seguroEstimado: false,
@@ -227,7 +227,7 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fob
 
   if (inc === 'CIF' || inc === 'CIP') {
     // Precio INCLUYE flete Y seguro
-    // CIF = FOB + Flete + Seguro → FOB = CIF - Flete - Seguro
+    // CIF = FOB + Flete + Seguro -> FOB = CIF - Flete - Seguro
     if (fleteTotal > 0 && seguroTotal > 0) {
       return { fob: Math.max(0, precioUnitario - fleteTotal - seguroTotal), flete: fleteTotal, seguro: seguroTotal, ajuste: info.ajusteDesc + ' FOB = precio - flete - seguro.', precision };
     }
@@ -245,7 +245,7 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fob
     precision.fleteEstimado = true;
     precision.seguroEstimado = true;
     precision.mensaje = 'Se estimaron flete y seguro para desarmar el incoterm.';
-    return { fob: precioUnitario - fleteEst - segEst, flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + ' Flete ~8%, seguro ~1.5% estimados. Ingresar valores reales para mayor precisión.', precision };
+    return { fob: precioUnitario - fleteEst - segEst, flete: fleteEst, seguro: segEst, ajuste: info.ajusteDesc + ' Flete ~8%, seguro ~1.5% estimados. Ingresar valores reales para mayor precision.', precision };
   }
 
   if (inc === 'DAP' || inc === 'DPU') {
@@ -265,12 +265,12 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fob
     precision.fobEstimado = true;
     precision.fleteEstimado = true;
     precision.seguroEstimado = true;
-    precision.mensaje = 'DDP no puede desglosarse con exactitud sin un FOB real del proveedor.';
+    precision.mensaje = 'DDP no puede desglosarse de forma confiable sin un FOB real del proveedor.';
     return {
       fob: precioUnitario * 0.65, // Rough estimate: tributos+flete ~35% del DDP
       flete: precioUnitario * 0.08,
       seguro: precioUnitario * 0.015,
-      ajuste: '⚠ DDP incluye tributos en el precio. Desglose es estimado (~65% FOB). Para precisión, solicita precio FOB al proveedor.',
+      ajuste: 'DDP incluye tributos en el precio. El desglose es estimado (~65% FOB). Para mayor confiabilidad, solicita precio FOB al proveedor.',
       advertencia: true,
       precision,
     };
@@ -279,9 +279,9 @@ function ajustarIncoterm(precioUnitario, incoterm, fleteTotal, seguroTotal, _fob
   return { fob: precioUnitario, flete: fleteTotal, seguro: seguroTotal, ajuste: 'Tratado como FOB', precision };
 }
 
-// ══════════════════════════════════════════
-// SENSIBILIDAD TC — ¿Cuánto cambia si el dólar sube/baja?
-// ══════════════════════════════════════════
+// ==========================================
+// SENSIBILIDAD TC - Cuanto cambia si el dolar sube/baja?
+// ==========================================
 function calcularSensibilidadTC(totalUSD, tcBase, variaciones) {
   if (!tcBase || tcBase <= 0) return null;
   const vars = variaciones || [-10, -5, -3, 0, 3, 5, 10];
@@ -299,11 +299,11 @@ function calcularSensibilidadTC(totalUSD, tcBase, variaciones) {
   });
 }
 
-// ══════════════════════════════════════════
-// ANTIDUMPING — Medidas vigentes INDECOPI
+// ==========================================
+// ANTIDUMPING - Medidas aplicables INDECOPI
 // Fuente: https://www.indecopi.gob.pe/dumping-y-subvenciones
 // Se deben actualizar cuando INDECOPI emite nuevas resoluciones
-// ══════════════════════════════════════════
+// ==========================================
 const ANTIDUMPING_MEDIDAS = [
   { hs: '6109', pais: 'CN', tasa: 5.51, desc: 'Camisetas de algodón', resolucion: '025-2019/CDB-INDECOPI', vigenciaHasta: '2029' },
   { hs: '6105', pais: 'CN', tasa: 3.73, desc: 'Camisas de punto algodón', resolucion: '025-2019/CDB-INDECOPI', vigenciaHasta: '2029' },
@@ -336,9 +336,9 @@ function buscarAntidumping(hs, pais) {
   return null;
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // CONVERSIÓN DE MONEDA
-// ══════════════════════════════════════════
+// ==========================================
 const TASAS_CAMBIO_FALLBACK = {
   USD: 1, EUR: 1.08, GBP: 1.27, CNY: 0.138, JPY: 0.0067,
   KRW: 0.00074, TWD: 0.031, THB: 0.028, INR: 0.012,
@@ -353,16 +353,16 @@ function convertirAUSD(monto, moneda, tcCustom) {
   return monto; // If unknown currency, assume USD
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // COSTOS OPERATIVOS
-// ══════════════════════════════════════════
+// ==========================================
 function calcularCostosOperativos(canal, cif, _pesoTotal) {
   const costos = {};
 
   if (canal === 'DEFINITIVA' || canal === 'MARITIMO' || canal === 'AEREO') {
     costos.agenteAduanas = Math.max(200, cif * 0.015); // ~1.5% del CIF, mín $200
     costos.almacenaje = canal === 'MARITIMO' ? 120 : 80; // Marítimo más caro
-    costos.transporteLocal = canal === 'MARITIMO' ? 200 : 100; // Callao → Lima
+    costos.transporteLocal = canal === 'MARITIMO' ? 200 : 100; // Callao -> Lima
     costos.comisionBancaria = 40;
     costos.gastosOperativos = 50; // handling, visto bueno, etc.
     costos.aforo = 0; // Solo si sale a aforo físico (~30% de DUAs)
@@ -384,11 +384,11 @@ function calcularCostosOperativos(canal, cif, _pesoTotal) {
   return costos;
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // MODO SIMPLIFICADO DSI (< $2,000 FOB)
 // Partida simplificada: 4% AV flat + 18% IGV
 // Sin ISC, sin percepción, sin antidumping
-// ══════════════════════════════════════════
+// ==========================================
 function calcularDSI(fob, fleteTotal, seguroTotal) {
   const seguro = seguroTotal || fob * SEGURO_DEFAULT;
   const cif = fob + fleteTotal + seguro;
@@ -399,7 +399,7 @@ function calcularDSI(fob, fleteTotal, seguroTotal) {
   const totalTributos = adValorem + igv + ipm;
   return {
     modo: 'DSI',
-    nota: 'Despacho Simplificado de Importación (FOB ≤ US$2,000). Partida 9810.00.00.20. AV flat 4%.',
+    nota: 'Despacho Simplificado de Importacion (FOB <= US$2,000). Partida 9810.00.00.20. AV flat 4%.',
     fob, flete: fleteTotal, seguro, cif,
     adValorem, advRate: 4,
     igv, ipm,
@@ -410,9 +410,9 @@ function calcularDSI(fob, fleteTotal, seguroTotal) {
   };
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // MARGEN DE VENTA
-// ══════════════════════════════════════════
+// ==========================================
 function calcularMargen(totalLandedPorUnidad, costosOperativosPorUnidad, margenPct) {
   const costoTotal = totalLandedPorUnidad + costosOperativosPorUnidad;
   const marginSafe = Math.min(Math.max((margenPct || 30), 1), 99); // Cap 1-99% to avoid div/0
@@ -429,9 +429,9 @@ function calcularMargen(totalLandedPorUnidad, costosOperativosPorUnidad, margenP
   };
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // ALERTAS DE CAMBIO NORMATIVO
-// ══════════════════════════════════════════
+// ==========================================
 function verificarAlertas(items, pais) {
   const alertas = [];
 
@@ -445,7 +445,7 @@ function verificarAlertas(items, pais) {
       if (monthsLeft <= 6) {
         alertas.push({
           tipo: 'antidumping_expira', nivel: 'medio',
-          mensaje: `⏰ Antidumping ${ad.desc} (Res. ${ad.resolucion}) vence en ${ad.vigenciaHasta}. INDECOPI puede renovar o eliminar.`,
+          mensaje: `Antidumping ${ad.desc} (Res. ${ad.resolucion}) vence en ${ad.vigenciaHasta}. INDECOPI puede renovar o eliminar la medida.`,
         });
       }
     }
@@ -455,8 +455,8 @@ function verificarAlertas(items, pais) {
   items.forEach(item => {
     if (item.tlc && item.ahorroTLC > 0) {
       alertas.push({
-        tipo: 'tlc_activo', nivel: 'info',
-        mensaje: `🤝 TLC activo: ${item.desc} — ahorro AV de ${item.ahorroTLC}% (${item.tlc.acuerdo || 'acuerdo comercial'})`,
+        tipo: 'tlc_aplicable', nivel: 'info',
+        mensaje: `TLC aplicable segun datos: ${item.desc} - ahorro AV de ${item.ahorroTLC}% (${item.tlc.acuerdo || 'acuerdo comercial'})`,
       });
     }
   });
@@ -464,9 +464,9 @@ function verificarAlertas(items, pais) {
   return alertas;
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // PASO 1: EXTRAER (devuelve borrador para revisión)
-// ══════════════════════════════════════════
+// ==========================================
 async function extraer(contenido, tipo) {
   if (tipo === 'json') return { ok: true, data: contenido, confianza: 100, advertencias: [] };
 
@@ -482,16 +482,16 @@ async function extraer(contenido, tipo) {
   }
 
   if (!data || !data.items || data.items.length === 0) {
-    return { ok: false, error: 'No se pudieron extraer items. ¿Es una cotización de proveedor?', advertencias };
+    return { ok: false, error: 'No se pudieron extraer items. Es una cotizacion de proveedor?', advertencias };
   }
 
   let confianza = 85;
 
   data.items.forEach((item, i) => {
-    if (item.unit > 100000) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy alto: $${item.unit.toLocaleString()}. ¿Es correcto?`, nivel: 'alto' }); confianza -= 10; }
-    if (item.unit > 0 && item.unit < 0.01) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy bajo: $${item.unit}. ¿Falta un decimal?`, nivel: 'alto' }); confianza -= 10; }
+    if (item.unit > 100000) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy alto: $${item.unit.toLocaleString()}. Es correcto?`, nivel: 'alto' }); confianza -= 10; }
+    if (item.unit > 0 && item.unit < 0.01) { advertencias.push({ item: i, campo: 'unit', mensaje: `Precio unitario muy bajo: $${item.unit}. Falta un decimal?`, nivel: 'alto' }); confianza -= 10; }
     if (item.qty > 100000) { advertencias.push({ item: i, campo: 'qty', mensaje: `Cantidad muy alta: ${item.qty.toLocaleString()}`, nivel: 'medio' }); confianza -= 5; }
-    if (!item.desc || item.desc.length < 3) { advertencias.push({ item: i, campo: 'desc', mensaje: 'Descripción vacía o muy corta', nivel: 'alto' }); confianza -= 10; }
+    if (!item.desc || item.desc.length < 3) { advertencias.push({ item: i, campo: 'desc', mensaje: 'Descripcion vacia o muy corta', nivel: 'alto' }); confianza -= 10; }
   });
 
   // Moneda no USD
@@ -499,24 +499,24 @@ async function extraer(contenido, tipo) {
     const tasa = TASAS_CAMBIO_FALLBACK[data.currency.toUpperCase()];
     advertencias.push({
       campo: 'currency', nivel: 'medio',
-      mensaje: `Cotización en ${data.currency}. Se convertirá a USD (tasa ref: 1 ${data.currency} ≈ ${tasa || '?'} USD). Verifica el tipo de cambio.`,
+      mensaje: `Cotizacion en ${data.currency}. Se convertira a USD (tasa ref: 1 ${data.currency} aprox. ${tasa || '?'} USD). Verifica el tipo de cambio.`,
     });
   }
 
   if (data.items.length === 1 && contenido.length > 500) {
-    advertencias.push({ campo: 'items', mensaje: 'Solo se extrajo 1 item. ¿El documento tiene más productos?', nivel: 'medio' });
+    advertencias.push({ campo: 'items', mensaje: 'Solo se extrajo 1 item. El documento tiene mas productos?', nivel: 'medio' });
   }
 
   const sumItems = data.items.reduce((s, it) => s + (it.qty || 1) * (it.unit || 0), 0);
   if (data.total && Math.abs(data.total - sumItems) / data.total > 0.05) {
-    advertencias.push({ campo: 'total', mensaje: `Total ($${data.total}) ≠ suma items ($${sumItems.toFixed(2)})`, nivel: 'alto' }); confianza -= 15;
+    advertencias.push({ campo: 'total', mensaje: `Total ($${data.total}) difiere de la suma de items ($${sumItems.toFixed(2)})`, nivel: 'alto' }); confianza -= 15;
   }
 
   return {
     ok: true, data, confianza: Math.max(10, confianza), advertencias,
     mensaje: advertencias.length > 0
-      ? `⚠ ${advertencias.length} punto(s) requieren verificación.`
-      : '✅ Datos extraídos. Verifica y confirma.',
+      ? `${advertencias.length} punto(s) requieren revision.`
+      : 'Datos extraidos. Revisa antes de continuar.',
     paraRevisar: {
       items: data.items.map((it, i) => ({
         index: i, desc: it.desc || '', qty: it.qty || 1, unit: it.unit || 0,
@@ -532,11 +532,11 @@ async function extraer(contenido, tipo) {
 
 async function extraerConReintento(contenido, tipo) {
   const messages = [
-    { role: 'system', content: `Extrae TODOS los items de esta cotización. Responde SOLO JSON:
+    { role: 'system', content: `Extrae TODOS los items de esta cotizacion. Responde SOLO JSON:
 {"items":[{"desc":"...","qty":N,"unit":N,"sku":"..."}],"total":N,"freight":N,"insurance":N,"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","payment_terms":"...","validity":"..."}
-qty y unit DEBEN ser números.` },
+qty y unit DEBEN ser numeros.` },
     { role: 'user', content: tipo === 'image'
-      ? [{ type: 'image_url', image_url: { url: contenido } }, { type: 'text', text: 'Extrae datos de esta cotización.' }]
+      ? [{ type: 'image_url', image_url: { url: contenido } }, { type: 'text', text: 'Extrae datos de esta cotizacion.' }]
       : `Extrae datos:\n\n${contenido}` },
   ];
   try {
@@ -548,13 +548,13 @@ qty y unit DEBEN ser números.` },
   return null;
 }
 
-// ══════════════════════════════════════════
-// PASO 2: CALCULAR (después de confirmación)
-// ══════════════════════════════════════════
+// ==========================================
+// PASO 2: CALCULAR (despues de revision)
+// ==========================================
 async function calcular(input) {
   const startTime = Date.now();
   const log = [];
-  const resultado = { exito: false, items: [], totales: {}, alertas: [], etapas: {}, tiempoMs: 0 };
+  const resultado = { procesado: false, items: [], totales: {}, alertas: [], etapas: {}, tiempoMs: 0 };
 
   try {
     const {
@@ -599,7 +599,7 @@ async function calcular(input) {
                 : { estado: 'pendiente', fuente: 'sin_definir', monto: 0 }
             )
         ),
-      incoterm: { codigo: (incoterm || 'FOB').toUpperCase(), estado: 'exacto', mensaje: null },
+      incoterm: { codigo: (incoterm || 'FOB').toUpperCase(), estado: 'con_respaldo', mensaje: null },
       tipoCambio: {
         estado: tipoCambio.estado,
         fuente: tipoCambio.fuente,
@@ -615,7 +615,7 @@ async function calcular(input) {
 
     // ── CONVERTIR MONEDA ──
     if (monedaUpper !== 'USD') {
-      log.push(`Convirtiendo ${monedaUpper} → USD...`);
+      log.push(`Convirtiendo ${monedaUpper} a USD...`);
       items.forEach(item => {
         if (item.unit) {
           const originalUnit = item.unit;
@@ -626,7 +626,7 @@ async function calcular(input) {
       });
       const tasa = tcMoneda || TASAS_CAMBIO_FALLBACK[monedaUpper] || 1;
       resultado.etapas.conversion = { moneda: monedaUpper, tasaUsada: tasa, nota: 'Precios convertidos a USD' };
-      log.push(`✓ Convertido a USD (1 ${monedaUpper} = ${tasa} USD)`);
+      log.push(`Convertido a USD (1 ${monedaUpper} = ${tasa} USD)`);
     }
 
     // ── CHECK DSI (< $2,000 FOB) ──
@@ -637,7 +637,7 @@ async function calcular(input) {
       const cifPostal = fobTotal + fleteManual + seguroT;
       const costosOp = calcularCostosOperativos(canalUpper, cifPostal, 0);
 
-      resultado.exito = true;
+      resultado.procesado = true;
       resultado.modo = 'POSTAL_FRANQUICIA';
       resultado.totales = {
         fob: fobTotal,
@@ -701,7 +701,7 @@ async function calcular(input) {
         incoterm,
         resultado,
       });
-      await resolverValidacionOficial(resultado, items, country, log);
+      await resolverConsultaOficial(resultado, items, country, log);
       resultado.perfilImportacion = buildImportProfile({
         canal: canalUpper,
         tipoSujeto,
@@ -723,13 +723,13 @@ async function calcular(input) {
     }
 
     if (fobTotal <= 2000 && (canalUpper === 'POSTAL' || canalUpper === 'COURIER' || canalUpper === 'DSI')) {
-      log.push('Modo DSI: FOB ≤ $2,000 — cálculo simplificado');
+      log.push('Modo DSI: FOB <= $2,000, calculo simplificado');
       const fleteT = fleteManual || 0;
       const seguroT = seguroManual || 0;
       const dsi = calcularDSI(fobTotal, fleteT, seguroT);
       const costosOp = calcularCostosOperativos(canalUpper, dsi.cif, 0);
 
-      resultado.exito = true;
+      resultado.procesado = true;
       resultado.modo = 'DSI';
       resultado.totales = { ...dsi, costosOperativos: costosOp, totalReal: dsi.totalLanded + costosOp.totalOperativo };
       if (tcAplicado > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tcAplicado;
@@ -750,7 +750,7 @@ async function calcular(input) {
         seguroModo: seguroMode || (seguroManual > 0 ? 'REAL' : 'ESTIMADO'),
       };
       resultado.tipoCambio = tipoCambio;
-      resultado.alertas = [{ tipo: 'dsi', nivel: 'info', mensaje: '📦 Importación simplificada (DSI). AV 4% flat, sin percepción ni antidumping.' }];
+      resultado.alertas = [{ tipo: 'dsi', nivel: 'info', mensaje: 'Importacion simplificada (DSI). AV 4% flat, sin percepcion ni antidumping.' }];
       if (fleteT > 0) {
         trazabilidad.flete = { estado: 'real', fuente: 'manual', monto: fleteT };
       }
@@ -780,7 +780,7 @@ async function calcular(input) {
         incoterm,
         resultado,
       });
-      await resolverValidacionOficial(resultado, items, country, log);
+      await resolverConsultaOficial(resultado, items, country, log);
       resultado.perfilImportacion = buildImportProfile({
         canal: canalUpper,
         tipoSujeto,
@@ -810,7 +810,7 @@ async function calcular(input) {
       fallidos: items.length - clasificados.length,
       confianzaPromedio: clasificados.length > 0 ? Math.round(clasificados.reduce((s, i) => s + (i.confianza || 0), 0) / clasificados.length) : 0,
     };
-    log.push(`✓ ${clasificados.length}/${items.length} clasificados`);
+    log.push(`Clasificados: ${clasificados.length}/${items.length}`);
 
     // ── ENRIQUECER (NANDINA + TLC + permisos + antidumping) ──
     log.push('Consultando NANDINA, TLCs, permisos, antidumping...');
@@ -838,25 +838,25 @@ async function calcular(input) {
       conAntidumping: antidumpingCount,
     };
 
-    if (prohibidos.length > 0) resultado.alertas.push({ tipo: 'prohibida', nivel: 'critico', mensaje: `⛔ ${prohibidos.length} item(s) PROHIBIDOS: ${prohibidos.map(i => i.desc).join(', ')}` });
+    if (prohibidos.length > 0) resultado.alertas.push({ tipo: 'prohibida', nivel: 'critico', mensaje: `${prohibidos.length} item(s) marcados como prohibidos: ${prohibidos.map(i => i.desc).join(', ')}` });
     if (conPermisos.length > 0) {
       const ents = [...new Set(conPermisos.flatMap(i => i.permisos?.permisos?.map(p => p.entidad) || []))];
-      resultado.alertas.push({ tipo: 'restringida', nivel: 'alto', mensaje: `⚠ ${conPermisos.length} item(s) requieren permisos de: ${ents.join(', ')}`, entidades: ents });
+      resultado.alertas.push({ tipo: 'restringida', nivel: 'alto', mensaje: `${conPermisos.length} item(s) requieren permisos de: ${ents.join(', ')}`, entidades: ents });
     }
     if (antidumpingCount > 0) {
-      resultado.alertas.push({ tipo: 'antidumping', nivel: 'alto', mensaje: `🛡 ${antidumpingCount} item(s) con derechos antidumping INDECOPI` });
+      resultado.alertas.push({ tipo: 'antidumping', nivel: 'alto', mensaje: `${antidumpingCount} item(s) con derechos antidumping INDECOPI` });
     }
-    log.push(`✓ Regulatorio: ${resultado.etapas.regulatorio.conTLC} TLC, ${conPermisos.length} permisos, ${antidumpingCount} antidumping`);
+    log.push(`Regulatorio: ${resultado.etapas.regulatorio.conTLC} TLC, ${conPermisos.length} permisos, ${antidumpingCount} antidumping`);
 
     // ── INCOTERM ADJUSTMENT ──
     const incotermUpper = (incoterm || 'FOB').toUpperCase();
     const incInfo = INCOTERM_INFO[incotermUpper];
     if (incInfo && incotermUpper !== 'FOB') {
-      log.push(`Ajustando precios de ${incotermUpper} → FOB...`);
+      log.push(`Ajustando precios de ${incotermUpper} a FOB...`);
       const ajuste = ajustarIncoterm(fobTotal, incotermUpper, fleteManual, seguroManual, fobTotal);
       trazabilidad.incoterm = {
         codigo: incotermUpper,
-        estado: ajuste.precision?.estado || 'exacto',
+        estado: ajuste.precision?.estado || 'con_respaldo',
         mensaje: ajuste.precision?.mensaje || null,
       };
       resultado.etapas.incoterm = {
@@ -878,7 +878,7 @@ async function calcular(input) {
           fuente: ajuste.precision?.fleteEstimado ? 'incoterm_estimado' : 'incoterm',
           monto: ajuste.flete,
         };
-        log.push(`  Flete extraído del precio ${incotermUpper}: $${ajuste.flete.toFixed(2)}`);
+        log.push(`  Flete extraido del precio ${incotermUpper}: $${ajuste.flete.toFixed(2)}`);
       }
       if (incInfo.incluyeSeguro && seguroManual === 0) {
         seguroManual = ajuste.seguro;
@@ -887,7 +887,7 @@ async function calcular(input) {
           fuente: ajuste.precision?.seguroEstimado ? 'incoterm_estimado' : 'incoterm',
           monto: ajuste.seguro,
         };
-        log.push(`  Seguro extraído del precio ${incotermUpper}: $${ajuste.seguro.toFixed(2)}`);
+        log.push(`  Seguro extraido del precio ${incotermUpper}: $${ajuste.seguro.toFixed(2)}`);
       }
 
       // Adjust item prices proportionally to FOB
@@ -923,7 +923,7 @@ async function calcular(input) {
         fleteTotal = est.flete || 0;
         resultado.etapas.flete = { estimado: true, monto: fleteTotal, transit: est.tiempoTransito, desglose: est.desglose };
         trazabilidad.flete = { estado: 'estimado', fuente: 'tarifa_referencial', monto: fleteTotal };
-        log.push(`✓ Flete estimado: $${fleteTotal.toFixed(2)}`);
+        log.push(`Flete estimado: $${fleteTotal.toFixed(2)}`);
       } catch (error) { /* freight estimator fallback */ }
     }
     if (fleteTotal > 0 && trazabilidad.flete.estado === 'pendiente') {
@@ -972,16 +972,16 @@ async function calcular(input) {
 
       // TC SENSITIVITY ANALYSIS
       totales.sensibilidadTC = calcularSensibilidadTC(totales.totalReal, tcAplicado);
-      log.push('✓ Sensibilidad TC calculada (±3%, ±5%, ±10%)');
+      log.push('Sensibilidad TC calculada (+/-3%, +/-5%, +/-10%)');
     }
-    log.push(`✓ Total landed: $${totales.totalLanded.toFixed(2)} + operativos: $${totales.costosOperativos.totalOperativo.toFixed(2)} = $${totales.totalReal.toFixed(2)}`);
+    log.push(`Total landed: $${totales.totalLanded.toFixed(2)} + operativos: $${totales.costosOperativos.totalOperativo.toFixed(2)} = $${totales.totalReal.toFixed(2)}`);
 
     // ── MARGEN DE VENTA ──
     const totalQty = itemsClasificados.reduce((s, i) => s + (i.qty || 1), 0);
     if (totalQty > 0 && shouldProjectMargin) {
       const costoPorUnidadGlobal = totales.totalReal / totalQty;
       totales.margenVenta = calcularMargen(costoPorUnidadGlobal, 0, margenVenta);
-      log.push(`✓ Precio venta sugerido: $${totales.margenVenta.precioVentaConIGV.toFixed(2)} c/u (${totales.margenVenta.margenPct}% margen)`);
+      log.push(`Precio de venta sugerido: $${totales.margenVenta.precioVentaConIGV.toFixed(2)} c/u (${totales.margenVenta.margenPct}% margen)`);
     }
 
     // Per-item margin
@@ -992,25 +992,25 @@ async function calcular(input) {
       }
     });
 
-    // ── ALERTAS NORMATIVAS ──
+    // ALERTAS NORMATIVAS
     const alertasNormativas = verificarAlertas(itemsClasificados, country);
     resultado.alertas.push(...alertasNormativas);
 
-    // ── DUDA RAZONABLE ──
+    // DUDA RAZONABLE
     try {
       log.push('Verificando duda razonable...');
       const dudas = await verificarDudaRazonable(itemsClasificados, country);
       const riesgosos = dudas.filter(d => d?.riesgo === 'alto' || d?.riesgo === 'critico');
       if (riesgosos.length > 0) {
         resultado.alertas.push({ tipo: 'duda_razonable', nivel: 'alto',
-          mensaje: `🔶 ${riesgosos.length} item(s) con riesgo de duda razonable SUNAT`,
+          mensaje: `${riesgosos.length} item(s) con riesgo de duda razonable SUNAT`,
           items: riesgosos.map(d => ({ hs: d.hs, desc: d.desc, riesgo: d.riesgo, mensaje: d.mensaje })),
         });
       }
-      resultado.etapas.dudaRazonable = { verificados: dudas.length, riesgosos: riesgosos.length };
+      resultado.etapas.dudaRazonable = { revisados: dudas.length, riesgosos: riesgosos.length };
     } catch (e) { resultado.etapas.dudaRazonable = { error: e.message }; }
 
-    resultado.exito = true;
+    resultado.procesado = true;
     resultado.items = itemsClasificados;
     resultado.totales = totales;
     resultado.metadata = {
@@ -1048,7 +1048,7 @@ async function calcular(input) {
       incoterm,
       resultado,
     });
-    await resolverValidacionOficial(resultado, itemsClasificados, country, log);
+    await resolverConsultaOficial(resultado, itemsClasificados, country, log);
     resultado.perfilImportacion = buildImportProfile({
       canal: canalUpper,
       tipoSujeto,
@@ -1072,9 +1072,9 @@ async function calcular(input) {
   return resultado;
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // MOTOR DE TRIBUTOS (el core)
-// ══════════════════════════════════════════
+// ==========================================
 function calcularTributos(item, fleteItem, seguroItem, canal, tipoImportador) {
   const qty = item.qty || 1, unitPrice = item.unit || 0;
   const fob = qty * unitPrice;
@@ -1085,7 +1085,7 @@ function calcularTributos(item, fleteItem, seguroItem, canal, tipoImportador) {
   // ISC
   let iscRate = (item.iscRate || 0) / 100;
   let iscAdvertencia = null;
-  if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscAdvertencia = '⚠ ISC sistema especial — consultar SUNAT'; }
+  if (item.iscRate === -1 || item.iscRate > 900) { iscRate = 0; iscAdvertencia = 'ISC sistema especial; consultar SUNAT'; }
 
   const adValorem = cif * advRate;
   const isc = (cif + adValorem) * (iscRate > 0 ? iscRate : 0);
@@ -1133,9 +1133,9 @@ function calcularTributos(item, fleteItem, seguroItem, canal, tipoImportador) {
   };
 }
 
-// ══════════════════════════════════════════
+// ==========================================
 // HELPERS
-// ══════════════════════════════════════════
+// ==========================================
 
 async function clasificarItems(items) {
   const results = await Promise.allSettled(

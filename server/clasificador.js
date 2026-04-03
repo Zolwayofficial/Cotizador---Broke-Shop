@@ -87,6 +87,25 @@ function buildClassificationUserMessage(descripcion, imagenBase64) {
   return `Clasifica este producto para importacion al Peru: ${productDescription}\n\n${context.promptBlock}`;
 }
 
+function normalizeConfidence(value, fallback = 0) {
+  const raw = String(value ?? '').trim().replace(/%/g, '');
+  if (!raw) return fallback;
+  const normalized = raw.includes(',') && raw.includes('.')
+    ? raw.lastIndexOf(',') > raw.lastIndexOf('.')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : raw.replace(/,/g, '')
+    : raw.replace(',', '.');
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeKeywordText(texto) {
+  return doctrina._private.normalizarTexto(texto)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function clasificarMultiAgente(descripcion, imagenBase64) {
   const startTime = Date.now();
   const classificationContext = doctrina.buildClassificationContext(descripcion);
@@ -110,11 +129,11 @@ async function clasificarMultiAgente(descripcion, imagenBase64) {
   const agent2 = parseAgentResponse(resp2);
   resultado.agentes = [agent1, agent2];
 
-  const hs1 = normalizeHS(agent1?.hs);
-  const hs2 = normalizeHS(agent2?.hs);
+  const hs1 = normalizeUsableHS(agent1?.hs);
+  const hs2 = normalizeUsableHS(agent2?.hs);
 
   if (hs1 && hs2 && hs1 === hs2) {
-    const avgConf = ((agent1.confianza || 80) + (agent2.confianza || 80)) / 2;
+    const avgConf = (normalizeConfidence(agent1.confianza, 80) + normalizeConfidence(agent2.confianza, 80)) / 2;
     resultado.consenso = {
       hs: agent1.hs,
       confianza: Math.min(99, avgConf + 10),
@@ -123,18 +142,28 @@ async function clasificarMultiAgente(descripcion, imagenBase64) {
       metodo: 'consenso_directo',
     };
   } else if (hs1 && hs2 && hs1.substring(0, 6) === hs2.substring(0, 6)) {
-    const best = (agent1.confianza || 0) >= (agent2.confianza || 0) ? agent1 : agent2;
+    const best = normalizeConfidence(agent1.confianza) >= normalizeConfidence(agent2.confianza) ? agent1 : agent2;
     resultado.consenso = {
       hs: best.hs,
-      confianza: Math.min(85, best.confianza || 70),
+      confianza: Math.min(85, normalizeConfidence(best.confianza, 70)),
       advalorem: best.advalorem,
       razonamiento: best.razonamiento,
       metodo: 'mejor_confianza',
       advertencia: `Agentes coinciden en partida ${hs1.substring(0, 4)} pero difieren en subpartida. Verificar manualmente.`,
     };
+  } else if (hs1 || hs2) {
+    const best = hs1 ? agent1 : agent2;
+    resultado.consenso = {
+      hs: best.hs,
+      confianza: Math.max(25, Math.min(75, normalizeConfidence(best.confianza, 55) - 10)),
+      advalorem: best.advalorem,
+      razonamiento: best.razonamiento,
+      metodo: 'agente_unico',
+      advertencia: 'Solo uno de los agentes logro una clasificacion util. Verificar manualmente antes de cerrar la partida.',
+    };
   } else {
     resultado.arbitraje = await arbitrar(descripcion, agent1, agent2);
-    if (resultado.arbitraje) {
+    if (resultado.arbitraje && normalizeUsableHS(resultado.arbitraje.hs_final)) {
       resultado.consenso = {
         hs: resultado.arbitraje.hs_final,
         confianza: resultado.arbitraje.confianza,
@@ -146,7 +175,11 @@ async function clasificarMultiAgente(descripcion, imagenBase64) {
     }
   }
 
-  if (resultado.consenso?.hs) {
+  if (!resultado.consenso) {
+    resultado.consenso = buildManualReviewConsensus(agent1, agent2);
+  }
+
+  if (normalizeUsableHS(resultado.consenso?.hs)) {
     try {
       const nandinaService = require('./nandina');
       const data = nandinaService.getData();
@@ -154,26 +187,26 @@ async function clasificarMultiAgente(descripcion, imagenBase64) {
       const match = data.find((item) => item.p === clean);
 
       if (match) {
-        resultado.consenso.validadoNandina = true;
+        resultado.consenso.contrastadoNandina = true;
         resultado.consenso.descripcionOficial = match.d;
         resultado.consenso.advalorem = match.a;
       } else {
         const match8 = data.find((item) => item.p.startsWith(clean.substring(0, 8)));
         if (match8) {
-          resultado.consenso.validadoNandina = true;
+          resultado.consenso.contrastadoNandina = true;
           resultado.consenso.hsCorregido = match8.p;
           resultado.consenso.descripcionOficial = match8.d;
           resultado.consenso.advalorem = match8.a;
           resultado.consenso.advertencia = `${resultado.consenso.advertencia || ''} HS ajustado de ${resultado.consenso.hs} a ${match8.p} segun NANDINA oficial.`.trim();
         } else {
-          resultado.consenso.validadoNandina = false;
+          resultado.consenso.contrastadoNandina = false;
           const fallbackOnly = resultado.agentes.every((agent) => agent?.metodo === 'keyword_fallback');
           const scenarioSuffix = fallbackOnly && classificationContext.triggers.length
             ? ` Escenarios detectados: ${classificationContext.triggers.map((item) => `${item.rule} (${item.label})`).join('; ')}`
             : '';
           resultado.consenso.advertencia = `${resultado.consenso.advertencia || ''} HS no encontrado en base NANDINA. Verificar manualmente.${scenarioSuffix}`.trim();
           const confidenceFloor = fallbackOnly ? 15 : 40;
-          resultado.consenso.confianza = Math.max(confidenceFloor, (resultado.consenso.confianza || 70) - 20);
+          resultado.consenso.confianza = Math.max(confidenceFloor, normalizeConfidence(resultado.consenso.confianza, 70) - 20);
         }
       }
     } catch (_) {
@@ -216,7 +249,7 @@ async function callAgentWithFallback(id, userMsg, modelChain) {
 }
 
 function clasificarPorKeywords(texto) {
-  const text = (texto || '').toLowerCase();
+  const text = normalizeKeywordText(texto);
   const classificationContext = doctrina.buildClassificationContext(texto);
   const keywords = [
     { words: ['camiseta', 'polo', 'playera', 'remera'], hs: '6109.10.00.10', cap: 'Textil - Prendas de vestir' },
@@ -314,7 +347,30 @@ ${classificationContext.promptBlock}`,
 
 function normalizeHS(hs) {
   if (!hs) return null;
-  return hs.replace(/\./g, '').replace(/\s/g, '').substring(0, 10).padEnd(10, '0');
+  const normalized = String(hs).replace(/\D/g, '');
+  if (!normalized) return null;
+  return normalized.substring(0, 10).padEnd(10, '0');
+}
+
+function normalizeUsableHS(hs) {
+  const normalized = normalizeHS(hs);
+  return normalized && !/^0+$/.test(normalized) ? normalized : null;
+}
+
+function buildManualReviewConsensus(...agents) {
+  const bestFallback = agents.find((agent) => agent?.metodo === 'keyword_fallback')
+    || agents.find((agent) => agent?.metodo === 'fallback')
+    || agents.find((agent) => agent?.razonamiento || agent?.advertencia)
+    || {};
+
+  return {
+    hs: '0000.00.00.00',
+    confianza: 0,
+    advalorem: 0,
+    razonamiento: bestFallback.razonamiento || 'No se pudo determinar una clasificacion arancelaria util.',
+    metodo: 'sin_clasificacion',
+    advertencia: bestFallback.advertencia || 'No se pudo clasificar automaticamente. Requerir clasificacion manual por experto.',
+  };
 }
 
 function parseAgentResponse(settled) {
@@ -345,4 +401,11 @@ function parseJSON(text) {
 module.exports = {
   clasificarMultiAgente,
   buildClassificationContext: doctrina.buildClassificationContext,
+  _private: {
+    normalizeHS,
+    normalizeUsableHS,
+    normalizeConfidence,
+    normalizeKeywordText,
+    buildManualReviewConsensus,
+  },
 };

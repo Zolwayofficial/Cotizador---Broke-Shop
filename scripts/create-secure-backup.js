@@ -45,13 +45,19 @@ function parseArgs(argv) {
     }
 
     if (token === '--output-dir') {
-      args.outputDir = path.resolve(argv[i + 1] || '');
+      if (!argv[i + 1]) {
+        fail('Falta un valor despues de --output-dir');
+      }
+      args.outputDir = path.resolve(argv[i + 1]);
       i += 1;
       continue;
     }
 
     if (token === '--passphrase-env') {
-      args.passphraseEnv = argv[i + 1] || args.passphraseEnv;
+      if (!argv[i + 1]) {
+        fail('Falta un valor despues de --passphrase-env');
+      }
+      args.passphraseEnv = argv[i + 1];
       i += 1;
       continue;
     }

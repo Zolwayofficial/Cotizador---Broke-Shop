@@ -1,15 +1,37 @@
 // server/agentes-navegacion/AgenteNavegadorSENASA.js
-// 
+//
 // AGENTE ESPECIALISTA EN SENASA (Servicio Nacional de Sanidad Agraria)
-// 
-// Características:
+//
+// Caracteristicas:
 // - Navega en senasa.gob.pe
 // - Busca permisos fitosanitarios
 // - Aprende plagas cuarentenarias
 // - Detecta productos que requieren permiso
-// - Alertas de restricciones por país
+// - Alertas de restricciones por pais
 
 const { MemoriaAgente } = require('./MemoriaAgente');
+const { normalizarCodigoPais } = require('../paises');
+
+function cloneSerializable(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function contieneTermino(texto, termino) {
+  const pattern = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(termino)}(?:$|[^a-z0-9])`, 'i');
+  return pattern.test(texto);
+}
 
 class AgenteNavegadorSENASA {
   constructor() {
@@ -22,106 +44,103 @@ class AgenteNavegadorSENASA {
     this.memoria = new MemoriaAgente(this.nombreAgente);
   }
 
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   // CONSULTAR PERMISO FITOSANITARIO
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   async consultarPermisoFitosanitario(producto, paisOrigen) {
-    const cacheKey = `senasa_${producto}_${paisOrigen}`;
+    const productoNormalizado = this._normalizarClave(producto);
+    const paisNormalizado = this._normalizarPais(paisOrigen);
+    const cacheKey = `senasa_${productoNormalizado}_${paisNormalizado}`;
+    const aprendizajeKey = `permiso_${productoNormalizado}_${paisNormalizado}`;
 
-    // Verificar cache
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
-      console.log(`💾 SENASA: Permiso de cache para ${producto}`);
+      console.log(`SENASA: Permiso de cache para ${producto}`);
       return cached;
     }
 
-    // Verificar aprendizaje previo
-    const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_${producto}_${paisOrigen}`);
+    const aprendizaje = this.memoria?.obtenerAprendizaje(aprendizajeKey);
     if (aprendizaje) {
-      console.log('🧠 SENASA: Usando aprendizaje previo');
-      return aprendizaje.valor;
+      console.log('SENASA: Usando aprendizaje previo');
+      return cloneSerializable(aprendizaje.valor);
     }
 
-    // Consultar (en producción sería scraping real)
-    const resultado = await this._consultarPermisoLocal(producto, paisOrigen);
+    const resultado = await this._consultarPermisoLocal(producto, paisNormalizado);
 
-    // Guardar
     this._guardarEnCache(cacheKey, resultado, 86400000);
-    this.memoria.guardarAprendizaje(`permiso_${producto}_${paisOrigen}`, resultado, 0.9);
+    this.memoria?.guardarAprendizaje(aprendizajeKey, cloneSerializable(resultado), 0.9);
 
-    return resultado;
+    return cloneSerializable(resultado);
   }
 
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   // DETECTAR SI REQUIERE PERMISO FITOSANITARIO
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   async detectarSiRequierePermiso(producto, categoria, paisOrigen) {
-    // Productos que SIEMPRE requieren permiso SENASA
     const productosRequierenPermiso = [
       'fruta', 'verdura', 'hortaliza', 'legumbre',
+      'manzana', 'pera', 'uva', 'palta', 'platano', 'banana',
       'semilla', 'grano', 'cereal', 'trigo', 'maiz', 'arroz',
       'planta', 'arbol', 'flor', 'bulbo',
       'madera', 'maderable',
       'carne', 'pollo', 'cerdo', 'res', 'pescado',
       'huevo', 'leche', 'lacteo',
-      'alimento animal', 'balanceado', 'concentrado'
+      'alimento animal', 'balanceado', 'concentrado',
     ];
 
-    // Países con restricciones adicionales
     const paisesConRestricciones = ['CN', 'US', 'BR', 'EC', 'CO'];
+    const productoNormalizado = this._normalizarClave(producto);
+    const categoriaNormalizada = this._normalizarClave(categoria);
+    const paisNormalizado = this._normalizarPais(paisOrigen);
 
-    const productoLower = producto.toLowerCase();
-    const categoriaLower = categoria.toLowerCase();
-
-    const requiere = productosRequierenPermiso.some(p =>
-      productoLower.includes(p) || categoriaLower.includes(p)
+    const requiere = productosRequierenPermiso.some((termino) =>
+      contieneTermino(productoNormalizado, termino) || contieneTermino(categoriaNormalizada, termino)
     );
 
-    const tieneRestriccionAdicional = paisesConRestricciones.includes(paisOrigen);
-
+    const tieneRestriccionAdicional = paisesConRestricciones.includes(paisNormalizado);
     const resultado = {
       producto,
       paisOrigen,
       requierePermisoFitosanitario: requiere,
       tieneRestriccionAdicional,
       entidad: 'SENASA',
-      tramite: requiere ? 'Permiso Fitosanitario de Importación' : 'No requiere',
-      actualizado: new Date().toISOString()
+      tramite: requiere ? 'Permiso Fitosanitario de Importacion' : 'No requiere',
+      actualizado: new Date().toISOString(),
     };
 
-    // Guardar aprendizaje
-    this.memoria.guardarAprendizaje(`requiere_permiso_${producto}_${paisOrigen}`, resultado, 0.95);
+    this.memoria?.guardarAprendizaje(
+      `requiere_permiso_${productoNormalizado}_${paisNormalizado}`,
+      resultado,
+      0.95
+    );
 
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   // CONSULTAR PLAGAS CUARENTENARIAS
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   async consultarPlagasCuarentenarias() {
     const cacheKey = 'senasa_plagas';
-
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Fallback: usar datos locales
     const resultado = {
       total: 0,
       plagas: [],
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
 
     this._guardarEnCache(cacheKey, resultado, 86400000);
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   // PRIVADOS
-  // ═══════════════════════════════════════════════════
+  // ===================================================
   async _consultarPermisoLocal(producto, paisOrigen) {
-    // Simular consulta (en producción sería scraping real)
     return {
       producto,
       paisOrigen,
@@ -129,30 +148,48 @@ class AgenteNavegadorSENASA {
       tipoPermiso: 'Fitosanitario',
       estado: 'pendiente_verificacion',
       fuente: 'SENASA',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
   }
 
   _guardarEnCache(clave, valor, ttlMs) {
     this.cache.set(clave, {
-      valor,
-      expira: Date.now() + ttlMs
+      valor: cloneSerializable(valor),
+      expira: Date.now() + ttlMs,
     });
   }
 
   _obtenerDeCache(clave) {
     const cached = this.cache.get(clave);
     if (cached && Date.now() < cached.expira) {
-      return cached.valor;
+      return cloneSerializable(cached.valor);
     }
     this.cache.delete(clave);
     return null;
   }
 
-  // ═══════════════════════════════════════════════════
-  // ESTADÍSTICAS
-  // ═══════════════════════════════════════════════════
+  _normalizarClave(valor) {
+    return String(valor ?? '')
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  _normalizarPais(valor) {
+    return normalizarCodigoPais(valor) || String(valor ?? '').trim().toUpperCase();
+  }
+
+  // ===================================================
+  // ESTADISTICAS
+  // ===================================================
   obtenerEstadisticas() {
+    if (!this.memoria) {
+      return {};
+    }
     return this.memoria.obtenerEstadisticas();
   }
 }

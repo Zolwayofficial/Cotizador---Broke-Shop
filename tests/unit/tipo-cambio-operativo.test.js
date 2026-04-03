@@ -1,4 +1,6 @@
 const { describe, it, expect, beforeEach } = require("@jest/globals");
+const fs = require("fs");
+const path = require("path");
 
 jest.mock("../../server/sunat-proxy", () => ({
   getTipoCambio: jest.fn(),
@@ -27,6 +29,7 @@ describe("tipo-cambio-operativo", () => {
     expect(resultado.tasa).toBeCloseTo(3.71, 4);
     expect(resultado.estado).toBe("oficial_en_vivo");
     expect(resultado.referenciaSunat.venta).toBeCloseTo(3.71, 4);
+    expect(resultado.mensaje).toMatch(/se consulto sbs\/sunat en vivo/i);
   });
 
   it("mantiene el tipo de cambio manual y conserva la referencia SUNAT para comparar", async () => {
@@ -57,6 +60,7 @@ describe("tipo-cambio-operativo", () => {
     expect(resultado.estado).toBe("fallback");
     expect(resultado.tasa).toBeCloseTo(3.75, 4);
     expect(alerta.nivel).toBe("medio");
+    expect(alerta.mensaje).toMatch(/no se pudo consultar sunat en vivo/i);
   });
 
   it("distingue una referencia externa de una fuente oficial en vivo", async () => {
@@ -74,5 +78,21 @@ describe("tipo-cambio-operativo", () => {
     expect(resultado.tasa).toBeCloseTo(3.71, 4);
     expect(alerta.nivel).toBe("medio");
     expect(alerta.mensaje).toMatch(/referencia automatica externa/i);
+  });
+
+it("mantiene el wording de tipo de cambio como consulta y ya no como lectura parcial", () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, "..", "..", "server", "tipo-cambio-operativo.js"),
+      "utf8"
+    );
+
+    expect(source).toContain("Tipo de cambio operativo consultado en vivo");
+    expect(source).toContain("No se pudo consultar la fuente oficial SBS/SUNAT en vivo");
+    expect(source).toContain("No se pudo consultar SUNAT en vivo para esta corrida.");
+    expect(source).toContain("Se consulto SBS/SUNAT en vivo");
+    expect(source).not.toContain("Tipo de cambio operativo validado en vivo");
+    expect(source).not.toContain("No se pudo validar la fuente oficial SBS/SUNAT en vivo");
+    expect(source).not.toContain("No se pudo validar SUNAT en vivo para esta corrida.");
+    expect(source).not.toContain("Se uso SBS/SUNAT en vivo");
   });
 });

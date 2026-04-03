@@ -1,45 +1,45 @@
-// server/flete.js — Estimador inteligente de flete internacional
-// Sin APIs externas — usa base de datos de tarifas referenciales por ruta/peso/volumen
+// server/flete.js - Estimador inteligente de flete internacional
+// Sin APIs externas - usa base de datos de tarifas referenciales por ruta/peso/volumen
 
 const { normalizarPaisParaRuta } = require('./paises');
 
-// Tarifas referenciales USD (actualizadas periódicamente)
-// Fuentes: promedios de mercado, cotizaciones públicas de freight forwarders
+// Tarifas referenciales USD (actualizadas periodicamente)
+// Fuentes: promedios de mercado, cotizaciones publicas de freight forwarders
 const TARIFAS = {
-  // AEREO: USD por kg (mínimo 45kg para tarifa general, debajo es tarifa mínima)
+  // AEREO: USD por kg (minimo 45kg para tarifa general, debajo es tarifa minima)
   aereo: {
-    'CN-PE': { perKg: 3.80, min: 120, transit: '5-8 días' },
-    'US-PE': { perKg: 2.50, min: 85, transit: '3-5 días' },
-    'DE-PE': { perKg: 4.20, min: 150, transit: '5-10 días' },
-    'JP-PE': { perKg: 4.50, min: 160, transit: '5-8 días' },
-    'KR-PE': { perKg: 3.90, min: 130, transit: '5-8 días' },
-    'BR-PE': { perKg: 3.00, min: 90, transit: '3-5 días' },
-    'MX-PE': { perKg: 2.80, min: 85, transit: '3-5 días' },
-    'IT-PE': { perKg: 4.00, min: 140, transit: '7-12 días' },
-    'ES-PE': { perKg: 3.80, min: 135, transit: '7-12 días' },
-    'IN-PE': { perKg: 4.00, min: 140, transit: '7-10 días' },
-    'TH-PE': { perKg: 4.20, min: 150, transit: '7-10 días' },
-    'TW-PE': { perKg: 3.50, min: 120, transit: '5-8 días' },
-    default:  { perKg: 4.50, min: 150, transit: '7-14 días' },
+    'CN-PE': { perKg: 3.80, min: 120, transit: '5-8 dias' },
+    'US-PE': { perKg: 2.50, min: 85, transit: '3-5 dias' },
+    'DE-PE': { perKg: 4.20, min: 150, transit: '5-10 dias' },
+    'JP-PE': { perKg: 4.50, min: 160, transit: '5-8 dias' },
+    'KR-PE': { perKg: 3.90, min: 130, transit: '5-8 dias' },
+    'BR-PE': { perKg: 3.00, min: 90, transit: '3-5 dias' },
+    'MX-PE': { perKg: 2.80, min: 85, transit: '3-5 dias' },
+    'IT-PE': { perKg: 4.00, min: 140, transit: '7-12 dias' },
+    'ES-PE': { perKg: 3.80, min: 135, transit: '7-12 dias' },
+    'IN-PE': { perKg: 4.00, min: 140, transit: '7-10 dias' },
+    'TH-PE': { perKg: 4.20, min: 150, transit: '7-10 dias' },
+    'TW-PE': { perKg: 3.50, min: 120, transit: '5-8 dias' },
+    default:  { perKg: 4.50, min: 150, transit: '7-14 dias' },
   },
-  // MARITIMO: USD por CBM (metro cúbico) — FCL y LCL
+  // MARITIMO: USD por CBM (metro cubico) - FCL y LCL
   maritimo: {
-    'CN-PE': { perCBM: 55, min20ft: 1200, min40ft: 2200, transit: '28-35 días' },
-    'US-PE': { perCBM: 65, min20ft: 1000, min40ft: 1800, transit: '15-22 días' },
-    'DE-PE': { perCBM: 70, min20ft: 1400, min40ft: 2600, transit: '30-40 días' },
-    'JP-PE': { perCBM: 50, min20ft: 1100, min40ft: 2000, transit: '25-32 días' },
-    'KR-PE': { perCBM: 48, min20ft: 1000, min40ft: 1900, transit: '25-30 días' },
-    'BR-PE': { perCBM: 45, min20ft: 800, min40ft: 1500, transit: '12-18 días' },
-    'IN-PE': { perCBM: 52, min20ft: 1300, min40ft: 2400, transit: '30-40 días' },
-    default:  { perCBM: 65, min20ft: 1400, min40ft: 2600, transit: '30-45 días' },
+    'CN-PE': { perCBM: 55, min20ft: 1200, min40ft: 2200, transit: '28-35 dias' },
+    'US-PE': { perCBM: 65, min20ft: 1000, min40ft: 1800, transit: '15-22 dias' },
+    'DE-PE': { perCBM: 70, min20ft: 1400, min40ft: 2600, transit: '30-40 dias' },
+    'JP-PE': { perCBM: 50, min20ft: 1100, min40ft: 2000, transit: '25-32 dias' },
+    'KR-PE': { perCBM: 48, min20ft: 1000, min40ft: 1900, transit: '25-30 dias' },
+    'BR-PE': { perCBM: 45, min20ft: 800, min40ft: 1500, transit: '12-18 dias' },
+    'IN-PE': { perCBM: 52, min20ft: 1300, min40ft: 2400, transit: '30-40 dias' },
+    default:  { perCBM: 65, min20ft: 1400, min40ft: 2600, transit: '30-45 dias' },
   },
-  // COURIER: USD por kg (peso facturable = mayor entre real y volumétrico)
+  // COURIER: USD por kg (peso facturable = mayor entre real y volumetrico)
   courier: {
-    'CN-PE': { perKg: 8.50, min: 35, transit: '3-7 días' },
-    'US-PE': { perKg: 6.00, min: 25, transit: '2-5 días' },
-    'DE-PE': { perKg: 9.00, min: 40, transit: '3-7 días' },
-    'JP-PE': { perKg: 9.50, min: 40, transit: '3-7 días' },
-    default:  { perKg: 10.00, min: 45, transit: '5-10 días' },
+    'CN-PE': { perKg: 8.50, min: 35, transit: '3-7 dias' },
+    'US-PE': { perKg: 6.00, min: 25, transit: '2-5 dias' },
+    'DE-PE': { perKg: 9.00, min: 40, transit: '3-7 dias' },
+    'JP-PE': { perKg: 9.50, min: 40, transit: '3-7 dias' },
+    default:  { perKg: 10.00, min: 45, transit: '5-10 dias' },
   },
 };
 
@@ -48,10 +48,10 @@ const COSTOS_PUERTO = {
   maritimo: {
     thc: 150,          // Terminal Handling Charge
     bl: 60,            // Bill of Lading
-    handling: 80,      // Agencia marítima
-    almacen: 0,        // 0 si retiras antes de día libre (5 días generalmente)
-    aforo: 45,         // Si sale a aforo físico
-    traccion: 120,     // Transporte contenedor → almacén
+    handling: 80,      // Agencia maritima
+    almacen: 0,        // 0 si retiras antes de dia libre (5 dias generalmente)
+    aforo: 45,         // Si sale a aforo fisico
+    traccion: 120,     // Transporte contenedor -> almacen
   },
   aereo: {
     awb: 50,           // Air Waybill
@@ -62,7 +62,7 @@ const COSTOS_PUERTO = {
 
 // Calculate volumetric weight (industry standard)
 function pesoVolumetrico(largoCm, anchoCm, altoCm, factorDivisor) {
-  return (largoCm * anchoCm * altoCm) / (factorDivisor || 5000); // Aéreo: 5000, Marítimo: 1000000 (CBM)
+  return (largoCm * anchoCm * altoCm) / (factorDivisor || 5000); // Aereo: 5000, Maritimo: 1000000 (CBM)
 }
 
 // Main estimator
@@ -91,7 +91,7 @@ function estimarFlete(params) {
     totalEstimado: 0,
     tiempoTransito: '',
     desglose: [],
-    nota: 'Estimado referencial. Solicitar cotización formal al freight forwarder.',
+    nota: 'Estimado referencial. Solicitar cotizacion formal al freight forwarder.',
   };
 
   if (canal === 'AEREO' || canal === 'aereo') {
@@ -103,7 +103,7 @@ function estimarFlete(params) {
     result.costosAdicionales = COSTOS_PUERTO.aereo;
     result.tiempoTransito = tarifas.transit;
     result.desglose = [
-      { concepto: 'Flete aéreo', monto: result.flete, detalle: `${result.pesoFacturable.toFixed(1)}kg × $${tarifas.perKg}/kg` },
+      { concepto: 'Flete aereo', monto: result.flete, detalle: `${result.pesoFacturable.toFixed(1)}kg x $${tarifas.perKg}/kg` },
       { concepto: 'AWB', monto: COSTOS_PUERTO.aereo.awb },
       { concepto: 'Handling aeroportuario', monto: COSTOS_PUERTO.aereo.handling },
     ];
@@ -118,16 +118,16 @@ function estimarFlete(params) {
     const fleteLC = cbm * tarifas.perCBM;
     if (cbm < 15) {
       // LCL (Less than Container Load)
-      result.flete = Math.max(fleteLC, tarifas.perCBM * 1); // Mínimo 1 CBM
-      result.desglose.push({ concepto: 'Flete marítimo (LCL)', monto: result.flete, detalle: `${cbm.toFixed(2)} CBM × $${tarifas.perCBM}/CBM` });
+      result.flete = Math.max(fleteLC, tarifas.perCBM * 1); // Minimo 1 CBM
+      result.desglose.push({ concepto: 'Flete maritimo (LCL)', monto: result.flete, detalle: `${cbm.toFixed(2)} CBM x $${tarifas.perCBM}/CBM` });
     } else if (cbm < 33) {
       // 20ft container
       result.flete = tarifas.min20ft;
-      result.desglose.push({ concepto: 'Flete marítimo (20ft FCL)', monto: result.flete });
+      result.desglose.push({ concepto: 'Flete maritimo (20ft FCL)', monto: result.flete });
     } else {
       // 40ft container
       result.flete = tarifas.min40ft;
-      result.desglose.push({ concepto: 'Flete marítimo (40ft FCL)', monto: result.flete });
+      result.desglose.push({ concepto: 'Flete maritimo (40ft FCL)', monto: result.flete });
     }
     result.costosAdicionales = COSTOS_PUERTO.maritimo;
     result.tiempoTransito = tarifas.transit;
@@ -135,7 +135,7 @@ function estimarFlete(params) {
       { concepto: 'THC (Terminal)', monto: COSTOS_PUERTO.maritimo.thc },
       { concepto: 'B/L', monto: COSTOS_PUERTO.maritimo.bl },
       { concepto: 'Handling', monto: COSTOS_PUERTO.maritimo.handling },
-      { concepto: 'Tracción', monto: COSTOS_PUERTO.maritimo.traccion },
+      { concepto: 'Traccion', monto: COSTOS_PUERTO.maritimo.traccion },
     );
 
   } else if (canal === 'COURIER' || canal === 'courier') {
@@ -146,7 +146,7 @@ function estimarFlete(params) {
     result.flete = Math.max(result.pesoFacturable * tarifas.perKg, tarifas.min);
     result.tiempoTransito = tarifas.transit;
     result.desglose = [
-      { concepto: 'Flete courier', monto: result.flete, detalle: `${result.pesoFacturable.toFixed(1)}kg × $${tarifas.perKg}/kg` },
+      { concepto: 'Flete courier', monto: result.flete, detalle: `${result.pesoFacturable.toFixed(1)}kg x $${tarifas.perKg}/kg` },
     ];
   }
 

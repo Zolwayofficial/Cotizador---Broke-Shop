@@ -13,7 +13,7 @@ describe('tipo-cambio-oficial-resistente', () => {
     delete process.env.OFFICIAL_FX_PYTHON_BIN;
   });
 
-  it('normaliza la salida del helper oficial cuando devuelve compra y venta validas', async () => {
+  it('normaliza la salida del helper oficial cuando devuelve compra y venta utilizables', async () => {
     process.env.OFFICIAL_FX_PYTHON_BIN = 'python-test';
     mockExecFile.mockImplementation((_bin, _args, _options, callback) => {
       callback(null, JSON.stringify({
@@ -35,7 +35,7 @@ describe('tipo-cambio-oficial-resistente', () => {
     expect(resultado.strategy).toBe('stealth_browser');
   });
 
-  it('devuelve null cuando el helper falla o no entrega json valido', async () => {
+  it('devuelve null cuando el helper falla o no entrega json interpretable', async () => {
     process.env.OFFICIAL_FX_PYTHON_BIN = 'python-test';
     mockExecFile.mockImplementation((_bin, _args, _options, callback) => {
       callback(new Error('boom'), '', 'helper error');
@@ -45,5 +45,36 @@ describe('tipo-cambio-oficial-resistente', () => {
     const resultado = await helper.getTipoCambioOficialResistente({ enabled: true });
 
     expect(resultado).toBeNull();
+  });
+
+  it('usa wording prudente para respuestas del helper que no se pueden interpretar', () => {
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '..', '..', 'server', 'tipo-cambio-oficial-resistente.js'),
+      'utf8',
+    );
+
+    expect(source).toContain('Respuesta no interpretable del helper oficial');
+    expect(source).not.toContain('Respuesta invalida del helper oficial');
+  });
+
+  it('respeta enabled=false stringificado y no lanza el helper', async () => {
+    process.env.OFFICIAL_FX_PYTHON_BIN = 'python-test';
+    const helper = require('../../server/tipo-cambio-oficial-resistente');
+    const resultado = await helper.getTipoCambioOficialResistente({ enabled: 'false' });
+
+    expect(resultado).toBeNull();
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+
+  it('normaliza official=false stringificado en la salida del helper', () => {
+    const helper = require('../../server/tipo-cambio-oficial-resistente');
+    const resultado = helper.normalizeHelperPayload({
+      compra: '3,66',
+      venta: '3,70',
+      official: 'false',
+      strategy: 'stealth_browser',
+    });
+
+    expect(resultado.official).toBe(false);
   });
 });

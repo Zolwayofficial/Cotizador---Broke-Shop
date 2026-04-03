@@ -15,9 +15,9 @@ La configuracion mas realista y robusta hoy es:
 
 - Chat de cotizacion como entrada principal.
 - Dashboard secundario alimentado por datos reales.
-- Registro oficial de 30 agentes.
+- Registro oficial consultable desde `/api/agentes/stats`.
 - Cadena de fallback de modelos para IA general y dashboard.
-- Validacion de entorno de produccion.
+- Revision de entorno de produccion.
 - Scripts de despliegue para Windows y Unix.
 - Documentacion canonica y matriz de APIs investigadas.
 
@@ -63,9 +63,10 @@ La mejor estrategia costo-beneficio para este proyecto hoy es:
 
 ## Recomendacion para produccion
 
-Subir esta version a una rama de respaldo en GitHub y luego desplegar desde esa rama una vez validados:
+Subir esta version a una rama de respaldo en GitHub y luego desplegar desde esa rama una vez revisados en esta pasada:
 
 - `GROQ_API_KEY`
+- `WS_PORT`
 - `JWT_SECRET`
 - `ALLOWED_ORIGINS` o dominio final
 - smoke local del chat

@@ -1,7 +1,8 @@
 param(
   [string]$VpsUser = $(if ($env:VPS_USER) { $env:VPS_USER } else { "root" }),
   [string]$VpsIp = $(if ($env:VPS_IP) { $env:VPS_IP } else { "107.175.95.172" }),
-  [string]$VpsPath = $(if ($env:VPS_PATH) { $env:VPS_PATH } else { "/var/www/cotizador" })
+  [string]$VpsPath = $(if ($env:VPS_PATH) { $env:VPS_PATH } else { "/var/www/importaiagent" }),
+  [string]$Domain = $(if ($env:DOMAIN) { $env:DOMAIN } else { "importaiagent.com" })
 )
 
 Set-StrictMode -Version Latest
@@ -10,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $stagingPath = Join-Path $env:TEMP ("cotizador-stage-" + [guid]::NewGuid().ToString("N"))
-$archiveName = "cotizador-deploy-$timestamp.tgz"
+$archiveName = "importaiagent-deploy-$timestamp.tgz"
 $archivePath = Join-Path $env:TEMP $archiveName
 $remoteScriptName = "deploy-remote-$timestamp.sh"
 $remoteScriptPath = Join-Path $env:TEMP $remoteScriptName
@@ -43,21 +44,6 @@ try {
 
   Write-Step "[1/7] Preparando entorno local..."
 
-  if (-not (Test-Path ".env.production")) {
-    @"
-PORT=3000
-NODE_ENV=production
-GROQ_API_KEY=COLOCA_TU_API_KEY_DE_GROQ_AQUI
-DB_PATH=./data/cotizador.db
-DATA_DIR=./data
-EMAIL_SMTP_HOST=smtp.gmail.com
-EMAIL_SMTP_PORT=587
-EMAIL_USER=tu_email@gmail.com
-EMAIL_PASSWORD=tu_password_de_aplicacion
-"@ | Set-Content ".env.production"
-    Write-Host "Se creo .env.production con valores de ejemplo. Editalo antes de usar IA y correo." -ForegroundColor Yellow
-  }
-
   if (-not (Test-Path "client\node_modules")) {
     Write-Host "Instalando dependencias del cliente..."
     & npm.cmd install --prefix client
@@ -72,7 +58,20 @@ EMAIL_PASSWORD=tu_password_de_aplicacion
   Remove-IfExists $remoteScriptPath
   New-Item -ItemType Directory -Path $stagingPath | Out-Null
 
-  $excludedNames = @(".git", "node_modules", "data", ".env", "coverage")
+  $excludedNames = @(
+    ".git",
+    "node_modules",
+    "data",
+    ".env",
+    ".env.production",
+    "coverage",
+    "backups",
+    "restored-backups",
+    "output",
+    "tmp",
+    "LOCAL_SECRETS.md",
+    "secure"
+  )
 
   Get-ChildItem -Force $projectRoot | Where-Object {
     $excludedNames -notcontains $_.Name
@@ -86,20 +85,53 @@ EMAIL_PASSWORD=tu_password_de_aplicacion
 
   & tar.exe -czf $archivePath -C $stagingPath .
 
-  $remoteScript = @'
+$remoteScript = @'
 #!/usr/bin/env bash
 set -euo pipefail
 
 APP_PATH="$1"
 ARCHIVE_NAME="$2"
+SCRIPT_NAME="$(basename "$0")"
+DEPLOY_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+TMP_EXTRACT_DIR="$(mktemp -d)"
+BACKUP_DIR="/var/backups/importaiagent/$DEPLOY_TIMESTAMP"
 
 cd "$APP_PATH"
-mkdir -p data
-tar -xzf "$ARCHIVE_NAME"
+mkdir -p data data/logs
+tar -xzf "$ARCHIVE_NAME" -C "$TMP_EXTRACT_DIR"
+mkdir -p "$BACKUP_DIR"
+
+find "$APP_PATH" -mindepth 1 -maxdepth 1 \
+  ! -name "data" \
+  ! -name ".env" \
+  ! -name ".env.production" \
+  ! -name "secure" \
+  ! -name "$ARCHIVE_NAME" \
+  ! -name "$SCRIPT_NAME" \
+  -exec mv {} "$BACKUP_DIR"/ \;
+
+cp -a "$TMP_EXTRACT_DIR"/. "$APP_PATH"/
+rm -rf "$TMP_EXTRACT_DIR"
 rm -f "$ARCHIVE_NAME"
 
-if [ -f ".env.production" ]; then
+if [ ! -f ".env.production" ]; then
+  echo ".env.production no existe en el VPS y no se desplegara desde local" >&2
+  exit 1
+fi
+
+if [ -f ".env.production" ] && [ ! -f ".env" ]; then
   cp .env.production .env
+fi
+
+APP_PORT="$(grep '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+WS_PORT="$(grep '^WS_PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+if [ -z "$APP_PORT" ]; then
+  echo "PORT falta en .env.production" >&2
+  exit 1
+fi
+if [ -z "$WS_PORT" ]; then
+  echo "WS_PORT falta en .env.production" >&2
+  exit 1
 fi
 
 npm install --omit=dev
@@ -108,8 +140,8 @@ if ! command -v pm2 >/dev/null 2>&1; then
   npm install -g pm2
 fi
 
-PORT="${PORT:-3000}" pm2 delete cotizador >/dev/null 2>&1 || true
-PORT="${PORT:-3000}" pm2 start server/index.js --name cotizador --update-env
+pm2 delete cotizador >/dev/null 2>&1 || true
+pm2 start ecosystem.config.js --only cotizador --update-env
 pm2 save
 
 if command -v systemctl >/dev/null 2>&1; then
@@ -122,13 +154,13 @@ if command -v apt-get >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
   fi
 
-  cat > /etc/nginx/sites-available/cotizador <<'NGINX'
+  cat > /etc/nginx/sites-available/importaiagent <<'NGINX'
 server {
     listen 80;
-    server_name _;
+    server_name DOMAIN_PLACEHOLDER;
 
     location /ws {
-        proxy_pass http://127.0.0.1:3002;
+        proxy_pass http://127.0.0.1:WS_PORT_PLACEHOLDER;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
@@ -136,7 +168,7 @@ server {
     }
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:APP_PORT_PLACEHOLDER;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -147,13 +179,17 @@ server {
 }
 NGINX
 
-  ln -sf /etc/nginx/sites-available/cotizador /etc/nginx/sites-enabled/cotizador
+  sed -i "s/DOMAIN_PLACEHOLDER/${DOMAIN}/g" /etc/nginx/sites-available/importaiagent
+  sed -i "s/APP_PORT_PLACEHOLDER/${APP_PORT}/g" /etc/nginx/sites-available/importaiagent
+  sed -i "s/WS_PORT_PLACEHOLDER/${WS_PORT}/g" /etc/nginx/sites-available/importaiagent
+
+  ln -sf /etc/nginx/sites-available/importaiagent /etc/nginx/sites-enabled/importaiagent
   rm -f /etc/nginx/sites-enabled/default
   nginx -t
   systemctl reload nginx || systemctl restart nginx
 fi
 
-curl -fsS http://127.0.0.1:3000/api/monitor/health | head -c 200
+curl -fsS "http://127.0.0.1:${APP_PORT}/api/monitor/health" | head -c 200
 echo
 
 rm -f "$0"
@@ -167,11 +203,11 @@ rm -f "$0"
 
   Write-Step "[4/7] Subiendo paquete al VPS..."
   & ssh "$VpsUser@$VpsIp" "mkdir -p '$VpsPath'"
-  & scp $archivePath "$VpsUser@$VpsIp:$VpsPath/$archiveName"
-  & scp $remoteScriptPath "$VpsUser@$VpsIp:$VpsPath/$remoteScriptName"
+  & scp $archivePath "${VpsUser}@${VpsIp}:$VpsPath/$archiveName"
+  & scp $remoteScriptPath "${VpsUser}@${VpsIp}:$VpsPath/$remoteScriptName"
 
   Write-Step "[5/7] Instalando y reiniciando servicio en VPS..."
-  & ssh "$VpsUser@$VpsIp" "bash '$VpsPath/$remoteScriptName' '$VpsPath' '$archiveName'"
+  & ssh "$VpsUser@$VpsIp" "DOMAIN='$Domain' bash '$VpsPath/$remoteScriptName' '$VpsPath' '$archiveName'"
 
   Write-Step "[6/7] Verificando servicio remoto..."
   & ssh "$VpsUser@$VpsIp" "pm2 status cotizador"

@@ -67,29 +67,40 @@ const ALTERATION_PATTERNS = [
   /\breacondicionad[oa]s?\b/i,
   /\bremanufacturad[oa]s?\b/i,
   /\bdeteriorad[oa]s?\b/i,
-  /\bsegunda mano\b/i,
+  /\bsegunda[\s-]?mano\b/i,
 ];
 
 const FALSIFICATION_PATTERNS = [
-  /\bimitaci[oó]n\b/i,
-  /\br[eé]plica\b/i,
+  /\bimitacion(?:es)?\b/i,
+  /\breplicas?\b/i,
   /\bno original\b/i,
   /\btipo cuero\b/i,
   /\bparecido a\b/i,
 ];
 
+function normalizarTexto(value = '') {
+  return String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
 function buildClassificationContext(description = '') {
   const text = String(description || '').trim();
+  const normalizedText = normalizarTexto(text.replace(/[/+&]+/g, ' y '));
   const triggers = RULE_TRIGGERS
-    .filter((item) => item.patterns.some((pattern) => pattern.test(text)))
+    .filter((item) => item.patterns.some((pattern) => pattern.test(normalizedText)))
     .map((item) => ({ rule: item.rule, label: item.label }));
 
   const alterationFlags = ALTERATION_PATTERNS
-    .filter((pattern) => pattern.test(text))
+    .filter((pattern) => pattern.test(normalizedText))
     .map((pattern) => pattern.source);
 
   const falsificationFlags = FALSIFICATION_PATTERNS
-    .filter((pattern) => pattern.test(text))
+    .filter((pattern) => pattern.test(normalizedText))
     .map((pattern) => pattern.source);
 
   const scenarioNotes = [];
@@ -97,7 +108,7 @@ function buildClassificationContext(description = '') {
     scenarioNotes.push('La mercancia parece usada o alterada; verificar si su estado cambia requisitos, pero no asumir una nueva partida sin sustento legal.');
   }
   if (falsificationFlags.length) {
-    scenarioNotes.push('Hay indicios de imitacion o material aparente; validar composicion y naturaleza real antes de clasificar.');
+    scenarioNotes.push('Hay indicios de imitacion o material aparente; revisa composicion y naturaleza real antes de clasificar.');
   }
   if (!triggers.length) {
     scenarioNotes.push('No se detectan atajos claros; aplicar RGI 1 primero y bajar a subpartida con RGI 6.');
@@ -127,4 +138,7 @@ module.exports = {
   MERCEOLOGY_CHECKLIST,
   RGI_SUMMARY,
   buildClassificationContext,
+  _private: {
+    normalizarTexto,
+  },
 };

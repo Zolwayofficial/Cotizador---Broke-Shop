@@ -2,7 +2,8 @@ const FLOW_CHANNEL_OPTIONS = [
   { value: 'MARITIMO', label: 'Maritimo (importacion formal)' },
   { value: 'AEREO', label: 'Aereo (importacion formal)' },
   { value: 'COURIER', label: 'Courier express (DHL, FedEx, UPS u otro)' },
-  { value: 'POSTAL', label: 'Postal (Serpost / correo postal)' }
+  { value: 'POSTAL', label: 'Postal (Serpost / correo postal)' },
+  { value: 'POSTAL_FRANQUICIA', label: 'Postal con franquicia (bajo valor)' }
 ];
 
 const FLOW_INCOTERM_OPTIONS = [
@@ -98,10 +99,31 @@ function sanitizar(valor) {
 
 function extraerNumero(texto) {
   const limpio = normalizarTexto(texto)
-    .replace(/usd|dolares|dolares|s\/|soles|pen/gi, ' ')
-    .replace(/,/g, '.');
-  const match = limpio.match(/-?\d+(?:\.\d+)?/);
-  return match ? parseFloat(match[0]) : null;
+    .replace(/s\//gi, ' ');
+  const match = limpio.match(/-?\d[\d.,]*/);
+  if (!match) return null;
+
+  const raw = match[0];
+  const lastDot = raw.lastIndexOf('.');
+  const lastComma = raw.lastIndexOf(',');
+
+  let normalized = raw;
+  if (lastDot >= 0 && lastComma >= 0) {
+    if (lastComma > lastDot) {
+      normalized = raw.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = raw.replace(/,/g, '');
+    }
+  } else if (lastComma >= 0) {
+    const decimals = raw.length - lastComma - 1;
+    normalized = decimals === 3 ? raw.replace(/,/g, '') : raw.replace(',', '.');
+  } else if (lastDot >= 0) {
+    const decimals = raw.length - lastDot - 1;
+    normalized = decimals === 3 ? raw.replace(/\./g, '') : raw;
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function extraerProductosDesdeTexto(texto) {
@@ -176,7 +198,8 @@ function normalizarPais(valor, allowFreeText = false) {
     return upper;
   }
 
-  if (allowFreeText && /^[A-ZÁÉÍÓÚÜÑ ]{3,30}$/.test(upper) && upper.split(/\s+/).length <= 3) {
+  const upperSanitized = sanitizar(valor).toUpperCase();
+  if (allowFreeText && /^[A-Z ]{3,30}$/.test(upperSanitized) && upper.split(/\s+/).length <= 3) {
     return upper;
   }
 
@@ -186,6 +209,15 @@ function normalizarPais(valor, allowFreeText = false) {
 function normalizarCanal(valor) {
   const texto = sanitizar(valor);
   if (!texto) return null;
+
+  if (
+    texto.includes('franquicia')
+    || texto.includes('bajo valor')
+    || texto.includes('menos de 200')
+    || texto.includes('hasta 200')
+  ) {
+    return 'POSTAL_FRANQUICIA';
+  }
 
   if (texto.includes('postal') || texto.includes('serpost') || texto.includes('correo postal')) {
     return 'POSTAL';
@@ -395,11 +427,11 @@ function requierePaso(stepKey, datosPrevios = {}) {
   case 'bien_usado':
     return datosPrevios.bien_usado === undefined;
   case 'flete':
-    return datosPrevios.flete === undefined && datosPrevios.canal !== 'POSTAL';
+    return datosPrevios.flete === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
   case 'seguro':
-    return datosPrevios.seguro === undefined && datosPrevios.canal !== 'POSTAL';
+    return datosPrevios.seguro === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
   case 'peso_total':
-    return datosPrevios.peso_total === undefined && datosPrevios.canal !== 'POSTAL';
+    return datosPrevios.peso_total === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
   case 'tipo_cambio':
     return datosPrevios.tipo_cambio === undefined;
   case 'margen_venta':
@@ -527,7 +559,7 @@ function crearPreguntaPaso(stepKey, datosPrevios = {}) {
     return {
       pregunta: 'Perfecto. Ya tengo la informacion principal. Calculamos el costo total de importacion?',
       paso: 'calcular',
-      tipo: 'confirmacion'
+      tipo: 'datos_suficientes_para_calculo'
     };
   default:
     return null;
@@ -588,7 +620,8 @@ function extraerDeLenguajeNatural(mensaje, pasoActual = null) {
     datos.seguro_modo = modoSeguro;
   }
 
-  if (allowPriceExtraction && /(precio|unitario|usd|dolar|dólar|\$|cuesta|vale|c\/u)/i.test(msg)) {
+  const hasPriceCue = /\$/.test(msg) || /(precio|unitario|usd|dolares?|cuesta|vale|c\/u)/i.test(sanitizar(msg));
+  if (allowPriceExtraction && hasPriceCue) {
     const precio = extraerNumero(msg);
     if (precio !== null) {
       datos.precio_unitario = precio;
@@ -748,3 +781,4 @@ module.exports = {
   FLOW_OBJECTIVE_OPTIONS,
   FLOW_INSURANCE_OPTIONS
 };
+

@@ -14,6 +14,22 @@ def _normalize_spaces(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def _parse_bool_flag(raw, default: bool = True) -> bool:
+    normalized = str(raw if raw is not None else "").strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _positive_timeout_ms(raw) -> int:
+    value = int(raw)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("timeout-ms must be greater than zero")
+    return value
+
+
 def _to_rate(raw: str) -> float:
     cleaned = str(raw).strip().replace("S/", "").replace(",", ".")
     return round(float(cleaned), 4)
@@ -174,14 +190,14 @@ def _fetch_with_browser(headless: bool, use_camoufox: bool, browser_channel: str
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Obtiene tipo de cambio oficial SBS con navegador resistente.")
-    parser.add_argument("--timeout-ms", type=int, default=45000)
+    parser.add_argument("--timeout-ms", type=_positive_timeout_ms, default=45000)
     parser.add_argument("--headless", default="1")
     parser.add_argument("--use-camoufox", default="1")
     parser.add_argument("--browser-channel", default="")
     args = parser.parse_args()
 
-    headless = args.headless != "0"
-    use_camoufox = args.use_camoufox != "0"
+    headless = _parse_bool_flag(args.headless, default=True)
+    use_camoufox = _parse_bool_flag(args.use_camoufox, default=True)
 
     try:
         payload = _fetch_with_browser(headless, use_camoufox, args.browser_channel, args.timeout_ms)

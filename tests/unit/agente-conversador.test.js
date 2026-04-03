@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { describe, it, expect } = require('@jest/globals');
 
 const conversador = require('../../server/agente-conversador');
@@ -48,6 +50,31 @@ describe('agente-conversador', () => {
     expect(respuesta.paso).toBe('precio_unitario');
   });
 
+  it('mantiene soporte para entradas con acentos reales al detectar intencion, pais y canal', async () => {
+    expect(conversador.detectarIntencion('¿Cuánto cuesta importar esto?').tipo).toBe('consulta_costo');
+    expect(conversador.detectarIntencion('¿Qué día demora el embarque?').tipo).toBe('consulta_tiempo');
+
+    const pais = await conversador.agenteConversador('México', {
+      datos_previos: {
+        productos: [{ cantidad: 5, producto: 'camaras', descripcion: 'camaras fotograficas' }],
+      },
+      paso_actual: 'pais_origen',
+    });
+
+    expect(pais.contexto.datos_previos.pais_origen).toBe('MX');
+
+    const canal = await conversador.agenteConversador('aéreo', {
+      datos_previos: {
+        productos: [{ cantidad: 5, producto: 'camaras', descripcion: 'camaras fotograficas' }],
+        pais_origen: 'MX',
+        tipo_sujeto: 'empresa',
+      },
+      paso_actual: 'canal',
+    });
+
+    expect(canal.contexto.datos_previos.canal).toBe('AEREO');
+  });
+
   it('responde una aclaracion sobre courier vs aereo sin avanzar el paso actual', async () => {
     const respuesta = await conversador.agenteConversador('que diferencia entre courier express y aereo importacion formal', {
       datos_previos: {
@@ -64,7 +91,7 @@ describe('agente-conversador', () => {
     expect(respuesta.mensaje).toMatch(/courier express/i);
     expect(respuesta.mensaje).toMatch(/aereo formal/i);
     expect(Array.isArray(respuesta.opciones)).toBe(true);
-    expect(respuesta.opciones).toHaveLength(4);
+    expect(respuesta.opciones).toHaveLength(5);
   });
 
   it('mantiene el paso activo al aclarar aunque falten campos previos en el contexto', async () => {
@@ -87,6 +114,7 @@ describe('agente-conversador', () => {
       'AEREO',
       'COURIER',
       'POSTAL',
+      'POSTAL_FRANQUICIA',
     ]);
   });
 
@@ -120,26 +148,32 @@ describe('agente-conversador', () => {
     const propuesta = await conversador.agenteConversador('150 vinos, no uno', {
       datos_previos: {
         productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
+        consulta_oficial: { fuente: 'ADUANET' },
+        validacion_oficial: { fuente: 'ADUANET' },
       },
       paso_actual: 'pais_origen',
     });
 
-    expect(propuesta.paso).toBe('confirmar_correccion');
-    expect(propuesta.contexto.paso_actual).toBe('confirmar_correccion');
+    expect(propuesta.paso).toBe('revisar_correccion');
+    expect(propuesta.contexto.paso_actual).toBe('revisar_correccion');
     expect(propuesta.contexto.datos_previos.productos[0].cantidad).toBe(1);
     expect(propuesta.mensaje).toMatch(/quieres corregir productos/i);
+    expect(propuesta.hint).toBe('Revisa si realmente quieres reemplazar ese dato.');
     expect(propuesta.opciones.map((item) => item.value)).toEqual([
-      'CONFIRMAR_CORRECCION',
-      'CANCELAR_CORRECCION',
+      'APLICAR_CORRECCION',
+      'MANTENER_CORRECCION',
     ]);
 
-    const confirmada = await conversador.agenteConversador('CONFIRMAR_CORRECCION', propuesta.contexto);
-    expect(confirmada.paso).toBe('pais_origen');
-    expect(confirmada.contexto.paso_actual).toBe('pais_origen');
-    expect(confirmada.contexto.datos_previos.productos[0].cantidad).toBe(150);
-    expect(confirmada.contexto.datos_previos.productos[0].descripcion).toMatch(/vinos/i);
-    expect(confirmada.mensaje).toMatch(/actualice productos/i);
-    expect(confirmada.mensaje).toMatch(/desde que pais importaras/i);
+    const aplicada = await conversador.agenteConversador('APLICAR_CORRECCION', propuesta.contexto);
+    expect(aplicada.paso).toBe('pais_origen');
+    expect(aplicada.contexto.paso_actual).toBe('pais_origen');
+    expect(aplicada.contexto.datos_previos.productos[0].cantidad).toBe(150);
+    expect(aplicada.contexto.datos_previos.productos[0].descripcion).toMatch(/vinos/i);
+    expect(aplicada.contexto.datos_previos.consulta_oficial).toBeUndefined();
+    expect(aplicada.contexto.datos_previos.validacion_oficial).toBeUndefined();
+    expect(aplicada.mensaje).toMatch(/actualice productos/i);
+    expect(aplicada.mensaje).not.toMatch(/^listo/i);
+    expect(aplicada.mensaje).toMatch(/desde que pais importaras/i);
   });
 
   it('permite rechazar una correccion y mantiene el valor anterior', async () => {
@@ -150,14 +184,41 @@ describe('agente-conversador', () => {
       paso_actual: 'pais_origen',
     });
 
-    const rechazada = await conversador.agenteConversador('CANCELAR_CORRECCION', propuesta.contexto);
-    expect(rechazada.paso).toBe('pais_origen');
-    expect(rechazada.contexto.paso_actual).toBe('pais_origen');
-    expect(rechazada.contexto.datos_previos.productos[0].cantidad).toBe(1);
-    expect(rechazada.mensaje).toMatch(/mantengo productos/i);
+    const mantenida = await conversador.agenteConversador('MANTENER_CORRECCION', propuesta.contexto);
+    expect(mantenida.paso).toBe('pais_origen');
+    expect(mantenida.contexto.paso_actual).toBe('pais_origen');
+    expect(mantenida.contexto.datos_previos.productos[0].cantidad).toBe(1);
+    expect(mantenida.mensaje).toMatch(/mantengo productos/i);
+    expect(mantenida.mensaje).not.toMatch(/^perfecto/i);
   });
 
-  it('pide confirmar antes de corregir el tipo de sujeto e invalida el perfil importador dependiente', async () => {
+  it('usa wording de revision en el subflujo de correccion y no revive copy anterior del paso previo', async () => {
+    const propuesta = await conversador.agenteConversador('150 vinos, no uno', {
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
+      },
+      paso_actual: 'pais_origen',
+    });
+
+    const reintento = await conversador.agenteConversador('tal vez', propuesta.contexto);
+
+    expect(reintento.mensaje).toMatch(/revisa o cancela antes de seguir/i);
+    expect(reintento.hint).toBe('Puedes revisarlo o mantener el valor actual.');
+
+    const content = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'),
+      'utf8'
+    );
+
+    expect(content).toContain('Revisa si realmente quieres reemplazar ese dato.');
+    expect(content).toContain('Revisa o cancela antes de seguir.');
+    expect(content).toContain('Puedes revisarlo o mantener el valor actual.');
+    expect(content).not.toContain('Confirma solo si realmente quieres reemplazar ese dato.');
+    expect(content).not.toContain('Confirma o cancela antes de seguir.');
+    expect(content).not.toContain('Puedes confirmar o mantener el valor actual.');
+  });
+
+  it('pide revisar antes de corregir el tipo de sujeto y limpia el perfil importador dependiente', async () => {
     const propuesta = await conversador.agenteConversador('persona natural', {
       datos_previos: {
         productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
@@ -172,20 +233,20 @@ describe('agente-conversador', () => {
       paso_actual: 'bien_usado',
     });
 
-    expect(propuesta.paso).toBe('confirmar_correccion');
+    expect(propuesta.paso).toBe('revisar_correccion');
     expect(propuesta.mensaje).toMatch(/tipo de sujeto/i);
 
-    const confirmada = await conversador.agenteConversador('si', propuesta.contexto);
-    expect(confirmada.contexto.datos_previos.tipo_sujeto).toBe('persona_natural');
-    expect(confirmada.contexto.datos_previos.tipo_importador).toBeUndefined();
-    expect(confirmada.paso).toBe('tipo_importador');
-    expect(confirmada.opciones).toEqual([
+    const aplicada = await conversador.agenteConversador('si', propuesta.contexto);
+    expect(aplicada.contexto.datos_previos.tipo_sujeto).toBe('persona_natural');
+    expect(aplicada.contexto.datos_previos.tipo_importador).toBeUndefined();
+    expect(aplicada.paso).toBe('tipo_importador');
+    expect(aplicada.opciones).toEqual([
       { value: 'nuevo', label: 'Persona natural - primera importacion' },
       { value: 'general', label: 'Persona natural - ya he importado antes' },
     ]);
   });
 
-  it('pide confirmar antes de corregir el canal e invalida pasos logisticos dependientes', async () => {
+  it('pide revisar antes de corregir el canal y limpia pasos logisticos dependientes', async () => {
     const propuesta = await conversador.agenteConversador('mejor postal', {
       datos_previos: {
         productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
@@ -204,15 +265,33 @@ describe('agente-conversador', () => {
       paso_actual: 'tipo_cambio',
     });
 
-    expect(propuesta.paso).toBe('confirmar_correccion');
+    expect(propuesta.paso).toBe('revisar_correccion');
+
+    const content = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'),
+      'utf8'
+    );
+
+    expect(content).toContain("paso: 'revisar_correccion'");
+    expect(content).toContain("paso_actual: 'revisar_correccion'");
+    expect(content).toContain("value: 'APLICAR_CORRECCION'");
+    expect(content).toContain("value: 'MANTENER_CORRECCION'");
+    expect(content).toContain("intencionDetectada: 'correccion_aplicada'");
+    expect(content).toContain("intencionDetectada: 'correccion_mantenida'");
+    expect(content).toContain('delete actualizados.consulta_oficial;');
+    expect(content).not.toContain("paso: 'confirmar_correccion'");
+    expect(content).not.toContain("value: 'CONFIRMAR_CORRECCION'");
+    expect(content).not.toContain("value: 'CANCELAR_CORRECCION'");
+    expect(content).not.toContain("intencionDetectada: 'correccion_confirmada'");
+    expect(content).not.toContain("intencionDetectada: 'correccion_rechazada'");
     expect(propuesta.mensaje).toMatch(/canal/i);
 
-    const confirmada = await conversador.agenteConversador('si', propuesta.contexto);
-    expect(confirmada.contexto.datos_previos.canal).toBe('POSTAL');
-    expect(confirmada.contexto.datos_previos.flete).toBeUndefined();
-    expect(confirmada.contexto.datos_previos.seguro).toBeUndefined();
-    expect(confirmada.contexto.datos_previos.peso_total).toBeUndefined();
-    expect(confirmada.paso).toBe('tipo_cambio');
+    const aplicada = await conversador.agenteConversador('si', propuesta.contexto);
+    expect(aplicada.contexto.datos_previos.canal).toBe('POSTAL');
+    expect(aplicada.contexto.datos_previos.flete).toBeUndefined();
+    expect(aplicada.contexto.datos_previos.seguro).toBeUndefined();
+    expect(aplicada.contexto.datos_previos.peso_total).toBeUndefined();
+    expect(aplicada.paso).toBe('tipo_cambio');
   });
 
   it('muestra un resumen de cantidades mas claro al pedir el pais de origen', () => {
@@ -249,6 +328,46 @@ describe('agente-conversador', () => {
       'CIP',
       'DAP',
       'DDP',
+    ]);
+  });
+
+  it('usa prompts y labels de incoterm e importador en ASCII limpio', () => {
+    const preguntaIncoterm = conversador.generarPregunta({
+      datos_previos: {
+        productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
+        pais_origen: 'US',
+        tipo_sujeto: 'empresa',
+        canal: 'COURIER',
+        objetivo_calculo: 'precio_sugerido',
+        precio_unitario: 5,
+      },
+    });
+
+    const preguntaImportador = conversador.generarPregunta({
+      datos_previos: {
+        productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
+        pais_origen: 'US',
+        tipo_sujeto: 'empresa',
+        canal: 'COURIER',
+        objetivo_calculo: 'precio_sugerido',
+        precio_unitario: 5,
+        incoterm: 'FOB',
+      },
+    });
+
+    expect(preguntaIncoterm.pregunta).toBe('Que incoterm usa el proveedor?');
+    expect(preguntaIncoterm.opciones).toEqual(
+      expect.arrayContaining([
+        { value: 'FOB', label: 'FOB (Free on Board) - El mas comun' },
+        { value: 'CIF', label: 'CIF (Cost, Insurance & Freight)' },
+        { value: 'EXW', label: 'EXW (Ex Works) - En fabrica' },
+      ])
+    );
+    expect(preguntaImportador.pregunta).toBe('Cual es el perfil de la empresa importadora?');
+    expect(preguntaImportador.opciones).toEqual([
+      { value: 'general', label: 'Empresa importadora recurrente' },
+      { value: 'nuevo', label: 'Empresa nueva importando' },
+      { value: 'buen_contribuyente', label: 'Buen Contribuyente SUNAT' },
     ]);
   });
 
@@ -382,7 +501,7 @@ describe('agente-conversador', () => {
     expect(respuesta.paso).toBe('flete');
   });
 
-  it('permite confirmar cuando ya esta listo para calcular', async () => {
+  it('permite continuar cuando ya hay datos suficientes para calculo', async () => {
     const respuesta = await conversador.agenteConversador('si', {
       datos_previos: {
         productos: [{ cantidad: 10, producto: 'polos', descripcion: 'polos' }],
@@ -403,8 +522,129 @@ describe('agente-conversador', () => {
       paso_actual: 'calcular',
     });
 
-    expect(respuesta.tipo).toBe('listo_para_calcular');
+    expect(respuesta.tipo).toBe('datos_suficientes_para_calculo');
     expect(respuesta.paso).toBe('calcular');
+    expect(respuesta.mensaje).toMatch(/datos necesarios/i);
+    expect(respuesta.mensaje).not.toMatch(/ya puedes calcular/i);
+  });
+
+  it('usa un mensaje neutral cuando recibe datos estructurados directos', async () => {
+    const respuesta = await conversador.agenteConversador('{"productos":[{"cantidad":2,"producto":"relojes"}],"pais_origen":"CN"}');
+
+    expect(respuesta.tipo).toBe('datos_recibidos');
+    expect(respuesta.contexto.paso_actual).toBe('calcular');
+    expect(respuesta.mensaje).toBe('Datos recibidos. Voy a revisarlos antes del calculo.');
+  });
+
+  it('no revive el copy fuerte ni el check emoji en agente-conversador.js', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(content).not.toContain('Listo, actualice');
+    expect(content).not.toContain('✅ Datos recibidos. Procesando...');
+    expect(content).not.toContain('Ya puedes calcular la cotización con los datos capturados.');
+    expect(content).toContain('Datos recibidos. Voy a revisarlos antes del calculo.');
+  });
+
+  it('usa labels y recomendaciones conversacionales sin emoji fragil', () => {
+    const pregunta = conversador.generarPregunta({
+      datos_previos: {
+        productos: [{ cantidad: 1, producto: 'router', descripcion: 'router wifi' }],
+        pais_origen: 'CN',
+        tipo_sujeto: 'empresa',
+      },
+    });
+    const recomendaciones = conversador.generarRecomendaciones(
+      { pais_origen: 'CN' },
+      {
+        items: [{ tlc: { preferencia: 100 }, ahorroTLC: 6 }],
+        permisos: [{ entidad: 'MTC' }],
+        etapas: { flete: { estimado: true } },
+        alertas: [{ tipo: 'duda_razonable', mensaje: 'Revisar sustento de valor.' }],
+        totales: { flete: 120, margenVenta: { margenPct: 15 } },
+      },
+    );
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(pregunta.pregunta).toMatch(/canal usaras para importar desde cn/i);
+    expect(pregunta.opciones.map((item) => item.label)).toEqual([
+      'Maritimo (importacion formal)',
+      'Aereo (importacion formal)',
+      'Courier express (DHL, FedEx, UPS u otro)',
+      'Postal (Serpost / correo postal)',
+      'Postal con franquicia (bajo valor)',
+    ]);
+    expect(recomendaciones.map((item) => item.icono)).toEqual(
+      expect.arrayContaining(['trade', 'warning', 'freight', 'review', 'margin_down'])
+    );
+    expect(content).toContain("icono: 'trade'");
+    expect(content).toContain("icono: 'warning'");
+    expect(content).toContain('Ya tengo toda la informacion. Calculamos el costo total de importacion?');
+    expect(content).not.toContain('📦 Courier express');
+    expect(content).not.toContain("icono: '🤝'");
+    expect(content).not.toContain("icono: '⚠️'");
+    expect(content).not.toContain("icono: '🚢'");
+    expect(content).not.toContain("icono: '⚖️'");
+    expect(content).not.toContain("icono: '📉'");
+    expect(content).not.toContain("icono: '📈'");
+  });
+
+  it('usa un saludo inicial neutral y sin emoji en la primera pregunta', () => {
+    const pregunta = conversador.generarPregunta({ datos_previos: {} });
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(pregunta.paso).toBe('productos');
+    expect(pregunta.pregunta).toBe('Hola. Soy tu asistente de importaciones. Que productos quieres importar?');
+    expect(content).toContain('Hola. Soy tu asistente de importaciones. Que productos quieres importar?');
+    expect(content).not.toContain('¡Hola! 👋 Soy tu asistente de importaciones. ¿Qué productos quieres importar?');
+  });
+
+  it('mantiene hints visibles sin mojibake ni separadores largos en costos opcionales', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(content).toContain("hint: 'Dejalo en blanco si no lo sabes; lo estimaremos'");
+    expect(content).toContain("hint: 'Dejalo en blanco; usaremos 1.5% del FOB'");
+    expect(content).toContain("hint: 'Opcional; ayuda a estimar flete mas preciso'");
+    expect(content).toContain("hint: 'Dejalo en blanco; usaremos el TC SUNAT actual'");
+    expect(content).toContain("label: 'FOB (Free on Board) - El mas comun'");
+    expect(content).toContain("label: 'EXW (Ex Works) - En fabrica'");
+    expect(content).toContain("pregunta: 'Que incoterm usa el proveedor?'");
+    expect(content).toContain("pregunta: 'Cual es el perfil de la empresa importadora?'");
+    expect(content).toContain("label: 'Empresa importadora recurrente'");
+    expect(content).toContain("label: 'Empresa nueva importando'");
+    expect(content).not.toContain('Déjalo en blanco si no lo sabes — lo estimaremos');
+    expect(content).not.toContain('Déjalo en blanco — usaremos 1.5% del FOB');
+    expect(content).not.toContain('Opcional — ayuda a estimar flete más preciso');
+    expect(content).not.toContain('Déjalo en blanco — usaremos el TC SUNAT actual');
+    expect(content).not.toContain('FOB (Free on Board) — El más común');
+    expect(content).not.toContain('EXW (Ex Works) — En fábrica');
+    expect(content).not.toContain('Que Incoterm uso el proveedor?');
+    expect(content).not.toContain('Que tipo de importador eres?');
+    expect(content).not.toContain('General — Ya he importado antes');
+    expect(content).not.toContain('Nuevo — Es mi primera importación');
+  });
+
+  it('mantiene encabezados y secciones del source sin mojibake ni separadores Unicode fragiles', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(content).toContain('// server/agente-conversador.js - Agente 0: El que interactua con el usuario');
+    expect(content).toContain('// FUNCION:');
+    expect(content).toContain('//   Usuario -> Agente Conversador -> Orquestador -> 16 agentes especializados -> Resultado');
+    expect(content).toContain('// SISTEMA EXPERTO: Arbol de decisiones');
+    expect(content).toContain('// DETECTOR DE INTENCION');
+    expect(content).not.toContain('// server/agente-conversador.js — Agente 0: El que interactúa con el usuario');
+    expect(content).not.toContain('// FUNCIÓN:');
+    expect(content).not.toContain('Usuario → Agente Conversador → Orquestador → 16 agentes especializados → Resultado');
+    expect(content).not.toContain('// SISTEMA EXPERTO: Árbol de decisiones');
+    expect(content).not.toContain('// DETECTOR DE INTENCIÓN');
+    expect(content).not.toContain('════════');
+  });
+
+  it('usa un tipo interno coherente con datos suficientes para pasar al calculo', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
+
+    expect(content).toContain("tipo: 'datos_suficientes_para_calculo'");
+    expect(content).not.toContain("tipo: 'confirmacion'");
+    expect(content).not.toContain("tipo: 'listo_para_calcular'");
   });
 
   it('omite el paso de margen cuando el objetivo es solo costo de importacion', async () => {

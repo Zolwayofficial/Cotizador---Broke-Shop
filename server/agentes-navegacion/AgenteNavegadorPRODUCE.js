@@ -1,15 +1,36 @@
 // server/agentes-navegacion/AgenteNavegadorPRODUCE.js
-// 
-// AGENTE ESPECIALISTA EN PRODUCE (Ministerio de la Producción)
-// 
-// Características:
+//
+// AGENTE ESPECIALISTA EN PRODUCE (Ministerio de la Produccion)
+//
+// Caracteristicas:
 // - Navega en gob.pe/produce
 // - Busca permisos de pesca
-// - Detecta permisos de IQBF (Insumos Químicos)
+// - Detecta permisos de IQBF (Insumos Quimicos)
 // - Alertas de restricciones pesqueras
 // - Detecta sustancias fiscalizadas
 
 const { MemoriaAgente } = require('./MemoriaAgente');
+
+function cloneSerializable(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function contieneTermino(texto, termino) {
+  const pattern = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(termino)}(?:$|[^a-z0-9])`, 'i');
+  return pattern.test(texto);
+}
 
 class AgenteNavegadorPRODUCE {
   constructor() {
@@ -22,41 +43,32 @@ class AgenteNavegadorPRODUCE {
     this.memoria = new MemoriaAgente(this.nombreAgente);
   }
 
-  // ═══════════════════════════════════════════════════
-  // CONSULTAR PERMISO DE PESCA
-  // ═══════════════════════════════════════════════════
   async consultarPermisoPesca(producto) {
-    const cacheKey = `produce_pesca_${producto}`;
+    const productoNormalizado = this._normalizarClave(producto);
+    const cacheKey = `produce_pesca_${productoNormalizado}`;
+    const aprendizajeKey = `permiso_pesca_${productoNormalizado}`;
 
-    // Verificar cache
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
-      console.log(`💾 PRODUCE: Permiso de cache para ${producto}`);
+      console.log(`PRODUCE: Permiso de cache para ${producto}`);
       return cached;
     }
 
-    // Verificar aprendizaje previo
-    const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_pesca_${producto}`);
+    const aprendizaje = this.memoria?.obtenerAprendizaje(aprendizajeKey);
     if (aprendizaje) {
-      console.log('🧠 PRODUCE: Usando aprendizaje previo');
-      return aprendizaje.valor;
+      console.log('PRODUCE: Usando aprendizaje previo');
+      return cloneSerializable(aprendizaje.valor);
     }
 
-    // Consultar (en producción sería scraping real)
     const resultado = await this._consultarPermisoPescaLocal(producto);
 
-    // Guardar
     this._guardarEnCache(cacheKey, resultado, 86400000);
-    this.memoria.guardarAprendizaje(`permiso_pesca_${producto}`, resultado, 0.9);
+    this.memoria?.guardarAprendizaje(aprendizajeKey, cloneSerializable(resultado), 0.9);
 
-    return resultado;
+    return cloneSerializable(resultado);
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR SI REQUIERE PERMISO DE PESCA
-  // ═══════════════════════════════════════════════════
   async detectarSiRequierePermisoPesca(producto, categoria) {
-    // Productos pesqueros que requieren permiso
     const productosPesqueros = [
       'pesca', 'pescado', 'marisco', 'mariscos',
       'atun', 'sardina', 'jurel', 'caballa',
@@ -64,94 +76,100 @@ class AgenteNavegadorPRODUCE {
       'concha', 'choro', 'ostion',
       'alga', 'algae',
       'harina de pescado', 'aceite de pescado',
-      'conserva de atun', 'conserva de sardina'
+      'conserva de atun', 'conserva de sardina',
     ];
 
-    const productoLower = producto.toLowerCase();
-    const categoriaLower = categoria.toLowerCase();
+    const productoNormalizado = this._normalizarClave(producto);
+    const categoriaNormalizada = this._normalizarClave(categoria);
 
-    const esPesquero = productosPesqueros.some(p =>
-      productoLower.includes(p) || categoriaLower.includes(p)
+    const esPesquero = productosPesqueros.some((termino) =>
+      contieneTermino(productoNormalizado, termino) || contieneTermino(categoriaNormalizada, termino)
     );
 
     const resultado = {
       producto,
       categoria,
       requierePermisoPesca: esPesquero,
+      esPesquero,
       entidad: 'PRODUCE-SANIPES',
-      tramite: esPesquero ? 'Permiso de Importación de Productos Pesqueros' : 'No requiere',
-      actualizado: new Date().toISOString()
+      tramite: esPesquero ? 'Permiso de Importacion de Productos Pesqueros' : 'No requiere',
+      actualizado: new Date().toISOString(),
     };
 
-    // Guardar aprendizaje
-    this.memoria.guardarAprendizaje(`requiere_pesca_${producto}`, resultado, 0.95);
+    this.memoria?.guardarAprendizaje(
+      `requiere_pesca_${productoNormalizado}`,
+      resultado,
+      0.95
+    );
 
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR INSUMOS QUÍMICOS FISCALIZADOS (IQBF)
-  // ═══════════════════════════════════════════════════
   async detectarInsumosQuimicos(producto) {
-    // Insumos químicos fiscalizados por PRODUCE-DOPIF
     const insumosFiscalizados = [
       'acido sulfurico', 'acido clorhidrico', 'acido nitrico',
       'acetona', 'tolueno', 'metiletilcetona',
       'permanganato de potasio', 'dicromato de potasio',
       'hipoclorito de sodio', 'cloro',
       'carbonato de sodio', 'hidroxido de sodio',
-      'eter', 'cloroformo', 'benceno'
+      'eter', 'cloroformo', 'benceno',
     ];
 
-    const productoLower = producto.toLowerCase();
-
-    const esFiscalizado = insumosFiscalizados.some(i => productoLower.includes(i));
+    const productoNormalizado = this._normalizarClave(producto);
+    const esFiscalizado = insumosFiscalizados.some((termino) => contieneTermino(productoNormalizado, termino));
 
     return {
       producto,
       esInsumoFiscalizado: esFiscalizado,
       requiereAutorizacion: esFiscalizado,
       entidad: 'PRODUCE-DOPIF-SUNAT',
-      tramite: esFiscalizado ? 'Autorización de Importación de IQBF' : 'No requiere',
-      actualizado: new Date().toISOString()
+      tramite: esFiscalizado ? 'Autorizacion de Importacion de IQBF' : 'No requiere',
+      actualizado: new Date().toISOString(),
     };
   }
 
-  // ═══════════════════════════════════════════════════
-  // PRIVADOS
-  // ═══════════════════════════════════════════════════
   async _consultarPermisoPescaLocal(producto) {
-    // Simular consulta (en producción sería scraping real)
     return {
       producto,
       requierePermiso: false,
       tipoPermiso: null,
       estado: 'pendiente_verificacion',
       fuente: 'PRODUCE',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
   }
 
   _guardarEnCache(clave, valor, ttlMs) {
     this.cache.set(clave, {
-      valor,
-      expira: Date.now() + ttlMs
+      valor: cloneSerializable(valor),
+      expira: Date.now() + ttlMs,
     });
   }
 
   _obtenerDeCache(clave) {
     const cached = this.cache.get(clave);
     if (cached && Date.now() < cached.expira) {
-      return cached.valor;
+      return cloneSerializable(cached.valor);
     }
     this.cache.delete(clave);
     return null;
   }
 
-  // ═══════════════════════════════════════════════════
-  // ESTADÍSTICAS
-  // ═══════════════════════════════════════════════════
+  _normalizarClave(valor) {
+    return String(valor ?? '')
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   obtenerEstadisticas() {
+    if (!this.memoria) {
+      return {};
+    }
     return this.memoria.obtenerEstadisticas();
   }
 }

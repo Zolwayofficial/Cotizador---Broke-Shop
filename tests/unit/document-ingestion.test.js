@@ -62,6 +62,26 @@ describe('document ingestion', () => {
     expect(text).toMatch(/26595/);
   });
 
+  it('rechaza un DOCX sin word/document.xml con mensaje mas preciso', async () => {
+    const zip = new JSZip();
+    const brokenDocx = await zip.generateAsync({ type: 'nodebuffer' });
+
+    await expect(extractDocxText(brokenDocx)).rejects.toMatchObject({
+      name: 'DocumentIngestionError',
+      code: 'docx_incomplete',
+      message: 'DOCX incompleto: falta word/document.xml',
+    });
+
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'document-ingestion.js'),
+      'utf8'
+    );
+    expect(source).toContain('DOCX incompleto: falta word/document.xml');
+    expect(source).toContain("code: 'docx_incomplete'");
+    expect(source).not.toContain('DOCX invalido: falta word/document.xml');
+    expect(source).not.toContain("code: 'docx_invalid'");
+  });
+
   it('extrae texto util de un XLSX', () => {
     const workbook = XLSX.utils.book_new();
     const sheet = XLSX.utils.aoa_to_sheet([
@@ -117,8 +137,8 @@ describe('document ingestion', () => {
     }
   });
 
-  it('rechaza .doc legacy con mensaje claro', async () => {
-    const docPath = await createTempFile(Buffer.from('legacy doc'), '.doc');
+  it('rechaza .doc antiguo con mensaje claro', async () => {
+    const docPath = await createTempFile(Buffer.from('documento antiguo'), '.doc');
 
     try {
       await expect(extractUploadedContent({
@@ -189,7 +209,15 @@ describe('document ingestion', () => {
         name: 'DocumentIngestionError',
         statusCode: 422,
         code: 'pdf_unreadable',
+        message: 'No se pudo leer el PDF. Sube un PDF legible o conviertelo a imagen, DOCX o XLSX.',
       });
+
+      const source = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'server', 'document-ingestion.js'),
+        'utf8'
+      );
+      expect(source).toContain('No se pudo leer el PDF. Sube un PDF legible o conviertelo a imagen, DOCX o XLSX.');
+      expect(source).not.toContain('No se pudo leer el PDF. Sube un PDF valido o conviertelo a imagen, DOCX o XLSX.');
     } finally {
       await fs.promises.rm(pdfPath, { force: true });
     }

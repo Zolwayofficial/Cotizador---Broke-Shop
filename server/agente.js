@@ -1,22 +1,22 @@
-// server/agente.js — Sistema Multi-Agente para Cotización de Importación
+// server/agente.js - Sistema multi-agente para cotizacion de importacion
 //
 // ARQUITECTURA:
 //
 //   Usuario: "Quiero importar 500 camisetas de China a $3 c/u"
-//     ↓
+//     |
 //   ORQUESTADOR (Agente General)
-//     ├→ Agente Clasificador (2+ modelos debaten HS code)
-//     ├→ Agente Regulatorio (SUNAT, VUCE, MTC, DIGESA, SENASA...)
-//     ├→ Agente Calculista (motor tributario completo)
-//     ├→ Agente Valoración (duda razonable, precios referencia)
-//     ├→ Agente Logístico (flete, seguro, incoterms, tracking)
-//     ├→ Agente Legal (leyes vigentes, antidumping, alertas)
-//     └→ Agente Compliance (OFAC, sanciones, prohibiciones)
-//     ↓
+//     |- Agente Clasificador (2+ modelos debaten HS code)
+//     |- Agente Regulatorio (SUNAT, VUCE, MTC, DIGESA, SENASA...)
+//     |- Agente Calculista (motor tributario completo)
+//     |- Agente Valoracion (duda razonable, precios referencia)
+//     |- Agente Logistico (flete, seguro, incoterms, tracking)
+//     |- Agente Legal (leyes aplicables, antidumping, alertas)
+//     `- Agente Compliance (OFAC, sanciones, prohibiciones)
+//     |
 //   Resultado completo en una sola respuesta
 //
-// Cada sub-agente tiene funciones específicas y opera independientemente.
-// El orquestador decide QUÉ agentes activar según el input.
+// Cada sub-agente tiene funciones especificas y opera independientemente.
+// El orquestador decide que agentes activar segun el input.
 
 const clasificador = require('./clasificador');
 const nandinaService = require('./nandina');
@@ -40,40 +40,40 @@ const {
 const IPM_RATE = 0.02;
 const SEGURO_DEFAULT = 0.015;
 
-async function resolverValidacionOficial(resultado, items, pais, log) {
+async function resolverConsultaOficial(resultado, items, pais, log) {
   try {
-    const validacionOficial = await construirValidacionOficialImportacion({ items, pais });
-    if (validacionOficial?.subpartidas?.length) {
-      resultado.validacionOficial = validacionOficial;
-      agregarAlertaTributariaOficial(resultado, validacionOficial);
+    const consultaOficial = await construirValidacionOficialImportacion({ items, pais });
+    if (consultaOficial?.subpartidas?.length) {
+      resultado.validacionOficial = consultaOficial;
+      agregarAlertaConsultaTributaria(resultado, consultaOficial);
       if (Array.isArray(log)) {
         log.push(
-          `[Oficial] ✓ ADUANET validó ${validacionOficial.subpartidas.length} subpartida(s)` +
-          `${validacionOficial.truncado ? ' (resultado truncado para mantener velocidad)' : ''}`
+          `[Oficial] ADUANET reporto ${consultaOficial.subpartidas.length} subpartida(s)` +
+          `${consultaOficial.truncado ? ' (resultado truncado para mantener velocidad)' : ''}`
         );
       }
-    } else if (validacionOficial?.error && Array.isArray(log)) {
-      agregarAlertaTributariaOficial(resultado, validacionOficial);
-      log.push(`[Oficial] Validacion oficial no disponible: ${validacionOficial.error}`);
+    } else if (consultaOficial?.error && Array.isArray(log)) {
+      agregarAlertaConsultaTributaria(resultado, consultaOficial);
+      log.push(`[Oficial] Consulta oficial no disponible: ${consultaOficial.error}`);
     }
-    return validacionOficial;
+    return consultaOficial;
   } catch (error) {
     if (Array.isArray(log)) {
-      log.push(`[Oficial] Validacion oficial omitida: ${error.message}`);
+      log.push(`[Oficial] Consulta oficial omitida: ${error.message}`);
     }
     return null;
   }
 }
 
-function agregarAlertaTributariaOficial(resultado, validacionOficial) {
-  if (!resultado || !Array.isArray(resultado.alertas) || !validacionOficial) return;
+function agregarAlertaConsultaTributaria(resultado, consultaOficial) {
+  if (!resultado || !Array.isArray(resultado.alertas) || !consultaOficial) return;
 
   resultado.alertas = resultado.alertas.filter(
     (alerta) => alerta?.tipo !== 'normativo_tributario_oficial'
   );
 
-  const subpartidas = Array.isArray(validacionOficial.subpartidas)
-    ? validacionOficial.subpartidas
+  const subpartidas = Array.isArray(consultaOficial.subpartidas)
+    ? consultaOficial.subpartidas
     : [];
   const conFuenteOficial = subpartidas.filter((subpartida) => subpartida?.oficialEnVivo).length;
 
@@ -88,17 +88,17 @@ function agregarAlertaTributariaOficial(resultado, validacionOficial) {
       tipo: 'normativo_tributario_oficial',
       nivel: conFuenteOficial > 0 ? 'info' : 'medio',
       mensaje: conFuenteOficial > 0
-        ? `Validacion tributaria oficial: ADUANET confirmo gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como vigente el bloque "Validacion oficial en vivo".`
-        : 'No se obtuvo confirmacion oficial en vivo para esta corrida. Confirma IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
+        ? `Consulta tributaria oficial: ADUANET devolvio gravamenes para ${subpartidas.length} subpartida(s). IGV, IPM${hasIsc ? ', ISC' : ''}${hasConvenio ? ' y convenios' : ''} pueden variar por producto y pais; toma como referencia de trabajo el bloque "Consulta oficial en vivo".`
+        : 'No hubo respuesta oficial en vivo para esta corrida. Revisa IGV, IPM, ISC, convenios y cargos extra en ADUANET/SUNAT antes de cerrar la operacion.',
     });
     return;
   }
 
-  if (validacionOficial.error) {
+  if (consultaOficial.error) {
     resultado.alertas.push({
       tipo: 'normativo_tributario_oficial',
       nivel: 'medio',
-      mensaje: 'Validacion oficial tributaria no disponible en esta consulta. Confirma en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
+      mensaje: 'Consulta oficial tributaria no disponible en esta corrida. Revisa en ADUANET/SUNAT la distribucion IGV/IPM, ISC y convenios aplicables antes de cerrar.',
     });
   }
 }
@@ -110,25 +110,25 @@ const TC_FALLBACK = {
   BRL:0.20, MXN:0.058, CAD:0.74, AUD:0.65, PEN:0.27,
 };
 
-// Antidumping INDECOPI vigentes
+// Antidumping INDECOPI aplicables
 const ANTIDUMPING = [
-  { hs:'6109', pais:'CN', tasa:5.51, desc:'Camisetas algodón', res:'025-2019' },
-  { hs:'6105', pais:'CN', tasa:3.73, desc:'Camisas punto algodón', res:'025-2019' },
+  { hs:'6109', pais:'CN', tasa:5.51, desc:'Camisetas algodon', res:'025-2019' },
+  { hs:'6105', pais:'CN', tasa:3.73, desc:'Camisas punto algodon', res:'025-2019' },
   { hs:'6205', pais:'CN', tasa:1.98, desc:'Camisas tejido plano', res:'134-2019' },
-  { hs:'5407', pais:'CN', tasa:0.18, desc:'Tejidos filamentos sintéticos', res:'044-2014', porKg:true },
+  { hs:'5407', pais:'CN', tasa:0.18, desc:'Tejidos filamentos sinteticos', res:'044-2014', porKg:true },
   { hs:'5516', pais:'CN', tasa:0.66, desc:'Tejidos fibras artificiales', res:'044-2014', porKg:true },
   { hs:'7213', pais:'CN', tasa:12.0, desc:'Barras acero', res:'023-2021' },
   { hs:'7306', pais:'CN', tasa:11.0, desc:'Tubos perfiles acero', res:'015-2018' },
-  { hs:'6402', pais:'CN', tasa:2.97, desc:'Calzado caucho/plástico', res:'060-2020' },
+  { hs:'6402', pais:'CN', tasa:2.97, desc:'Calzado caucho/plastico', res:'060-2020' },
   { hs:'6403', pais:'CN', tasa:1.82, desc:'Calzado cuero', res:'060-2020' },
   { hs:'6404', pais:'CN', tasa:3.41, desc:'Calzado textil', res:'060-2020' },
-  { hs:'3920', pais:'CN', tasa:19.3, desc:'Cierres tapas plástico', res:'003-2023' },
+  { hs:'3920', pais:'CN', tasa:19.3, desc:'Cierres tapas plastico', res:'003-2023' },
   { hs:'7304', pais:'CN', tasa:15.0, desc:'Tubos acero sin costura', res:'080-2017' },
 ];
 
 // Incoterms info
 const INCOTERMS = {
-  EXW: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.08, desc:'Precio en fábrica' },
+  EXW: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.08, desc:'Precio en fabrica' },
   FCA: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.03, desc:'Entregado al transportista' },
   FAS: { incluyeFlete:false, incluyeSeguro:false, extraPct:0.02, desc:'Al costado del buque' },
   FOB: { incluyeFlete:false, incluyeSeguro:false, extraPct:0,    desc:'A bordo del buque' },
@@ -141,22 +141,22 @@ const INCOTERMS = {
   DDP: { incluyeFlete:true,  incluyeSeguro:true,  extraPct:0,    desc:'Entregado con derechos pagados', incluyeTributos:true },
 };
 
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 // SUB-AGENTE 1: CLASIFICADOR (2+ modelos debaten)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 const agenteClasificador = {
   nombre: 'Clasificador HS',
   
   async clasificar(items) {
     const resultados = await Promise.allSettled(
       items.map(async (item) => {
-        // Si ya viene con HS manual, validar contra NANDINA
+        // Si ya viene con HS manual, contrastar con NANDINA
         if (item.hs && item.hs.length >= 8) {
           const clean = item.hs.replace(/\./g,'').padEnd(10,'0');
           const match = nandinaService.getData().find(h => h.p === clean);
           if (match) return { ...item, hs:clean, adv:match.a, igvRate:match.g||16, iscRate:match.i||0, seguroRate:match.s||1.5, descOficial:match.d, confianza:100, metodo:'manual' };
         }
-        // Multi-agente: 2 modelos + árbitro + validación NANDINA
+        // Multi-agente: 2 modelos + arbitro + contraste NANDINA
         try {
           const r = await clasificador.clasificarMultiAgente(item.desc);
           if (r.consenso?.hs) {
@@ -183,16 +183,16 @@ const agenteClasificador = {
             return { ...item, hs:clean, adv:match?.a||0, igvRate:match?.g||16, iscRate:match?.i||0, confianza:55, metodo:'simple' };
           }
         } catch (error) { /* fallback simple */ }
-        return { ...item, hs:null, adv:0, confianza:0, error:'Sin clasificación' };
+        return { ...item, hs:null, adv:0, confianza:0, error:'Sin clasificacion' };
       })
     );
     return resultados.map(r => r.status==='fulfilled' ? r.value : {error:'Fallo'});
   },
 };
 
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 // SUB-AGENTE 2: REGULATORIO (SUNAT, VUCE, ministerios)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 const agenteRegulatorio = {
   nombre: 'Regulatorio',
 
@@ -207,7 +207,7 @@ const agenteRegulatorio = {
       const prohib = nandinaService.isProhibida(item.hs);
       if (prohib) {
         item.prohibida = true;
-        alertas.push({ nivel:'critico', tipo:'prohibida', mensaje:`⛔ ${item.desc}: MERCANCÍA PROHIBIDA — ${prohib.desc}` });
+        alertas.push({ nivel:'critico', tipo:'prohibida', mensaje:`${item.desc}: mercancia prohibida. ${prohib.desc}` });
       }
 
       // Restringida (permisos)
@@ -219,7 +219,7 @@ const agenteRegulatorio = {
             detallePermisos.push(p);
           }
         });
-        alertas.push({ nivel:'alto', tipo:'restringida', mensaje:`⚠ ${item.desc}: requiere permiso de ${perm.permisos.map(p=>p.entidad).join(', ')}` });
+        alertas.push({ nivel:'alto', tipo:'restringida', mensaje:`${item.desc}: requiere permiso de ${perm.permisos.map(p=>p.entidad).join(', ')}` });
       }
 
       // TLC
@@ -239,7 +239,7 @@ const agenteRegulatorio = {
         if (hsClean.startsWith(ad.hs) && paisUp && ad.pais === paisUp) {
           item.antidumpingRate = ad.tasa / 100;
           item.antidumpingInfo = ad;
-          alertas.push({ nivel:'alto', tipo:'antidumping', mensaje:`🛡 ${item.desc}: antidumping ${ad.tasa}% (Res. ${ad.res})` });
+          alertas.push({ nivel:'alto', tipo:'antidumping', mensaje:`${item.desc}: antidumping ${ad.tasa}% (Res. ${ad.res})` });
           break;
         }
       }
@@ -249,18 +249,18 @@ const agenteRegulatorio = {
   },
 };
 
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 // SUB-AGENTE 3: CALCULISTA (motor tributario)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 const agenteCalculista = {
   nombre: 'Calculista',
 
-  // Ajustar de cualquier Incoterm → FOB
+  // Ajustar de cualquier Incoterm a FOB
   ajustarIncoterm(items, incoterm, fleteManual, seguroManual) {
     const inc = INCOTERMS[(incoterm||'FOB').toUpperCase()];
     const precision = {
       codigo: (incoterm || 'FOB').toUpperCase(),
-      estado: 'exacto',
+      estado: 'con_respaldo',
       fobEstimado: false,
       fleteEstimado: false,
       seguroEstimado: false,
@@ -310,7 +310,7 @@ const agenteCalculista = {
       precision.fobEstimado = true;
       precision.fleteEstimado = true;
       precision.seguroEstimado = true;
-      precision.mensaje = 'DDP no puede desglosarse con exactitud sin un FOB real del proveedor.';
+      precision.mensaje = 'DDP no puede desglosarse de forma confiable sin un FOB real del proveedor.';
       fobAjustado = fobTotal * 0.65;
     }
 
@@ -358,7 +358,7 @@ const agenteCalculista = {
     const igv = baseIGV * igvRate;
     const ipm = baseIGV * IPM_RATE;
 
-    // Percepción diferenciada
+    // Percepcion diferenciada
     let percRate = 0, percTipo = 'no aplica';
     if (canal !== 'POSTAL' && canal !== 'COURIER') {
       if (tipoImportador === 'nuevo') { percRate = 0.10; percTipo = '10% (nuevo)'; }
@@ -382,7 +382,7 @@ const agenteCalculista = {
     };
   },
 
-  // DSI simplificado (FOB ≤ $2,000)
+  // DSI simplificado (FOB <= $2,000)
   calcularDSI(fob, fleteT, seguroT) {
     const seguro = seguroT || fob * SEGURO_DEFAULT;
     const cif = fob + fleteT + seguro;
@@ -422,11 +422,11 @@ const agenteCalculista = {
   },
 };
 
-// ══════════════════════════════════════════════════════
-// SUB-AGENTE 4: VALORACIÓN (duda razonable)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
+// SUB-AGENTE 4: VALORACION (duda razonable)
+// -------------------------------------------------------
 const agenteValoracion = {
-  nombre: 'Valoración',
+  nombre: 'Valoracion',
 
   async verificar(items, pais) {
     const resultados = await Promise.allSettled(
@@ -441,11 +441,11 @@ const agenteValoracion = {
   },
 };
 
-// ══════════════════════════════════════════════════════
-// SUB-AGENTE 5: LOGÍSTICO (flete + tracking)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
+// SUB-AGENTE 5: LOGISTICO (flete + tracking)
+// -------------------------------------------------------
 const agenteLogistico = {
-  nombre: 'Logístico',
+  nombre: 'Logistico',
 
   estimarFlete(pais, canal, pesoKg, fobTotal) {
     try {
@@ -458,9 +458,9 @@ const agenteLogistico = {
   },
 };
 
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 // SUB-AGENTE 6: COMPLIANCE (OFAC + sanciones)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 const agenteCompliance = {
   nombre: 'Compliance',
 
@@ -472,9 +472,9 @@ const agenteCompliance = {
   },
 };
 
-// ══════════════════════════════════════════════════════
-// SUB-AGENTE 7: LEGAL (leyes, regímenes, alertas)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
+// SUB-AGENTE 7: LEGAL (leyes, regimenes, alertas)
+// -------------------------------------------------------
 const agenteLegal = {
   nombre: 'Legal',
 
@@ -485,11 +485,11 @@ const agenteLegal = {
       if (item.antidumpingInfo) {
         const year = new Date().getFullYear();
         if (parseInt(item.antidumpingInfo.vigenciaHasta || '2099') - year <= 1) {
-          alertas.push({ tipo:'antidumping_expira', nivel:'medio', mensaje:`⏰ Antidumping ${item.antidumpingInfo.desc} por vencer. Verificar con INDECOPI.` });
+          alertas.push({ tipo:'antidumping_expira', nivel:'medio', mensaje:`Antidumping ${item.antidumpingInfo.desc} por vencer. Verificar con INDECOPI.` });
         }
       }
       if (item.tlc?.preferencia > 0) {
-        alertas.push({ tipo:'tlc', nivel:'info', mensaje:`🤝 ${item.desc}: TLC ahorra ${item.ahorroTLC}% AV` });
+        alertas.push({ tipo:'tlc', nivel:'info', mensaje:`${item.desc}: TLC con ahorro de ${item.ahorroTLC}% AV` });
       }
     });
 
@@ -501,9 +501,9 @@ const agenteLegal = {
   },
 };
 
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 // SUB-AGENTE 8: EXTRACTOR (lee documentos)
-// ══════════════════════════════════════════════════════
+// -------------------------------------------------------
 const agenteExtractor = {
   nombre: 'Extractor',
 
@@ -516,7 +516,7 @@ const agenteExtractor = {
     // Retry
     try {
       const msgs = [
-        { role:'system', content:'Extrae items de esta cotización. SOLO JSON: {"items":[{"desc":"...","qty":N,"unit":N}],"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","freight":N}' },
+        { role:'system', content:'Extrae items de esta cotizacion. SOLO JSON: {"items":[{"desc":"...","qty":N,"unit":N}],"currency":"USD","country":"XX","supplier":"...","incoterm":"FOB","freight":N}' },
         { role:'user', content: tipo==='image' ? [{type:'image_url',image_url:{url:contenido}},{type:'text',text:'Extrae datos.'}] : contenido },
       ];
       const r = await aiProxy.call(msgs, 'groq');
@@ -527,28 +527,28 @@ const agenteExtractor = {
     return { ok:false, error:'No se pudieron extraer datos' };
   },
 
-  validar(data) {
+  revisarDatos(data) {
     const warnings = [];
     if (!data?.items?.length) return { ok:false, error:'Sin items' };
     data.items.forEach((it,i) => {
       if (it.unit > 100000) warnings.push({ item:i, msg:`Precio muy alto: $${it.unit}` });
       if (it.unit > 0 && it.unit < 0.01) warnings.push({ item:i, msg:`Precio muy bajo: $${it.unit}` });
       if (it.qty > 100000) warnings.push({ item:i, msg:`Cantidad muy alta: ${it.qty}` });
-      if (!it.desc || it.desc.length < 3) warnings.push({ item:i, msg:'Descripción vacía' });
+      if (!it.desc || it.desc.length < 3) warnings.push({ item:i, msg:'Descripcion vacia' });
     });
     return { ok:true, warnings };
   },
 };
 
 
-// ══════════════════════════════════════════════════════════
-// ORQUESTADOR — El agente general que coordina todo
-// ══════════════════════════════════════════════════════════
+// ----------------------------------------------------------
+// ORQUESTADOR - El agente general que coordina todo
+// ----------------------------------------------------------
 async function orquestar(input) {
   const t0 = Date.now();
   const log = [];
   const resultado = {
-    exito: false,
+    procesado: false,
     modo: null,           // "completo" | "DSI" | "extraccion"
     items: [],
     totales: {},
@@ -560,7 +560,7 @@ async function orquestar(input) {
   };
 
   try {
-    // ═══ FASE 0: Determinar qué tenemos ═══
+    // FASE 0: Determinar que tenemos
     let { items, pais, canal, incoterm, moneda, proveedor } = input;
     const {
       contenido,
@@ -603,7 +603,7 @@ async function orquestar(input) {
                 : { estado: 'pendiente', fuente: 'sin_definir', monto: 0 }
             )
         ),
-      incoterm: { codigo: incoterm, estado: 'exacto', mensaje: null },
+      incoterm: { codigo: incoterm, estado: 'con_respaldo', mensaje: null },
       tipoCambio: {
         estado: tipoCambio.estado,
         fuente: tipoCambio.fuente,
@@ -617,17 +617,17 @@ async function orquestar(input) {
       log.push(`[TC] ${tipoCambio.mensaje}`);
     }
 
-    // ═══ FASE 1: EXTRACCIÓN (si viene documento en vez de items) ═══
+    // FASE 1: EXTRACCION (si viene documento en vez de items)
     if (!items?.length && contenido) {
       log.push('[Extractor] Leyendo documento...');
       const ext = await agenteExtractor.extraer(contenido, tipo);
       if (!ext.ok) { resultado.error = ext.error; resultado.log = log; return resultado; }
-      const val = agenteExtractor.validar(ext.data);
+      const val = agenteExtractor.revisarDatos(ext.data);
       resultado.etapas.extraccion = { items: ext.data.items?.length, warnings: val.warnings, proveedor: ext.data.supplier };
 
       // If soloExtraer=true, return for human review
       if (soloExtraer) {
-        resultado.exito = true;
+        resultado.procesado = true;
         resultado.modo = 'extraccion';
         resultado.extraccion = {
           data: ext.data,
@@ -645,45 +645,45 @@ async function orquestar(input) {
       if (moneda === 'USD' && ext.data.currency) moneda = ext.data.currency.toUpperCase();
       if (incoterm === 'FOB' && ext.data.incoterm) incoterm = ext.data.incoterm.toUpperCase();
       if (ext.data.supplier) proveedor = ext.data.supplier;
-      log.push(`[Extractor] ✓ ${items.length} items de ${proveedor || 'proveedor'}`);
+      log.push(`[Extractor] Items extraidos: ${items.length} de ${proveedor || 'proveedor'}`);
     }
 
     if (!items?.length) { resultado.error = 'Sin items'; resultado.log = log; return resultado; }
 
-    // ═══ FASE 2: MONEDA ═══
+    // FASE 2: MONEDA
     if (moneda !== 'USD') {
-      log.push(`[Calculista] Convirtiendo ${moneda} → USD...`);
+      log.push(`[Calculista] Convirtiendo ${moneda} a USD...`);
       const conv = agenteCalculista.convertirMoneda(items, moneda, tcMoneda);
       resultado.etapas.moneda = conv.conversion;
-      log.push(`[Calculista] ✓ 1 ${moneda} = ${conv.conversion?.tasa} USD`);
+      log.push(`[Calculista] Tipo de cambio aplicado: 1 ${moneda} = ${conv.conversion?.tasa} USD`);
     }
 
-    // ═══ FASE 3: CLASIFICACIÓN HS ═══
+    // FASE 3: CLASIFICACION HS
     log.push('[Clasificador] Clasificando partidas (multi-agente)...');
     items = await agenteClasificador.clasificar(items);
     const clasificados = items.filter(i => i.hs);
     resultado.etapas.clasificacion = { total:items.length, ok:clasificados.length, confianza:clasificados.length ? Math.round(clasificados.reduce((s,i)=>s+(i.confianza||0),0)/clasificados.length) : 0 };
-    log.push(`[Clasificador] ✓ ${clasificados.length}/${items.length} (confianza ${resultado.etapas.clasificacion.confianza}%)`);
+    log.push(`[Clasificador] Partidas clasificadas: ${clasificados.length}/${items.length} (confianza ${resultado.etapas.clasificacion.confianza}%)`);
 
-    // ═══ FASE 4: REGULATORIO ═══
+    // FASE 4: REGULATORIO
     log.push('[Regulatorio] Verificando permisos, TLCs, antidumping...');
     const reg = agenteRegulatorio.analizar(items, pais);
     items = reg.items;
     resultado.alertas.push(...reg.alertas);
     resultado.permisos = dedupePermisos(reg.detallePermisos, items);
     resultado.etapas.regulatorio = { alertas:reg.alertas.length, permisos:resultado.permisos.length };
-    log.push(`[Regulatorio] ✓ ${reg.alertas.length} alertas, ${resultado.permisos.length} permisos requeridos`);
+    log.push(`[Regulatorio] Alertas: ${reg.alertas.length}, permisos requeridos: ${resultado.permisos.length}`);
 
-    // ═══ FASE 5: INCOTERM → FOB ═══
+    // FASE 5: INCOTERM A FOB
     if (incoterm !== 'FOB') {
-      log.push(`[Calculista] Ajustando ${incoterm} → FOB...`);
+      log.push(`[Calculista] Ajustando ${incoterm} a FOB...`);
       const adj = agenteCalculista.ajustarIncoterm(items, incoterm, fleteManual, seguroManual);
       items = adj.items;
       fleteManual = adj.flete;
       seguroManual = adj.seguro;
       trazabilidad.incoterm = {
         codigo: incoterm,
-        estado: adj.precision?.estado || 'exacto',
+        estado: adj.precision?.estado || 'con_respaldo',
         mensaje: adj.precision?.mensaje || null,
       };
       if (adj.flete > 0 && trazabilidad.flete.estado !== 'real') {
@@ -701,17 +701,17 @@ async function orquestar(input) {
         };
       }
       resultado.etapas.incoterm = { ...(adj.ajuste || {}), precision: adj.precision || null };
-      log.push('[Calculista] ✓ FOB ajustado');
+      log.push('[Calculista] FOB ajustado para calculo');
     }
 
-    // ═══ CHECK DSI ═══
+    // CHECK DSI
     const fobTotal = items.reduce((s,i) => s + (i.qty||1)*(i.unit||0), 0);
     if (fobTotal <= 200 && canal === 'POSTAL') {
       log.push('[Calculista] Modo postal franquicia (FOB <= $200)');
       const seguroPostal = seguroManual || (fobTotal * SEGURO_DEFAULT);
       const cifPostal = fobTotal + fleteManual + seguroPostal;
       const ops = agenteCalculista.calcularOperativos(canal, cifPostal);
-      resultado.exito = true;
+      resultado.procesado = true;
       resultado.modo = 'POSTAL_FRANQUICIA';
       resultado.items = items;
       resultado.totales = {
@@ -779,7 +779,7 @@ async function orquestar(input) {
         incoterm,
         resultado,
       });
-      await resolverValidacionOficial(resultado, items, pais, log);
+      await resolverConsultaOficial(resultado, items, pais, log);
       resultado.perfilImportacion = buildImportProfile({
         canal,
         tipoSujeto,
@@ -801,13 +801,13 @@ async function orquestar(input) {
     }
 
     if (fobTotal <= 2000 && (canal === 'POSTAL' || canal === 'COURIER' || canal === 'DSI')) {
-      log.push('[Calculista] Modo DSI (FOB ≤ $2,000)');
+      log.push('[Calculista] Modo DSI (FOB <= $2,000)');
       const dsi = agenteCalculista.calcularDSI(fobTotal, fleteManual, seguroManual);
       const ops = agenteCalculista.calcularOperativos(canal, dsi.cif);
-      resultado.exito = true; resultado.modo = 'DSI'; resultado.items = items;
+      resultado.procesado = true; resultado.modo = 'DSI'; resultado.items = items;
       resultado.totales = { ...dsi, costosOperativos:ops, totalReal: dsi.totalLanded + (ops.totalOperativo||0) };
       if (tc > 0) resultado.totales.totalPEN = resultado.totales.totalReal * tc;
-      resultado.alertas.push({ tipo:'dsi', nivel:'info', mensaje:'📦 DSI: AV 4% flat, sin percepción.' });
+      resultado.alertas.push({ tipo:'dsi', nivel:'info', mensaje:'DSI: AV 4% flat, sin percepcion.' });
       if (fleteManual > 0) {
         trazabilidad.flete = { estado: 'real', fuente: 'manual', monto: fleteManual };
       }
@@ -853,7 +853,7 @@ async function orquestar(input) {
         incoterm,
         resultado,
       });
-      await resolverValidacionOficial(resultado, items, pais, log);
+      await resolverConsultaOficial(resultado, items, pais, log);
       resultado.perfilImportacion = buildImportProfile({
         canal,
         tipoSujeto,
@@ -873,11 +873,11 @@ async function orquestar(input) {
       return resultado;
     }
 
-    // ═══ FASE 6: FLETE ═══
+    // FASE 6: FLETE
     let fleteTotal = fleteManual;
     const seguroTotal = seguroManual;
     if (fleteTotal === 0 && pais) {
-      log.push('[Logístico] Estimando flete...');
+      log.push('[Logistico] Estimando flete...');
       const peso = items.reduce((s,i) => s + ((i.pesoKg||1)*(i.qty||1)), 0);
       const est = agenteLogistico.estimarFlete(pais, canal, peso, fobTotal);
       if (est) {
@@ -885,7 +885,7 @@ async function orquestar(input) {
         resultado.etapas.flete = { estimado:true, monto:fleteTotal, transit:est.tiempoTransito };
         trazabilidad.flete = { estado: 'estimado', fuente: 'tarifa_referencial', monto: fleteTotal };
       }
-      log.push(`[Logístico] ✓ Flete: $${fleteTotal.toFixed(2)}`);
+      log.push(`[Logistico] Flete estimado: $${fleteTotal.toFixed(2)}`);
     }
     if (fleteTotal > 0 && trazabilidad.flete.estado === 'pendiente') {
       trazabilidad.flete = { estado: 'real', fuente: 'manual', monto: fleteTotal };
@@ -900,7 +900,7 @@ async function orquestar(input) {
       };
     }
 
-    // ═══ FASE 7: CÁLCULO TRIBUTARIO ═══
+    // FASE 7: CALCULO TRIBUTARIO
     log.push('[Calculista] Calculando tributos...');
     items = items.map(item => {
       const itemFOB = (item.qty||1) * (item.unit||0);
@@ -936,39 +936,39 @@ async function orquestar(input) {
         if (item.tributos?.cpu) item.margenVenta = agenteCalculista.calcularMargen(item.tributos.cpu, (totales.costosOperativos.totalOperativo||0)/totalQty, margenVenta);
       });
     }
-    log.push(`[Calculista] ✓ Total: $${totales.totalReal.toFixed(2)}`);
+    log.push(`[Calculista] Total calculado: $${totales.totalReal.toFixed(2)}`);
 
-    // ═══ FASE 8: VALORACIÓN (paralelo, no bloquea) ═══
-    log.push('[Valoración] Verificando duda razonable...');
+    // FASE 8: VALORACION (paralelo, no bloquea)
+    log.push('[Valoracion] Verificando duda razonable...');
     try {
       const dudas = await agenteValoracion.verificar(items, pais);
       const riesgosos = dudas.filter(d => d?.riesgo === 'alto' || d?.riesgo === 'critico');
       if (riesgosos.length > 0) {
-        resultado.alertas.push({ tipo:'duda_razonable', nivel:'alto', mensaje:`🔶 ${riesgosos.length} item(s) con riesgo SUNAT`, items:riesgosos.map(d=>({hs:d.hs,riesgo:d.riesgo,msg:d.mensaje})) });
+        resultado.alertas.push({ tipo:'duda_razonable', nivel:'alto', mensaje:`${riesgosos.length} item(s) con riesgo SUNAT. Revisar antes de continuar.`, items:riesgosos.map(d=>({hs:d.hs,riesgo:d.riesgo,msg:d.mensaje})) });
       }
-      resultado.etapas.valoracion = { verificados:dudas.length, riesgosos:riesgosos.length };
-      log.push(`[Valoración] ✓ ${dudas.length} verificados, ${riesgosos.length} riesgosos`);
+      resultado.etapas.valoracion = { revisados:dudas.length, riesgosos:riesgosos.length };
+      log.push(`[Valoracion] Revisados: ${dudas.length}, riesgosos: ${riesgosos.length}`);
     } catch(e) { resultado.etapas.valoracion = { error:e.message }; }
 
-    // ═══ FASE 9: COMPLIANCE (si hay proveedor) ═══
+    // FASE 9: COMPLIANCE (si hay proveedor)
     if (proveedor && proveedor.length > 3) {
       log.push('[Compliance] Verificando proveedor en listas OFAC/ONU...');
       try {
         const sanc = await agenteCompliance.verificarProveedor(proveedor, pais);
         if (sanc?.enListaNegra) {
-          resultado.alertas.push({ tipo:'sancion', nivel:'critico', mensaje:`🔴 ${proveedor}: coincidencia en listas de sanciones. NO PROCEDER.` });
+          resultado.alertas.push({ tipo:'sancion', nivel:'critico', mensaje:`${proveedor}: coincidencia en listas de sanciones. Revisar antes de continuar.` });
         }
-        resultado.etapas.compliance = sanc ? { verificado:true, enListaNegra:sanc.enListaNegra } : { verificado:false };
-        log.push(`[Compliance] ✓ ${sanc?.enListaNegra ? '⚠ EN LISTA NEGRA' : 'Limpio'}`);
+        resultado.etapas.compliance = sanc ? { consultado:true, enListaNegra:sanc.enListaNegra } : { consultado:false };
+        log.push(`[Compliance] Estado: ${sanc?.enListaNegra ? 'coincidencia en listas de sanciones' : 'sin coincidencias visibles'}`);
       } catch(e) { resultado.etapas.compliance = { error:e.message }; }
     }
 
-    // ═══ FASE 10: ALERTAS LEGALES ═══
+    // FASE 10: ALERTAS LEGALES
     const alertasLegales = agenteLegal.generarAlertas(items, pais);
     resultado.alertas.push(...alertasLegales);
 
-    // ═══ RESULTADO ═══
-    resultado.exito = true;
+    // RESULTADO
+    resultado.procesado = true;
     resultado.modo = 'completo';
     resultado.items = items;
     resultado.totales = totales;
@@ -1007,7 +1007,7 @@ async function orquestar(input) {
       incoterm,
       resultado,
     });
-    await resolverValidacionOficial(resultado, items, pais, log);
+    await resolverConsultaOficial(resultado, items, pais, log);
     resultado.perfilImportacion = buildImportProfile({
       canal,
       tipoSujeto,
@@ -1048,7 +1048,7 @@ const BASE_AGENT_REGISTRY = [
   { id: 'valoracion', nombre: agenteValoracion.nombre, categoria: 'base' },
   { id: 'logistico', nombre: agenteLogistico.nombre, categoria: 'base' },
   { id: 'compliance', nombre: agenteCompliance.nombre, categoria: 'base' },
-  { id: 'validador-proveedor', nombre: 'Validador de Proveedores', categoria: 'base' },
+  { id: 'revisor-proveedor', nombre: 'Revisor de Proveedores', categoria: 'base' },
   { id: 'legal', nombre: agenteLegal.nombre, categoria: 'base' },
   { id: 'analizador-margen', nombre: 'Analizador de Margen', categoria: 'base' },
   { id: 'extractor', nombre: agenteExtractor.nombre, categoria: 'base' },

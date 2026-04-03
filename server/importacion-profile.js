@@ -11,6 +11,12 @@ const INSURANCE_MODE_LABELS = {
 };
 
 function toNumber(value) {
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -27,64 +33,84 @@ function formatPercent(value) {
 function inferirRegimenImportacion({ canal, fobTotal }) {
   const normalizedChannel = String(canal || 'MARITIMO').toUpperCase();
   const total = toNumber(fobTotal);
+  const channel =
+    normalizedChannel === 'POSTAL_FRANQUICIA'
+      ? 'POSTAL'
+      : normalizedChannel === 'COURIER_EXPRESS'
+        ? 'COURIER'
+        : normalizedChannel === 'AEREO_FORMAL'
+          ? 'AEREO'
+          : normalizedChannel === 'MARITIMO_FORMAL'
+            ? 'MARITIMO'
+            : normalizedChannel;
 
-  if (normalizedChannel === 'POSTAL' && total <= 200) {
+  if (normalizedChannel === 'POSTAL_FRANQUICIA') {
     return {
       codigo: 'postal_franquicia',
       titulo: 'Postal / franquicia',
       detalle: 'Envio postal de bajo valor. Usualmente se revisa bajo franquicia y control simplificado.',
       umbral: 'Hasta USD 200 FOB',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
-  if (normalizedChannel === 'POSTAL' && total <= 2000) {
+  if (channel === 'POSTAL' && total <= 200) {
+    return {
+      codigo: 'postal_franquicia',
+      titulo: 'Postal / franquicia',
+      detalle: 'Envio postal de bajo valor. Usualmente se revisa bajo franquicia y control simplificado.',
+      umbral: 'Hasta USD 200 FOB',
+      revisarEnSunat: true,
+    };
+  }
+
+  if (channel === 'POSTAL' && total <= 2000) {
     return {
       codigo: 'postal_importa_facil',
       titulo: 'Postal / Importa Facil',
-      detalle: 'Envio postal simplificado. Conviene validar topes y operativa vigente con Serpost y SUNAT.',
+      detalle: 'Envio postal simplificado. Conviene revisar topes y operativa actual con Serpost y SUNAT.',
       umbral: 'Hasta USD 2,000 FOB',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
-  if (normalizedChannel === 'POSTAL') {
+  if (channel === 'POSTAL') {
     return {
       codigo: 'postal_mayor_valor',
       titulo: 'Postal fuera de tramo simplificado',
       detalle: 'El valor supera el tramo postal simple. Puede requerir manejo mas formal o revisiones adicionales.',
       umbral: 'Mayor a USD 2,000 FOB',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
-  if (normalizedChannel === 'COURIER' && total <= 2000) {
+  if (channel === 'COURIER' && total <= 2000) {
     return {
       codigo: 'courier_express',
       titulo: 'Courier express',
       detalle: 'Operacion courier con trazabilidad privada. Puede resolverse por un esquema simplificado segun valor y operador.',
       umbral: 'Hasta USD 2,000 FOB',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
-  if (normalizedChannel === 'COURIER') {
+  if (channel === 'COURIER') {
     return {
       codigo: 'courier_mayor_valor',
       titulo: 'Courier de mayor valor',
       detalle: 'La carga viaja por courier, pero el valor exige revisar costos, restricciones y tratamiento operativo con mas detalle.',
       umbral: 'Mayor a USD 2,000 FOB',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
-  if (normalizedChannel === 'AEREO') {
+  if (channel === 'AEREO') {
     return {
       codigo: 'importacion_consumo_aerea',
       titulo: 'Importacion formal aerea',
       detalle: 'Importacion para consumo por via aerea. Conviene revisar tiempos, costos de almacen y documentacion comercial.',
       umbral: 'Sin tope simplificado',
-      validarEnSunat: true,
+      revisarEnSunat: true,
     };
   }
 
@@ -93,7 +119,7 @@ function inferirRegimenImportacion({ canal, fobTotal }) {
     titulo: 'Importacion formal maritima',
     detalle: 'Importacion para consumo por via maritima. Requiere control documental y logistica mas estructurada.',
     umbral: 'Sin tope simplificado',
-    validarEnSunat: true,
+    revisarEnSunat: true,
   };
 }
 
@@ -103,27 +129,27 @@ function construirChecklistDocumental({ tipoSujeto, proveedor, incoterm, regimen
       titulo: 'Factura comercial o cotizacion del proveedor',
       detalle: proveedor
         ? `Proveedor capturado: ${proveedor}.`
-        : 'Confirma que la factura, proforma o cotizacion este completa y consistente.',
+        : 'Revisa que la factura, proforma o cotizacion este completa y consistente.',
       obligatorio: true,
       fuente: 'documental',
     },
     {
       titulo: 'Packing list / detalle de bultos',
-      detalle: 'Ayuda a validar peso, cantidades, presentacion y consistencia logistica.',
+      detalle: 'Ayuda a revisar peso, cantidades, presentacion y consistencia logistica.',
       obligatorio: regimen.codigo !== 'postal_franquicia',
       fuente: 'documental',
     },
     {
       titulo: 'Sustento del incoterm',
-      detalle: `Confirma que ${incoterm || 'FOB'} este respaldado en la cotizacion del proveedor.`,
+      detalle: `Revisa que ${incoterm || 'FOB'} este respaldado en la cotizacion del proveedor.`,
       obligatorio: true,
       fuente: 'documental',
     },
     {
       titulo: tipoSujeto === 'persona_natural' ? 'Documento personal del importador' : 'RUC y datos de empresa importadora',
       detalle: tipoSujeto === 'persona_natural'
-        ? 'Valida identidad, direccion y trazabilidad del destinatario.'
-        : 'Valida razon social, RUC y condiciones del importador.',
+        ? 'Revisa identidad, direccion y trazabilidad del destinatario.'
+        : 'Revisa razon social, RUC y condiciones del importador.',
       obligatorio: true,
       fuente: 'documental',
     },
@@ -152,7 +178,7 @@ function construirChecklistDocumental({ tipoSujeto, proveedor, incoterm, regimen
   if (regimen.codigo.startsWith('courier')) {
     checklist.push({
       titulo: 'Guia courier y detalle del operador',
-      detalle: 'Confirma courier, tracking y desglose de cargos del operador express.',
+      detalle: 'Revisa courier, tracking y desglose de cargos del operador express.',
       obligatorio: true,
       fuente: 'courier',
     });
@@ -162,11 +188,11 @@ function construirChecklistDocumental({ tipoSujeto, proveedor, incoterm, regimen
 }
 
 function construirBaseTributaria({ totales, trazabilidad, resultado }) {
-  const validacionOficial = resultado?.validacionOficial;
-  const subpartidasOficiales = Array.isArray(validacionOficial?.subpartidas)
-    ? validacionOficial.subpartidas
+  const consultaOficial = resultado?.validacionOficial;
+  const subpartidasConsultadas = Array.isArray(consultaOficial?.subpartidas)
+    ? consultaOficial.subpartidas
     : [];
-  const conFuenteOficial = subpartidasOficiales.filter((subpartida) => subpartida?.oficialEnVivo).length;
+  const conFuenteOficial = subpartidasConsultadas.filter((subpartida) => subpartida?.oficialEnVivo).length;
   const tipoCambio = resultado?.tipoCambio;
   const base = [
     {
@@ -204,18 +230,18 @@ function construirBaseTributaria({ totales, trazabilidad, resultado }) {
     },
   ];
 
-  if (subpartidasOficiales.length > 0) {
+  if (subpartidasConsultadas.length > 0) {
     base.push({
       concepto: 'Fuente tributaria oficial',
-      valor: `${subpartidasOficiales.length} subpartida(s) consultadas`,
+      valor: `${subpartidasConsultadas.length} subpartida(s) consultadas`,
       detalle: conFuenteOficial > 0
-        ? 'El desglose IGV/IPM/ISC, convenios y restricciones puede variar por subpartida y pais. Usa el bloque de validacion oficial en vivo como referencia vigente.'
+        ? 'El desglose IGV/IPM/ISC, convenios y restricciones puede variar por subpartida y pais. Usa el bloque de consulta oficial en vivo como referencia de trabajo.'
         : 'La consulta oficial no respondio en vivo para esta corrida; conviene contrastar el desglose tributario y convenios en ADUANET/SUNAT antes de cerrar.',
     });
   }
 
   if (tipoCambio?.tasa) {
-    let detalle = 'Se aplico el tipo de cambio operativo resuelto por el sistema.';
+    let detalle = 'Se aplico el tipo de cambio operativo definido en esta corrida.';
 
     if (tipoCambio.estado === 'manual_usuario') {
       const ref = tipoCambio.referenciaSunat;
@@ -224,7 +250,7 @@ function construirBaseTributaria({ totales, trazabilidad, resultado }) {
         ? `TC manual del usuario. Referencia SUNAT venta ${ref.venta.toFixed(4)}${diff ? ` (${diff.porcentaje >= 0 ? '+' : ''}${diff.porcentaje}% vs SUNAT)` : ''}.`
         : 'TC manual del usuario sin referencia SUNAT disponible en esta corrida.';
     } else if (tipoCambio.estado === 'oficial_en_vivo') {
-      detalle = `TC validado con SUNAT en vivo. Compra ${toNumber(tipoCambio.referenciaSunat?.compra).toFixed(4)} / venta ${toNumber(tipoCambio.referenciaSunat?.venta).toFixed(4)}.`;
+      detalle = `TC consultado en SUNAT en vivo. Compra ${toNumber(tipoCambio.referenciaSunat?.compra).toFixed(4)} / venta ${toNumber(tipoCambio.referenciaSunat?.venta).toFixed(4)}.`;
     } else if (tipoCambio.estado === 'fallback') {
       detalle = 'No hubo respuesta SUNAT en vivo; se uso un TC de respaldo operativo.';
     }
@@ -275,7 +301,7 @@ function construirAlertasValoracion({ items, trazabilidad, regimen }) {
   if (trazabilidad?.seguro?.estado !== 'real') {
     alertas.push({
       titulo: 'Seguro no sustentado',
-      detalle: 'El valor del seguro no vino con soporte directo; conviene validar si el proveedor o el operador lo entrega.',
+      detalle: 'El valor del seguro no vino con soporte directo; conviene revisar si el proveedor o el operador lo entrega.',
       nivel: 'medio',
     });
   }
@@ -283,7 +309,7 @@ function construirAlertasValoracion({ items, trazabilidad, regimen }) {
   if (riskItems.some((item) => item.antidumpingInfo)) {
     alertas.push({
       titulo: 'Producto sensible por antidumping',
-      detalle: 'Hay partidas con medidas INDECOPI o riesgo de cargos adicionales. Revisa la resolucion vigente.',
+      detalle: 'Hay partidas con medidas INDECOPI o riesgo de cargos adicionales. Revisa la resolucion aplicable.',
       nivel: 'alto',
     });
   }
@@ -298,7 +324,7 @@ function construirAlertasValoracion({ items, trazabilidad, regimen }) {
 
   if (regimen.codigo === 'postal_franquicia') {
     alertas.push({
-      titulo: 'Validar tramo postal vigente',
+      titulo: 'Revisar tramo postal actual',
       detalle: 'El tramo postal de bajo valor es sensible a reglas operativas del operador y de SUNAT.',
       nivel: 'medio',
     });
@@ -316,8 +342,8 @@ function construirNotasOperativas({ objetivoCalculo, tipoSujeto, regimen, totale
     {
       titulo: 'Perfil del importador',
       detalle: tipoSujeto === 'persona_natural'
-        ? 'Se trata como persona natural, asi que conviene validar limites, sustento de valor y documentacion personal.'
-        : 'Se trata como empresa, asi que conviene validar RUC, razon social y trazabilidad documental.',
+        ? 'Se trata como persona natural, asi que conviene revisar limites, sustento de valor y documentacion personal.'
+        : 'Se trata como empresa, asi que conviene revisar RUC, razon social y trazabilidad documental.',
     },
     {
       titulo: 'Escenario operativo',
@@ -342,19 +368,19 @@ function construirNotasOperativas({ objetivoCalculo, tipoSujeto, regimen, totale
   return notes;
 }
 
-function construirValidacionOficial(validacionOficial) {
-  const subpartidas = Array.isArray(validacionOficial?.subpartidas)
-    ? validacionOficial.subpartidas
+function construirConsultaOficial(consultaOficial) {
+  const subpartidas = Array.isArray(consultaOficial?.subpartidas)
+    ? consultaOficial.subpartidas
     : [];
 
   if (!subpartidas.length) return null;
 
   return {
-    fuente: validacionOficial.fuente || 'ADUANET',
-    actualizado: validacionOficial.actualizado || null,
-    truncado: Boolean(validacionOficial.truncado),
-    totalDetectadas: validacionOficial.totalDetectadas || subpartidas.length,
-    resumen: validacionOficial.resumen || {
+    fuente: consultaOficial.fuente || 'ADUANET',
+    actualizado: consultaOficial.actualizado || null,
+    truncado: Boolean(consultaOficial.truncado),
+    totalDetectadas: consultaOficial.totalDetectadas || subpartidas.length,
+    resumen: consultaOficial.resumen || {
       consultadas: subpartidas.length,
       conveniosDetectados: subpartidas.filter((subpartida) => Boolean(subpartida.convenio)).length,
       restriccionesDetectadas: subpartidas.reduce((count, subpartida) => count + (subpartida.restricciones?.total || 0), 0),
@@ -395,8 +421,8 @@ function construirValidacionOficial(validacionOficial) {
         },
         descripcionesMinimas: subpartida.descripcionesMinimas || [],
         enlaces: subpartida.enlaces || {},
-        fuente: subpartida.fuente || validacionOficial.fuente || 'ADUANET',
-        actualizado: subpartida.actualizado || validacionOficial.actualizado || null,
+        fuente: subpartida.fuente || consultaOficial.fuente || 'ADUANET',
+        actualizado: subpartida.actualizado || consultaOficial.actualizado || null,
         oficialEnVivo: subpartida.oficialEnVivo !== false,
         error: subpartida.error || null,
       };
@@ -453,7 +479,7 @@ function buildImportProfile({
       trazabilidad,
       regimen,
     }),
-    validacionOficial: construirValidacionOficial(resultado?.validacionOficial),
+    validacionOficial: construirConsultaOficial(resultado?.validacionOficial),
     notasOperativas: construirNotasOperativas({
       objetivoCalculo,
       tipoSujeto,

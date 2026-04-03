@@ -74,13 +74,20 @@ function normalizeTipoCambio(raw, sourceHint = 'desconocido', overrides = {}) {
 function fetch(url, isHttps = false) {
   const mod = isHttps ? https : http;
   return new Promise((resolve, reject) => {
-    const request = mod.get(url, { timeout: 15000, headers: { 'User-Agent': 'CotizadorPeru/3.0' } }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
-      res.on('aborted', () => reject(new Error(`Respuesta abortada para ${url}`)));
-      res.on('error', reject);
-    });
+    const request = mod.get(
+      url,
+      {
+        timeout: 15000,
+        headers: { 'User-Agent': 'ImportAIAgentCotizador/1.0 (+https://importaiagent.com)' },
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks) }));
+        res.on('aborted', () => reject(new Error(`Respuesta abortada para ${url}`)));
+        res.on('error', reject);
+      }
+    );
 
     request.setTimeout(15000, () => {
       request.destroy(new Error(`Timeout consultando ${url}`));

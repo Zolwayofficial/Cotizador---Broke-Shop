@@ -13,11 +13,67 @@ function parseJson(value, fallback) {
 }
 
 function normalizeText(value) {
-  return String(value || '').trim();
+  return String(value ?? '').trim();
+}
+
+function normalizeStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeText(item))
+      .filter(Boolean);
+  }
+
+  const singleValue = normalizeText(value);
+  return singleValue ? [singleValue] : [];
+}
+
+function toNumber(value, fallback = 0) {
+  if (typeof value === 'string') {
+    const compact = value.trim().replace(/\s+/g, '');
+    const lastComma = compact.lastIndexOf(',');
+    const lastDot = compact.lastIndexOf('.');
+    let normalized = compact;
+
+    if (lastComma >= 0 && lastDot >= 0) {
+      normalized = lastComma > lastDot
+        ? compact.replace(/\./g, '').replace(',', '.')
+        : compact.replace(/,/g, '');
+    } else if (lastComma >= 0) {
+      normalized = /^\d{1,3}(,\d{3})+$/.test(compact)
+        ? compact.replace(/,/g, '')
+        : compact.replace(',', '.');
+    } else if (lastDot >= 0) {
+      normalized = /^\d{1,3}(\.\d{3})+$/.test(compact)
+        ? compact.replace(/\./g, '')
+        : compact;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
 }
 
 function createCotizacionId() {
   return `cot_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function ensureDbInitialized() {
+  if (typeof db.raw === 'function' && db.raw()) {
+    return true;
+  }
+
+  throw new Error('Base de datos no inicializada. Ejecuta db.init() antes de memoria-hibrida.init().');
 }
 
 class MemoriaHibrida {
@@ -28,6 +84,7 @@ class MemoriaHibrida {
 
   async init() {
     if (this.initialized) return;
+    ensureDbInitialized();
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS memoria_cotizaciones (
@@ -91,7 +148,7 @@ class MemoriaHibrida {
     db.exec('CREATE INDEX IF NOT EXISTS idx_memoria_aprendizajes_tipo_dato ON memoria_aprendizajes(tipo, dato)');
 
     this.initialized = true;
-    console.log('[MEMORIA] Tablas listas');
+    console.log('[MEMORIA] Tablas preparadas');
   }
 
   registrarAprendizaje(tipo, dato, incremento = 1) {
@@ -134,14 +191,14 @@ class MemoriaHibrida {
           `,
           [
             id,
-            data.usuario_id || 'anon',
+            normalizeText(data.usuario_id) || 'anon',
             data.ip || '',
             JSON.stringify(productos),
-            data.pais_origen || '',
-            data.canal || '',
-            data.incoterm || '',
-            Number(data.total_landed || 0),
-            Number(data.fob_total || 0),
+            normalizeText(data.pais_origen),
+            normalizeText(data.canal),
+            normalizeText(data.incoterm),
+            toNumber(data.total_landed || 0),
+            toNumber(data.fob_total || 0),
           ]
         );
 
@@ -163,22 +220,25 @@ class MemoriaHibrida {
   buscarCotizaciones(filtros = {}) {
     let query = 'SELECT * FROM memoria_cotizaciones WHERE 1=1';
     const params = [];
+    const usuarioId = normalizeText(filtros.usuario_id);
+    const paisOrigen = normalizeText(filtros.pais_origen);
+    const canal = normalizeText(filtros.canal);
 
-    if (filtros.usuario_id) {
+    if (usuarioId) {
       query += ' AND usuario_id = ?';
-      params.push(filtros.usuario_id);
+      params.push(usuarioId);
     }
-    if (filtros.pais_origen) {
+    if (paisOrigen) {
       query += ' AND pais_origen = ?';
-      params.push(filtros.pais_origen);
+      params.push(paisOrigen);
     }
-    if (filtros.canal) {
+    if (canal) {
       query += ' AND canal = ?';
-      params.push(filtros.canal);
+      params.push(canal);
     }
 
     query += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(Number(filtros.limite || 50));
+    params.push(normalizePositiveInteger(filtros.limite, 50));
 
     return db.all(query, params).map((row) => ({
       ...row,
@@ -201,7 +261,7 @@ class MemoriaHibrida {
         ORDER BY created_at DESC
         LIMIT ?
       `,
-      [like, like, like, Number(topK || 5)]
+      [like, like, like, normalizePositiveInteger(topK, 5)]
     );
 
     return rows.map((row) => ({
@@ -218,7 +278,11 @@ class MemoriaHibrida {
     }
 
     const existing = db.get('SELECT * FROM memoria_contexto WHERE usuario_id = ?', [usuarioId]);
-    const productosFrecuentes = JSON.stringify(data.productos_frecuentes || parseJson(existing?.productos_frecuentes, []));
+    const productosFrecuentes = JSON.stringify(
+      data.productos_frecuentes !== undefined
+        ? normalizeStringArray(data.productos_frecuentes)
+        : normalizeStringArray(parseJson(existing?.productos_frecuentes, []))
+    );
 
     if (existing) {
       db.run(
@@ -236,7 +300,7 @@ class MemoriaHibrida {
         `,
         [
           data.tipo_importador ?? null,
-          data.margen_preferido ?? null,
+          data.margen_preferido !== undefined ? toNumber(data.margen_preferido, 30) : null,
           data.canal_preferido ?? null,
           data.pais_preferido ?? null,
           data.incoterm_preferido ?? null,
@@ -254,7 +318,7 @@ class MemoriaHibrida {
         [
           usuarioId,
           data.tipo_importador || '',
-          data.margen_preferido ?? 30,
+          data.margen_preferido !== undefined ? toNumber(data.margen_preferido, 30) : 30,
           data.canal_preferido || '',
           data.pais_preferido || '',
           data.incoterm_preferido || '',
@@ -267,7 +331,9 @@ class MemoriaHibrida {
   }
 
   obtenerContexto(usuarioId) {
-    const contexto = db.get('SELECT * FROM memoria_contexto WHERE usuario_id = ?', [usuarioId]);
+    const normalizedUserId = normalizeText(usuarioId);
+    if (!normalizedUserId) return null;
+    const contexto = db.get('SELECT * FROM memoria_contexto WHERE usuario_id = ?', [normalizedUserId]);
     if (!contexto) return null;
 
     return {
@@ -344,7 +410,8 @@ class MemoriaHibrida {
   }
 
   limpiarMemoriaAntigua(dias = 90) {
-    const threshold = `-${Number(dias || 90)} days`;
+    const safeDays = normalizePositiveInteger(dias, 90);
+    const threshold = `-${safeDays} days`;
     const beforeCotizaciones = Number(db.get('SELECT COUNT(*) as count FROM memoria_cotizaciones')?.count || 0);
     const beforeDocumentos = Number(db.get('SELECT COUNT(*) as count FROM memoria_documentos')?.count || 0);
 
@@ -363,19 +430,27 @@ class MemoriaHibrida {
     return {
       cotizaciones_eliminadas: beforeCotizaciones - afterCotizaciones,
       documentos_eliminados: beforeDocumentos - afterDocumentos,
-      dias,
+      dias: safeDays,
     };
   }
 
   exportarDatos(usuarioId) {
+    const normalizedUserId = normalizeText(usuarioId);
     return {
-      usuario_id: usuarioId,
-      contexto: this.obtenerContexto(usuarioId),
-      sugerencias: this.obtenerSugerencias(usuarioId),
-      cotizaciones: this.buscarCotizaciones({ usuario_id: usuarioId, limite: 500 }),
+      usuario_id: normalizedUserId,
+      contexto: this.obtenerContexto(normalizedUserId),
+      sugerencias: this.obtenerSugerencias(normalizedUserId),
+      cotizaciones: this.buscarCotizaciones({ usuario_id: normalizedUserId, limite: 500 }),
       exportado_en: new Date().toISOString(),
     };
   }
 }
+
+MemoriaHibrida._private = {
+  ensureDbInitialized,
+  normalizeStringArray,
+  toNumber,
+  normalizePositiveInteger,
+};
 
 module.exports = MemoriaHibrida;

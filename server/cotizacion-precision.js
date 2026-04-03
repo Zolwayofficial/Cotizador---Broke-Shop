@@ -22,6 +22,36 @@ function pushReason(target, seen, reason) {
   target.push(reason);
 }
 
+function toNumber(value) {
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function asBoolean(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  }
+
+  return Boolean(value);
+}
+
+function normalizeIncotermPrecisionState(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+
+  if (!normalized) return 'con_respaldo';
+  return normalized;
+}
+
 function buildActions(reasons) {
   const codes = new Set(reasons.map((reason) => reason.codigo));
   const actions = [];
@@ -31,7 +61,7 @@ function buildActions(reasons) {
     || codes.has('clasificacion_baja_confianza')
     || codes.has('clasificacion_ia')
   ) {
-    actions.push('Confirma manualmente la partida HS/NANDINA antes de usar la cotizacion como valor final.');
+    actions.push('Revisa manualmente la partida HS y contrasta el codigo con NANDINA antes de usar la cotizacion como valor final.');
   }
 
   if (codes.has('flete_estimado') || codes.has('flete_pendiente')) {
@@ -39,7 +69,7 @@ function buildActions(reasons) {
   }
 
   if (codes.has('seguro_estimado') || codes.has('seguro_pendiente')) {
-    actions.push('Ingresa el seguro real del proveedor o de la poliza para cerrar el CIF exacto.');
+    actions.push('Ingresa el seguro real del proveedor o de la poliza para definir un CIF consistente.');
   }
 
   if (codes.has('incoterm_estimado') || codes.has('ddp_estimado')) {
@@ -47,51 +77,54 @@ function buildActions(reasons) {
   }
 
   if (actions.length === 0) {
-    actions.push('La cotizacion no uso heuristicas visibles y puede tratarse como calculo cerrado con los datos entregados.');
+    actions.push('La cotizacion no uso heuristicas visibles y puede tratarse como calculo consistente con los datos entregados.');
   }
 
   return actions;
 }
 
 function buildComponents(stats, trazabilidad) {
-  const hs =
-    stats.sinHs > 0
-      ? {
-        clave: 'hs',
-        etiqueta: 'Partida HS',
-        estado: 'pendiente',
-        referencial: true,
-        detalle: 'Hay productos sin partida HS confirmada.',
-      }
-      : stats.bajaConfianza > 0 || stats.noValidados > 0
-        ? {
-          clave: 'hs',
-          etiqueta: 'Partida HS',
-          estado: 'revisar',
-          referencial: true,
-          detalle: 'La clasificacion HS requiere validacion manual o NANDINA adicional.',
-        }
-        : stats.manuales === stats.total
-          ? {
-            clave: 'hs',
-            etiqueta: 'Partida HS',
-            estado: 'exacto',
-            referencial: false,
-            detalle: 'La partida HS fue confirmada manualmente.',
-          }
-          : {
-            clave: 'hs',
-            etiqueta: 'Partida HS',
-            estado: 'ia',
-            referencial: false,
-            detalle: 'La partida HS fue sugerida por IA y no muestra alertas de baja confianza.',
-          };
+  let hs;
+
+  if (stats.sinHs > 0) {
+    hs = {
+      clave: 'hs',
+      etiqueta: 'Partida HS',
+      estado: 'pendiente',
+      referencial: true,
+      detalle: 'Hay productos sin partida HS con respaldo manual.',
+    };
+  } else if (stats.bajaConfianza > 0 || stats.noContrastados > 0) {
+    hs = {
+      clave: 'hs',
+      etiqueta: 'Partida HS',
+      estado: 'revisar',
+      referencial: true,
+      detalle: 'La clasificacion HS requiere revision manual o contraste NANDINA adicional.',
+    };
+  } else if (stats.manuales === stats.total) {
+    hs = {
+      clave: 'hs',
+      etiqueta: 'Partida HS',
+      estado: 'con_respaldo',
+      referencial: false,
+      detalle: 'La partida HS tiene respaldo manual.',
+    };
+  } else {
+    hs = {
+      clave: 'hs',
+      etiqueta: 'Partida HS',
+      estado: 'ia',
+      referencial: false,
+      detalle: 'La partida HS fue sugerida por IA y no muestra alertas de baja confianza.',
+    };
+  }
 
   const fleteEstado = trazabilidad.flete?.estado || 'pendiente';
   const flete = {
     clave: 'flete',
     etiqueta: 'Flete',
-    estado: fleteEstado === 'real' ? 'exacto' : fleteEstado === 'estimado' ? 'referencial' : 'pendiente',
+    estado: fleteEstado === 'real' ? 'con_respaldo' : fleteEstado === 'estimado' ? 'referencial' : 'pendiente',
     referencial: fleteEstado !== 'real',
     detalle:
       fleteEstado === 'real'
@@ -106,7 +139,7 @@ function buildComponents(stats, trazabilidad) {
   const seguro = {
     clave: 'seguro',
     etiqueta: 'Seguro',
-    estado: seguroEstado === 'real' ? 'exacto' : seguroEstado === 'estimado' ? 'referencial' : 'pendiente',
+    estado: seguroEstado === 'real' ? 'con_respaldo' : seguroEstado === 'estimado' ? 'referencial' : 'pendiente',
     referencial: seguroEstado !== 'real',
     detalle:
       seguroEstado === 'real'
@@ -117,11 +150,11 @@ function buildComponents(stats, trazabilidad) {
     fuente: trazabilidad.seguro?.fuente || null,
   };
 
-  const incotermEstado = trazabilidad.incoterm?.estado || 'exacto';
+  const incotermEstado = normalizeIncotermPrecisionState(trazabilidad.incoterm?.estado);
   const incoterm = {
     clave: 'incoterm',
     etiqueta: 'Incoterm',
-    estado: incotermEstado === 'estimado' ? 'referencial' : 'exacto',
+    estado: incotermEstado === 'estimado' ? 'referencial' : 'con_respaldo',
     referencial: incotermEstado === 'estimado',
     detalle:
       incotermEstado === 'estimado'
@@ -137,7 +170,7 @@ function buildComponents(stats, trazabilidad) {
         etiqueta: 'Tributos',
         estado: 'revisar',
         referencial: true,
-        detalle: 'Los tributos dependen de una partida HS que aun requiere validacion.',
+        detalle: 'Los tributos dependen de una partida HS que aun requiere revision.',
       }
       : flete.referencial || seguro.referencial || incoterm.referencial
         ? {
@@ -150,9 +183,9 @@ function buildComponents(stats, trazabilidad) {
         : {
           clave: 'tributos',
           etiqueta: 'Tributos',
-          estado: 'exacto',
+          estado: 'con_respaldo',
           referencial: false,
-          detalle: 'Los tributos se calcularon con tasas oficiales y una base CIF cerrada.',
+          detalle: 'Los tributos se calcularon con tasas oficiales y una base CIF definida.',
         };
 
   return {
@@ -169,12 +202,12 @@ function clampScore(score) {
 }
 
 function buildSummary(level, reasons) {
-  if (level === 'exacta') {
-    return 'Cotizacion exacta: no se detectaron estimaciones ni clasificaciones pendientes.';
+  if (level === 'consistente') {
+    return 'Cotizacion consistente con los datos entregados: no se detectaron estimaciones ni clasificaciones pendientes.';
   }
 
   if (level === 'alta') {
-    return 'Cotizacion de alta precision: la base tributaria es solida, pero aun conviene validar manualmente algunos supuestos.';
+    return 'Cotizacion de alta precision: la base tributaria es solida, pero aun conviene revisar manualmente algunos supuestos.';
   }
 
   if (level === 'referencial') {
@@ -192,13 +225,13 @@ function evaluateItems(items, reasons, seen) {
     manuales: 0,
     ia: 0,
     bajaConfianza: 0,
-    noValidados: 0,
+    noContrastados: 0,
   };
 
   items.forEach((item) => {
-    const method = item.metodoClasificacion || item.metodo || 'desconocido';
-    const confidence = Number(item.confianza || 0);
-    const validadoNandina = item.validadoNandina;
+    const method = String(item.metodoClasificacion || item.metodo || 'desconocido').trim().toLowerCase();
+    const confidence = toNumber(item.confianza || 0);
+    const contrastadoNandina = asBoolean(item.contrastadoNandina);
 
     if (!item.hs) {
       stats.sinHs += 1;
@@ -206,7 +239,7 @@ function evaluateItems(items, reasons, seen) {
         codigo: 'hs_no_clasificado',
         severidad: 'alta',
         campo: 'hs',
-        mensaje: `El item "${item.desc || 'sin descripcion'}" no tiene partida HS confirmada.`,
+        mensaje: `El item "${item.desc || 'sin descripcion'}" no tiene partida HS con respaldo manual.`,
       });
       return;
     }
@@ -238,17 +271,17 @@ function evaluateItems(items, reasons, seen) {
         codigo: 'clasificacion_ia',
         severidad: 'media',
         campo: 'hs',
-        mensaje: 'La partida HS fue sugerida por IA. Para llamarla exacta, debe confirmarse manualmente.',
+        mensaje: 'La partida HS fue sugerida por IA. Para tratarla como partida con respaldo manual, debe revisarse manualmente.',
       });
     }
 
-    if (validadoNandina === false) {
-      stats.noValidados += 1;
+    if (contrastadoNandina === false) {
+      stats.noContrastados += 1;
       pushReason(reasons, seen, {
-        codigo: 'hs_no_validado',
+        codigo: 'hs_no_contrastado',
         severidad: 'alta',
         campo: 'hs',
-        mensaje: `La partida "${item.hs}" no quedo validada contra NANDINA.`,
+        mensaje: `La partida "${item.hs}" no pudo contrastarse contra NANDINA.`,
       });
     }
 
@@ -317,7 +350,7 @@ function computeScore(stats, reasons) {
 
   score -= stats.sinHs * 35;
   score -= stats.bajaConfianza * 20;
-  score -= stats.noValidados * 15;
+  score -= stats.noContrastados * 15;
 
   reasons.forEach((reason) => {
     if (reason.codigo === 'clasificacion_ia') score -= 8;
@@ -336,12 +369,12 @@ function computeScore(stats, reasons) {
 function determineLevel(score, reasons) {
   const codes = new Set(reasons.map((reason) => reason.codigo));
 
-  if (reasons.length === 0) return 'exacta';
+  if (reasons.length === 0) return 'consistente';
 
   if (
     codes.has('hs_no_clasificado')
     || codes.has('clasificacion_baja_confianza')
-    || codes.has('hs_no_validado')
+    || codes.has('hs_no_contrastado')
     || codes.has('ddp_estimado')
     || score < 45
   ) {
@@ -378,16 +411,16 @@ function evaluarPrecisionCotizacion({
   return {
     nivel,
     puntaje,
-    esExacta: nivel === 'exacta',
+    esConsistente: nivel === 'consistente',
     esReferencial: nivel === 'referencial',
     requiereRevision: nivel === 'requiere_revision',
     resumen: buildSummary(nivel, reasons),
     checks: {
-      hsManualConfirmado: stats.total > 0 && stats.manuales === stats.total,
+      hsManualConRespaldo: stats.total > 0 && stats.manuales === stats.total,
       hsClasificado: stats.total > 0 && stats.sinHs === 0,
       fleteReal: trazabilidad.flete?.estado === 'real',
       seguroReal: trazabilidad.seguro?.estado === 'real',
-      incotermExacto: trazabilidad.incoterm?.estado !== 'estimado',
+      incotermConRespaldo: normalizeIncotermPrecisionState(trazabilidad.incoterm?.estado) !== 'estimado',
     },
     componentes,
     motivos: reasons,

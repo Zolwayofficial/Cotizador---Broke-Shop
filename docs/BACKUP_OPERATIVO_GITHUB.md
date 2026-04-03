@@ -1,64 +1,65 @@
-# Backup Operativo Seguro Para GitHub
+# Backup Operativo Para GitHub
 
 ## Objetivo
 
-Subir a GitHub un respaldo que cubra el estado operativo sensible del proyecto sin exponer en texto plano:
+Guardar en GitHub un respaldo cifrado del estado operativo sin subir secretos en claro.
+
+Este documento acompana a:
+
+- `scripts/create-secure-backup.js`
+- `scripts/restore-secure-backup.js`
+- `backups/*.tar.gz.enc`
+- `backups/*.manifest.json`
+
+## Regla Basica
+
+Se puede subir al repositorio:
+
+- codigo
+- documentacion
+- artefactos cifrados `*.tar.gz.enc`
+- manifiestos `*.manifest.json`
+
+No se debe subir:
 
 - `.env`
 - `.env.production`
-- `data/`
-- configuracion de despliegue
+- `data/` en claro
+- backups `.tar.gz` sin cifrar
+- copias directas de secretos del VPS
 
-## Regla De Seguridad
-
-No se debe subir a GitHub un respaldo crudo del VPS o del proyecto con secretos visibles.
-
-Lo correcto es subir:
-
-- el archivo cifrado `*.tar.gz.enc`
-- su `*.manifest.json`
-
-Y nunca subir:
-
-- `*.tar.gz` sin cifrar
-- copias directas de `.env`
-- bases de datos en claro
-
-## Scripts
-
-- Crear respaldo cifrado:
-  - [create-secure-backup.js](/C:/Users/Billy/AppData/Local/Programs/Antigravity/cotizador/scripts/create-secure-backup.js)
-- Restaurar respaldo cifrado:
-  - [restore-secure-backup.js](/C:/Users/Billy/AppData/Local/Programs/Antigravity/cotizador/scripts/restore-secure-backup.js)
-
-## Uso Basico
+## Flujo Recomendado
 
 En PowerShell:
 
 ```powershell
 $env:BACKUP_PASSPHRASE="una-frase-larga-y-segura"
-cd C:\Users\Billy\AppData\Local\Programs\Antigravity\cotizador
+$repoRoot = "C:\\ruta\\al\\repo"
+Set-Location $repoRoot
 npm run backup:secure
 ```
 
-Eso genera:
+Eso genera artefactos dentro de `backups/`.
 
-- `backups/ops-snapshot-....tar.gz.enc`
-- `backups/ops-snapshot-....manifest.json`
-
-## Restauracion
+Para restaurar:
 
 ```powershell
-$env:BACKUP_PASSPHRASE="la-misma-frase-usada-al-crear-el-respaldo"
-cd C:\Users\Billy\AppData\Local\Programs\Antigravity\cotizador
-npm run backup:restore -- --input ops-snapshot-AAAA-MM-DDTHH-MM-SS-...tar.gz.enc
+$env:BACKUP_PASSPHRASE="la-misma-frase-usada-en-el-respaldo"
+$repoRoot = "C:\\ruta\\al\\repo"
+Set-Location $repoRoot
+npm run backup:restore -- --input backups\ops-snapshot-AAAA-MM-DDTHH-MM-SS.enc
 ```
 
-La restauracion quedara en `restored-backups/`.
+La restauracion se deja en `restored-backups/`.
 
-## Incluir Archivos Externos Del VPS
+## Cobertura
 
-Si quieres cubrir tambien configuracion del VPS que no vive dentro del repo, puedes agregar rutas externas al crear el respaldo.
+El respaldo cifrado sirve para preservar:
+
+- configuracion local del proyecto
+- base de datos y directorios operativos dentro del repo
+- scripts y configuracion de despliegue versionados
+- archivos externos del VPS si se agregan de forma explicita con `--external`
 
 Ejemplo:
 
@@ -69,26 +70,16 @@ node scripts/create-secure-backup.js `
   --external /root/.pm2/dump.pm2=server-config/pm2-dump.json
 ```
 
-Eso permite que el respaldo cifrado cubra tambien configuraciones operativas fuera del repo.
+## Lo Que No Sustituye
 
-## Lo Que Si Cubre
+Este flujo no reemplaza:
 
-- secretos del proyecto
-- base de datos y datos locales
-- configuracion de PM2/ecosystem
-- scripts de despliegue
-- opcionalmente configuracion de Nginx y PM2 del VPS si se agregan como `--external`
-
-## Lo Que No Reemplaza
-
-Este respaldo no reemplaza:
-
-- una imagen completa del VPS
-- snapshots del proveedor de hosting
-- backups de base de datos historicos con retencion larga
+- instantaneas completas del VPS
+- politicas de retencion largas del hosting
+- restauracion total de la maquina
 
 Lo correcto es combinar:
 
-- GitHub para codigo fuente
-- respaldo cifrado para estado operativo
-- backup del VPS o snapshot del proveedor para desastre mayor
+- GitHub para codigo y docs
+- backup cifrado para estado operativo
+- instantanea del VPS para desastre mayor

@@ -26,16 +26,19 @@ Extrae en formato JSON:
 
 Responde SOLO con el JSON, sin texto adicional.`;
 
-const DEFAULT_UNLIMITED_MODEL = process.env.GROQ_MODEL_UNLIMITED || 'llama-3.1-8b-instant';
+const DEFAULT_FALLBACK_MODEL =
+  process.env.GROQ_MODEL_FALLBACK
+  || process.env.GROQ_MODEL_UNLIMITED
+  || 'llama-3.1-8b-instant';
 const DEFAULT_CHAT_CHAIN = [
   'openai/gpt-oss-20b',
   'llama-3.3-70b-versatile',
-  DEFAULT_UNLIMITED_MODEL,
+  DEFAULT_FALLBACK_MODEL,
 ];
 const DEFAULT_TEXT_EXTRACT_CHAIN = [
   'llama-3.3-70b-versatile',
   'openai/gpt-oss-20b',
-  DEFAULT_UNLIMITED_MODEL,
+  DEFAULT_FALLBACK_MODEL,
 ];
 const DEFAULT_VISION_CHAIN = [
   process.env.GROQ_MODEL_VISION || 'meta-llama/llama-4-scout-17b-16e-instruct',
@@ -91,7 +94,7 @@ function httpsPost(hostname, path, body, headers) {
           try {
             parsed = JSON.parse(rawBody);
           } catch {
-            const parseError = new Error('Invalid response');
+            const parseError = new Error('Respuesta no interpretable del proveedor');
             parseError.statusCode = res.statusCode;
             parseError.rawBody = rawBody;
             reject(parseError);

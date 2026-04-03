@@ -1,10 +1,10 @@
 // server/couriers/cotizador-personalizado.js
-// 
-// SISTEMA DE COTIZACIÓN PERSONALIZADA
-// 
+//
+// SISTEMA DE COTIZACION PERSONALIZADA
+//
 // Features:
-// - Email automático a couriers
-// - Teléfono / WhatsApp
+// - Email automatico a couriers
+// - Telefono / WhatsApp
 // - Formulario web para couriers
 // - Tarifas negociadas (contratos)
 // - Fallback referencial
@@ -13,16 +13,36 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 
-const DB_PATH = path.join(process.env.DATA_DIR || './data', 'cotizaciones-personalizadas.json');
-const CONTACTOS_PATH = path.join(process.env.DATA_DIR || './data', 'contactos-couriers.json');
+const DEFAULT_DATA_DIR = path.resolve(__dirname, '..', '..', 'data');
 
-// ═══════════════════════════════════════════════════
-// CONFIGURACIÓN DE CONTACTOS DE COURIERS
-// ═══════════════════════════════════════════════════
+function resolveDataDir() {
+  if (!process.env.DATA_DIR) {
+    return DEFAULT_DATA_DIR;
+  }
+
+  return path.isAbsolute(process.env.DATA_DIR)
+    ? process.env.DATA_DIR
+    : path.resolve(__dirname, '..', '..', process.env.DATA_DIR);
+}
+
+const DB_PATH = path.join(resolveDataDir(), 'cotizaciones-personalizadas.json');
+const CONTACTOS_PATH = path.join(resolveDataDir(), 'contactos-couriers.json');
+
+function parseSmtpPort(value, fallback = 587) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getMissingEmailConfig() {
+  return ['EMAIL_SMTP_HOST', 'EMAIL_USER', 'EMAIL_PASSWORD']
+    .filter((key) => !String(process.env[key] || '').trim());
+}
+
+// Configuracion de contactos de couriers
 
 const CONTACTOS_DEFAULT = {
   'dhl': {
-    nombre: 'DHL Express Perú',
+    nombre: 'DHL Express Peru',
     email: 'ventas@dhl.com.pe',
     telefono: '+51 1 516 2000',
     whatsapp: '+51 9 516 2000',
@@ -32,7 +52,7 @@ const CONTACTOS_DEFAULT = {
     activo: true
   },
   'fedex': {
-    nombre: 'FedEx Perú',
+    nombre: 'FedEx Peru',
     email: 'ventas@fedex.com.pe',
     telefono: '+51 1 716 2000',
     whatsapp: '+51 9 716 2000',
@@ -42,7 +62,7 @@ const CONTACTOS_DEFAULT = {
     activo: true
   },
   'ups': {
-    nombre: 'UPS Perú',
+    nombre: 'UPS Peru',
     email: 'ventas@ups.com.pe',
     telefono: '+51 1 213 2000',
     whatsapp: '+51 9 213 2000',
@@ -62,17 +82,17 @@ const CONTACTOS_DEFAULT = {
     activo: true
   },
   'maersk': {
-    nombre: 'Maersk Perú',
+    nombre: 'Maersk Peru',
     email: 'peru.sales@maersk.com',
     telefono: '+51 1 640 2000',
     whatsapp: '+51 9 640 2000',
     pagina: 'https://www.maersk.com/local-information/peru',
-    contacto: 'Ventas Marítimas',
+    contacto: 'Ventas Maritimas',
     horario: 'Lun-Vie 8:00-17:00',
     activo: true
   },
   'msc': {
-    nombre: 'MSC Perú',
+    nombre: 'MSC Peru',
     email: 'peru@msc.com',
     telefono: '+51 1 203 2000',
     whatsapp: '+51 9 203 2000',
@@ -83,9 +103,7 @@ const CONTACTOS_DEFAULT = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// CLASE DE COTIZACIÓN PERSONALIZADA
-// ═══════════════════════════════════════════════════
+// Clase de cotizacion personalizada
 
 class CotizadorPersonalizado {
   constructor() {
@@ -94,9 +112,7 @@ class CotizadorPersonalizado {
     this.transporter = this._configurarEmail();
   }
 
-  // ═══════════════════════════════════════════════════
   // CARGAR CONTACTOS
-  // ═══════════════════════════════════════════════════
 
   _cargarContactos() {
     try {
@@ -124,9 +140,7 @@ class CotizadorPersonalizado {
     }
   }
 
-  // ═══════════════════════════════════════════════════
   // CARGAR COTIZACIONES
-  // ═══════════════════════════════════════════════════
 
   _cargarCotizaciones() {
     try {
@@ -150,19 +164,19 @@ class CotizadorPersonalizado {
     }
   }
 
-  // ═══════════════════════════════════════════════════
   // CONFIGURAR EMAIL
-  // ═══════════════════════════════════════════════════
 
   _configurarEmail() {
-    if (!process.env.EMAIL_SMTP_HOST) {
-      console.warn('[COTIZADOR] Email no configurado, usando fallback');
+    const missingFields = getMissingEmailConfig();
+
+    if (missingFields.length > 0) {
+      console.warn(`[COTIZADOR] Email SMTP incompleto; faltan: ${missingFields.join(', ')}. Se mantiene fallback referencial.`);
       return null;
     }
     
     return nodemailer.createTransport({
       host: process.env.EMAIL_SMTP_HOST,
-      port: process.env.EMAIL_SMTP_PORT || 587,
+      port: parseSmtpPort(process.env.EMAIL_SMTP_PORT, 587),
       secure: false,
       auth: {
         user: process.env.EMAIL_USER,
@@ -171,11 +185,9 @@ class CotizadorPersonalizado {
     });
   }
 
-  // ═══════════════════════════════════════════════════
-  // MÉTODOS PÚBLICOS
-  // ═══════════════════════════════════════════════════
+  // Metodos publicos
 
-  // 1. COTIZAR POR EMAIL AUTOMÁTICO
+  // 1. COTIZAR POR EMAIL AUTOMATICO
   async cotizarPorEmail(courierSlug, datos) {
     const contacto = this.contactos[courierSlug];
     
@@ -187,7 +199,7 @@ class CotizadorPersonalizado {
       throw new Error('Email no configurado en .env');
     }
 
-    // Crear ID de cotización
+    // Crear ID de cotizacion
     const cotizacionId = `COT-${Date.now()}-${courierSlug.toUpperCase()}`;
     
     // Generar email
@@ -199,11 +211,11 @@ class CotizadorPersonalizado {
         from: process.env.EMAIL_FROM || 'cotizador@empresa.com',
         to: contacto.email,
         cc: process.env.EMAIL_CC || null,
-        subject: `Solicitud de Cotización - ${cotizacionId}`,
+        subject: `Solicitud de Cotizacion - ${cotizacionId}`,
         html: emailHtml
       });
 
-      // Guardar cotización
+      // Guardar cotizacion
       this.cotizaciones.push({
         id: cotizacionId,
         courier: courierSlug,
@@ -217,7 +229,7 @@ class CotizadorPersonalizado {
 
       this._guardarCotizaciones();
 
-      console.log(`[COTIZADOR] ✅ Email enviado a ${contacto.nombre} (${cotizacionId})`);
+      console.log(`[COTIZADOR] Email enviado a ${contacto.nombre} (${cotizacionId})`);
 
       return {
         ok: true,
@@ -247,7 +259,7 @@ class CotizadorPersonalizado {
     }
   }
 
-  // 2. COTIZAR POR TELÉFONO / WHATSAPP
+  // 2. COTIZAR POR TELEFONO / WHATSAPP
   cotizarPorTelefono(courierSlug, datos) {
     const contacto = this.contactos[courierSlug];
     
@@ -255,13 +267,13 @@ class CotizadorPersonalizado {
       throw new Error(`Courier ${courierSlug} no encontrado o inactivo`);
     }
 
-    // Crear ID de cotización
+    // Crear ID de cotizacion
     const cotizacionId = `TEL-${Date.now()}-${courierSlug.toUpperCase()}`;
     
     // Generar script de llamada
     const script = this._generarScriptLlamada(datos, contacto);
     
-    // Guardar cotización
+    // Guardar cotizacion
     this.cotizaciones.push({
       id: cotizacionId,
       courier: courierSlug,
@@ -277,7 +289,7 @@ class CotizadorPersonalizado {
 
     this._guardarCotizaciones();
 
-    console.log(`[COTIZADOR] ✅ Teléfono generado para ${contacto.nombre} (${cotizacionId})`);
+    console.log(`[COTIZADOR] Telefono generado para ${contacto.nombre} (${cotizacionId})`);
 
     return {
       ok: true,
@@ -299,7 +311,7 @@ class CotizadorPersonalizado {
       throw new Error(`Courier ${courierSlug} no encontrado o inactivo`);
     }
 
-    // Crear ID de cotización
+    // Crear ID de cotizacion
     const cotizacionId = `WA-${Date.now()}-${courierSlug.toUpperCase()}`;
     
     // Generar mensaje de WhatsApp
@@ -308,7 +320,7 @@ class CotizadorPersonalizado {
     // URL de WhatsApp
     const whatsappUrl = `https://wa.me/${contacto.whatsapp.replace(/\+/g, '')}?text=${encodeURIComponent(mensaje)}`;
     
-    // Guardar cotización
+    // Guardar cotizacion
     this.cotizaciones.push({
       id: cotizacionId,
       courier: courierSlug,
@@ -324,7 +336,7 @@ class CotizadorPersonalizado {
 
     this._guardarCotizaciones();
 
-    console.log(`[COTIZADOR] ✅ WhatsApp generado para ${contacto.nombre} (${cotizacionId})`);
+    console.log(`[COTIZADOR] WhatsApp generado para ${contacto.nombre} (${cotizacionId})`);
 
     return {
       ok: true,
@@ -339,7 +351,7 @@ class CotizadorPersonalizado {
 
   // 4. OBTENER TARIFAS NEGOCIADAS (CONTRATOS)
   obtenerTarifasNegociadas(courierSlug, datos) {
-    // Aquí irían las tarifas negociadas por contrato
+    // Aqui irian las tarifas negociadas por contrato
     // Por ahora usamos tarifas de ejemplo
     
     const tarifasEjemplo = {
@@ -361,13 +373,13 @@ class CotizadorPersonalizado {
     let servicio;
     
     if (datos.peso > 1000 || datos.tipo === 'maritimo') {
-      // Flete marítimo
+      // Flete maritimo
       const cbm = this._calcularCBM(datos.dimensiones);
       const tipoContenedor = cbm >= 68 ? '40ftHC' : cbm >= 33 ? '40ft' : '20ft';
       precio = tarifas[tipoContenedor] * (1 - tarifas.descuento);
       servicio = `FCL ${tipoContenedor}`;
     } else {
-      // Courier aéreo
+      // Courier aereo
       precio = (tarifas.base + (datos.peso * tarifas.porKg)) * (1 - tarifas.descuento);
       servicio = 'Express';
     }
@@ -378,14 +390,14 @@ class CotizadorPersonalizado {
       servicio: servicio,
       precio: parseFloat(precio.toFixed(2)),
       moneda: 'USD',
-      tiempoEntrega: courierSlug === 'maersk' || courierSlug === 'msc' ? '28-35 días' : '3-5 días',
+      tiempoEntrega: courierSlug === 'maersk' || courierSlug === 'msc' ? '28-35 dias' : '3-5 dias',
       tipo: 'negociado',
       descuento: tarifas.descuento * 100,
       origen: datos.origen,
       destino: datos.destino,
       peso: datos.peso,
       dimensiones: datos.dimensiones,
-      validoHasta: '30 días',
+      validoHasta: '30 dias',
       metadata: {
         negociado: true,
         contrato: true
@@ -405,13 +417,13 @@ class CotizadorPersonalizado {
       empresa_real: 'Referencial',
       precio: parseFloat(price.toFixed(2)),
       moneda: 'USD',
-      tiempoEntrega: '5-10 días',
+      tiempoEntrega: '5-10 dias',
       tipo: 'fallback',
       origen: datos.origen,
       destino: datos.destino,
       peso: datos.peso,
       dimensiones: datos.dimensiones,
-      validoHasta: '30 días',
+      validoHasta: '30 dias',
       metadata: {
         fallback: true,
         nota: 'Tarifa referencial cuando no hay APIs ni contratos disponibles'
@@ -419,36 +431,34 @@ class CotizadorPersonalizado {
     };
   }
 
-  // ═══════════════════════════════════════════════════
-  // MÉTODOS AUXILIARES
-  // ═══════════════════════════════════════════════════
+  // Metodos auxiliares
 
   _generarEmailHTML(cotizacionId, datos, _contacto) {
     return `
       <html>
         <body style="font-family: Arial, sans-serif;">
-          <h2>Solicitud de Cotización</h2>
-          <p><strong>ID Cotización:</strong> ${cotizacionId}</p>
+          <h2>Solicitud de Cotizacion</h2>
+          <p><strong>ID Cotizacion:</strong> ${cotizacionId}</p>
           <p><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-PE')}</p>
           
-          <h3>Detalles del Envío:</h3>
+          <h3>Detalles del Envio:</h3>
           <ul>
             <li><strong>Origen:</strong> ${datos.origen}</li>
             <li><strong>Destino:</strong> ${datos.destino}</li>
             <li><strong>Peso:</strong> ${datos.peso} kg</li>
             <li><strong>Dimensiones:</strong> ${datos.dimensiones?.largo || 50} x ${datos.dimensiones?.ancho || 50} x ${datos.dimensiones?.alto || 50} cm</li>
             <li><strong>Valor declarado:</strong> $${datos.valor || 100} USD</li>
-            <li><strong>Tipo de envío:</strong> ${datos.tipo || 'aéreo'}</li>
+            <li><strong>Tipo de envio:</strong> ${datos.tipo || 'aereo'}</li>
           </ul>
           
-          <h3>Información Adicional:</h3>
+          <h3>Informacion Adicional:</h3>
           <p>${datos.notas || 'Sin notas adicionales'}</p>
           
-          <p>Por favor enviar cotización a la brevedad.</p>
+          <p>Por favor enviar cotizacion a la brevedad.</p>
           
           <hr>
           <p style="font-size: 12px; color: #666;">
-            Este email fue generado automáticamente por el Sistema de Cotización.
+            Este email fue generado automaticamente por el Sistema de Cotizacion.
           </p>
         </body>
       </html>
@@ -457,10 +467,10 @@ class CotizadorPersonalizado {
 
   _generarScriptLlamada(datos, contacto) {
     return `
-GUIÓN DE LLAMADA - ${contacto.nombre}
+GUION DE LLAMADA - ${contacto.nombre}
 =====================================
 
-DATOS DEL ENVÍO:
+DATOS DEL ENVIO:
 - Origen: ${datos.origen}
 - Destino: ${datos.destino}
 - Peso: ${datos.peso} kg
@@ -468,14 +478,14 @@ DATOS DEL ENVÍO:
 - Valor: $${datos.valor || 100} USD
 
 PREGUNTAS A REALIZAR:
-1. ¿Cuál es el costo del envío?
-2. ¿Cuál es el tiempo de entrega estimado?
-3. ¿Hay descuentos por volumen?
-4. ¿Qué documentación se requiere?
-5. ¿Hay restricciones para este tipo de carga?
+1. Cual es el costo del envio?
+2. Cual es el tiempo de entrega estimado?
+3. Hay descuentos por volumen?
+4. Que documentacion se requiere?
+5. Hay restricciones para este tipo de carga?
 
 DATOS DE CONTACTO:
-- Teléfono: ${contacto.telefono}
+- Telefono: ${contacto.telefono}
 - WhatsApp: ${contacto.whatsapp}
 - Horario: ${contacto.horario}
 
@@ -487,13 +497,13 @@ _________________________________
 
   _generarMensajeWhatsApp(datos) {
     return `
-Hola, solicito cotización de envío:
+Hola, solicito cotizacion de envio:
 
-📦 Origen: ${datos.origen}
-📍 Destino: ${datos.destino}
-⚖️ Peso: ${datos.peso} kg
-📏 Dimensiones: ${datos.dimensiones?.largo || 50}x${datos.dimensiones?.ancho || 50}x${datos.dimensiones?.alto || 50} cm
-💰 Valor: $${datos.valor || 100} USD
+Origen: ${datos.origen}
+Destino: ${datos.destino}
+Peso: ${datos.peso} kg
+Dimensiones: ${datos.dimensiones?.largo || 50}x${datos.dimensiones?.ancho || 50}x${datos.dimensiones?.alto || 50} cm
+Valor: $${datos.valor || 100} USD
 
 Gracias por su respuesta.
     `.trim();
@@ -507,9 +517,7 @@ Gracias por su respuesta.
     return largo * ancho * alto;
   }
 
-  // ═══════════════════════════════════════════════════
-  // MÉTODOS DE GESTIÓN
-  // ═══════════════════════════════════════════════════
+  // Metodos de gestion
 
   // Obtener todas las cotizaciones
   obtenerCotizaciones(filtros = {}) {
@@ -526,17 +534,17 @@ Gracias por su respuesta.
     return cotizaciones.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
   }
 
-  // Obtener cotización por ID
+  // Obtener cotizacion por ID
   obtenerCotizacion(id) {
     return this.cotizaciones.find(c => c.id === id);
   }
 
-  // Actualizar cotización (cuando llega respuesta)
+  // Actualizar cotizacion (cuando llega respuesta)
   actualizarCotizacion(id, respuesta) {
     const cotizacion = this.obtenerCotizacion(id);
     
     if (!cotizacion) {
-      throw new Error(`Cotización ${id} no encontrada`);
+      throw new Error(`Cotizacion ${id} no encontrada`);
     }
     
     cotizacion.respuesta = respuesta;
@@ -565,7 +573,7 @@ Gracias por su respuesta.
     return this.contactos;
   }
 
-  // Obtener estadísticas
+  // Obtener estadisticas
   obtenerEstadisticas() {
     const total = this.cotizaciones.length;
     const enviados = this.cotizaciones.filter(c => c.estado === 'enviado').length;
@@ -584,10 +592,16 @@ Gracias por su respuesta.
   }
 }
 
-// ═══════════════════════════════════════════════════
-// EXPORTAR INSTANCIA ÚNICA
-// ═══════════════════════════════════════════════════
+// Exportar instancia unica
 
 const cotizadorPersonalizado = new CotizadorPersonalizado();
 
 module.exports = cotizadorPersonalizado;
+module.exports._private = {
+  DEFAULT_DATA_DIR,
+  resolveDataDir,
+  DB_PATH,
+  CONTACTOS_PATH,
+  parseSmtpPort,
+  getMissingEmailConfig,
+};

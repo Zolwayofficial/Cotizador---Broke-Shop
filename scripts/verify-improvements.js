@@ -1,116 +1,139 @@
 #!/usr/bin/env node
-// scripts/verify-improvements.js — Verifica que las mejoras estén implementadas
+// scripts/verify-improvements.js - Verifica contratos reales del proyecto actual
 
 const fs = require('fs');
 const path = require('path');
 
-const SERVER_DIR = path.join(__dirname, '..', 'server');
-const SCRIPTS_DIR = path.join(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..');
 
-let passed = 0;
-let failed = 0;
+const CHECKS = [
+  {
+    file: 'server/index.js',
+    checks: [
+      { pattern: 'resolveScopedUserId', name: 'Identidad normalizada para self-scoping' },
+      { pattern: "app.get('/api/monitor/health'", name: 'Health endpoint expuesto' },
+      { pattern: "app.post('/api/dashboard/chat'", name: 'Chat del dashboard disponible' },
+      { pattern: "app.post('/api/auto-cotizar/extraer'", name: 'Extraccion documental disponible' },
+    ],
+  },
+  {
+    file: 'client/src/App.jsx',
+    checks: [
+      { pattern: 'normalizeLoginPayload', name: 'Login normalizado en cliente' },
+      { pattern: 'buildDocumentFieldChangeState', name: 'Edicion de borrador reemplaza resultado viejo' },
+      { pattern: 'buildDocumentDraftView', name: 'Vista documental normalizada' },
+    ],
+  },
+  {
+    file: 'scripts/backup.js',
+    checks: [
+      { pattern: 'buildBackupConfig', name: 'Configuracion de backup reusable' },
+      { pattern: 'parseRetentionDays', name: 'Retencion acotada' },
+      { pattern: 'resolveProjectPath', name: 'Rutas relativas resueltas contra el repo' },
+    ],
+  },
+  {
+    file: 'scripts/weekly-cleanup.js',
+    checks: [
+      { pattern: 'buildCleanupConfig', name: 'Configuracion reusable de limpieza' },
+      { pattern: 'parseRetentionDays', name: 'Retencion segura en limpieza' },
+      { pattern: "path.join(ROOT, 'client', 'dist')", name: 'Limpieza de build del cliente' },
+    ],
+  },
+  {
+    file: 'scripts/create-secure-backup.js',
+    checks: [
+      { pattern: 'Falta un valor despues de --output-dir', name: 'Requiere output-dir explicito' },
+      { pattern: 'Falta un valor despues de --passphrase-env', name: 'Requiere passphrase-env explicito' },
+    ],
+  },
+  {
+    file: 'dashboard.html',
+    checks: [
+      { pattern: 'DEMO LOCAL', name: 'Dashboard local distingue el modo demo' },
+      { pattern: 'API RESPONDIENDO', name: 'Dashboard local evita vender salud operativa completa' },
+      { pattern: 'function formatVariation(metric)', name: 'KPIs del dashboard evitan variaciones inventadas' },
+      { pattern: "return 'N/D';", name: 'KPIs del dashboard no inventan valores ausentes' },
+      { pattern: 'Sin KPIs disponibles', name: 'Dashboard distingue vacio operativo frente a demo local' },
+    ],
+  },
+];
 
 function checkFile(filePath, checks) {
+  const absolutePath = path.join(ROOT, filePath);
   const fileName = path.basename(filePath);
-  console.log(`\n📄 Verificando ${fileName}...`);
 
-  if (!fs.existsSync(filePath)) {
-    console.log(`   ❌ Archivo no existe: ${filePath}`);
-    failed++;
-    return;
+  if (!fs.existsSync(absolutePath)) {
+    return {
+      file: fileName,
+      ok: false,
+      missing: true,
+      results: [],
+    };
   }
 
-  const content = fs.readFileSync(filePath, 'utf8');
+  const content = fs.readFileSync(absolutePath, 'utf8');
+  const results = checks.map((check) => ({
+    name: check.name,
+    ok: content.includes(check.pattern),
+  }));
 
-  for (const check of checks) {
-    if (content.includes(check.pattern)) {
-      console.log(`   ✅ ${check.name}`);
-      passed++;
-    } else {
-      console.log(`   ❌ ${check.name} - NO ENCONTRADO`);
-      failed++;
+  return {
+    file: fileName,
+    ok: results.every((result) => result.ok),
+    missing: false,
+    results,
+  };
+}
+
+function runChecks() {
+  const report = CHECKS.map((entry) => checkFile(entry.file, entry.checks));
+  const passed = report.reduce((sum, fileReport) => (
+    sum + fileReport.results.filter((result) => result.ok).length
+  ), 0);
+  const failed = report.reduce((sum, fileReport) => (
+    sum + fileReport.results.filter((result) => !result.ok).length + (fileReport.missing ? 1 : 0)
+  ), 0);
+
+  return { report, passed, failed };
+}
+
+function printReport(summary) {
+  summary.report.forEach((fileReport) => {
+    console.log(`\n[VERIFY] ${fileReport.file}`);
+
+    if (fileReport.missing) {
+      console.log('  FALTA archivo no existe');
+      return;
     }
+
+    fileReport.results.forEach((result) => {
+      console.log(`  ${result.ok ? 'PRESENTE' : 'FALTA'} ${result.name}`);
+    });
+  });
+
+  console.log('\n' + '='.repeat(50));
+  console.log(`Presentes: ${summary.passed}`);
+  console.log(`Pendientes: ${summary.failed}`);
+  console.log(`Total: ${summary.passed + summary.failed}`);
+
+  if (summary.failed === 0) {
+    console.log('\nSin verificaciones pendientes en esta pasada.');
+  } else {
+    console.log('\nHay verificaciones pendientes o faltantes.');
   }
 }
 
-// Verificaciones por archivo
-checkFile(path.join(SERVER_DIR, 'index.js'), [
-  { pattern: 'RATE_LIMIT_CLEANUP_INTERVAL', name: 'Rate limiter con limpieza' },
-  { pattern: 'if (_rateLimit[ip].length === 0)', name: 'Limpieza de IPs vacías' },
-  { pattern: 'UPLOAD_DIR', name: 'Directorio de uploads' },
-  { pattern: 'setInterval(() =>', name: 'Limpieza periódica de archivos' },
-  { pattern: 'allowedMimes', name: 'Validación de MIME types' },
-  { pattern: 'acquireCronLock', name: 'Lock de concurrencia para CRON' },
-  { pattern: 'CRON_LOCK_FILE', name: 'Archivo de lock para CRON' },
-  { pattern: 'pdfError', name: 'Manejo de errores en PDF' },
-  { pattern: 'Validar tamaño máximo', name: 'Validación de tamaño de PDF' },
-  { pattern: 'allowedOrigins', name: 'CORS con lista blanca' },
-  { pattern: 'const timestamp = new Date().toISOString()', name: 'Timestamps en error handlers' },
-  { pattern: 'crash.log', name: 'Guardado de crash logs' },
-  { pattern: 'const startTime = Date.now()', name: 'Init con timing' },
-  { pattern: 'backupDB', name: 'Backup automático integrado' },
-]);
-
-checkFile(path.join(SERVER_DIR, 'db.js'), [
-  { pattern: 'runMigrations', name: 'Migraciones versionadas' },
-  { pattern: 'wal_autocheckpoint', name: 'WAL checkpoint automático' },
-  { pattern: 'cache_size = -64000', name: 'Cache de 64MB' },
-  { pattern: 'wal_checkpoint(PASSIVE)', name: 'Checkpoint forzado periódico' },
-  { pattern: 'busy_timeout = 5000', name: 'Busy timeout' },
-]);
-
-checkFile(path.join(SERVER_DIR, 'tracking.js'), [
-  { pattern: 'pruneTrackingCache', name: 'Función de prune' },
-  { pattern: 'Object.entries(CACHE).sort', name: 'Eliminación por antigüedad' },
-  { pattern: 'setInterval', name: 'Limpieza automática' },
-]);
-
-checkFile(path.join(SERVER_DIR, 'nandina.js'), [
-  { pattern: 'timeout: 45000', name: 'Timeout de 45s (servidores gubernamentales lentos)' },
-  { pattern: 'Timeout después de 45s', name: 'Mensaje de timeout' },
-]);
-
-checkFile(path.join(SERVER_DIR, 'clasificador.js'), [
-  { pattern: 'clasificarPorKeywords', name: 'Fallback por keywords' },
-  { pattern: 'keyword_fallback', name: 'Método de fallback' },
-  { pattern: 'Todos los modelos fallaron', name: 'Log de fallback' },
-  { pattern: 'parseJSON(result.text)', name: 'Validación de respuesta JSON' },
-]);
-
-checkFile(path.join(SERVER_DIR, 'flete-api.js'), [
-  { pattern: 'TrackingMore', name: 'Integración TrackingMore API' },
-  { pattern: 'fallback automático', name: 'Fallback automático' },
-  { pattern: '_dailyUsage', name: 'Contador de uso diario' },
-  { pattern: '100 requests', name: 'Límite 100 requests/día' },
-]);
-
-checkFile(path.join(SCRIPTS_DIR, 'scripts', 'backup.js'), [
-  { pattern: 'backup', name: 'Función de backup' },
-  { pattern: 'RETENTION_DAYS', name: 'Retención configurable' },
-  { pattern: 'cleanupOldBackups', name: 'Limpieza de backups antiguos' },
-]);
-
-checkFile(path.join(SCRIPTS_DIR, '.env.example'), [
-  { pattern: 'ALLOWED_ORIGINS', name: 'Variable ALLOWED_ORIGINS' },
-  { pattern: 'BACKUP_CRON', name: 'Variable BACKUP_CRON' },
-  { pattern: 'JWT_TTL_DAYS', name: 'Variable JWT_TTL_DAYS' },
-  { pattern: 'TRACKINGMORE_API_KEY', name: 'Variable TRACKINGMORE_API_KEY' },
-  { pattern: 'SEARATES_API_KEY', name: 'Variable SEARATES_API_KEY' },
-]);
-
-// Resumen
-console.log('\n' + '='.repeat(50));
-console.log(`\n✅ Aprobadas: ${passed}`);
-console.log(`❌ Fallidas: ${failed}`);
-console.log(`📊 Total: ${passed + failed}`);
-
-if (failed === 0) {
-  console.log('\n🎉 ¡TODAS LAS MEJORAS ESTÁN IMPLEMENTADAS!');
-  console.log('\nPuedes reiniciar el servidor con:');
-  console.log('  pm2 restart cotizador');
-  console.log('  pm2 logs cotizador\n');
-  process.exit(0);
-} else {
-  console.log('\n⚠️  Algunas mejoras faltan. Revisa los archivos marcados.');
-  process.exit(1);
+if (require.main === module) {
+  const summary = runChecks();
+  printReport(summary);
+  process.exit(summary.failed === 0 ? 0 : 1);
 }
+
+module.exports = {
+  CHECKS,
+  ROOT,
+  checkFile,
+  printReport,
+  runChecks,
+};

@@ -83,6 +83,15 @@ describe('sunat-proxy', () => {
     expect(resultado.strategy).toBe('bcrp_series_api');
   });
 
+  it('mantiene un user-agent alineado al contrato actual', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'sunat-proxy.js'), 'utf8');
+
+    expect(content).toContain('ImportAIAgentCotizador/1.0');
+    expect(content).not.toContain('CotizadorPeru/3.0');
+  });
+
   it('usa el helper stealth oficial cuando la API oficial y la pagina publica fallan', async () => {
     mockHttpsQueue.push({
       status: 500,
@@ -154,7 +163,7 @@ describe('sunat-proxy', () => {
     expect(resultado.venta).toBeCloseTo(3.62, 4);
   });
 
-  it('salta respuestas invalidas y usa fallback local si no hay proveedor valido', async () => {
+  it('salta respuestas no interpretables y usa fallback local si no hay proveedor utilizable', async () => {
     mockHttpsQueue.push({
       status: 500,
       body: '{"error":"api down"}',

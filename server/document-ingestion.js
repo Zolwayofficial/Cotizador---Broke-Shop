@@ -99,8 +99,8 @@ async function extractDocxText(buffer) {
   const documentFile = zip.file('word/document.xml');
 
   if (!documentFile) {
-    throw createIngestionError('DOCX invalido: falta word/document.xml', {
-      code: 'docx_invalid',
+    throw createIngestionError('DOCX incompleto: falta word/document.xml', {
+      code: 'docx_incomplete',
     });
   }
 
@@ -197,7 +197,7 @@ async function extractUploadedContent(file) {
     }
 
     if (pdf.tipo === 'pdf-unreadable') {
-      throw createIngestionError('No se pudo leer el PDF. Sube un PDF valido o conviertelo a imagen, DOCX o XLSX.', {
+      throw createIngestionError('No se pudo leer el PDF. Sube un PDF legible o conviertelo a imagen, DOCX o XLSX.', {
         code: 'pdf_unreadable',
         details: ocrError?.message || pdf.warning || null,
       });

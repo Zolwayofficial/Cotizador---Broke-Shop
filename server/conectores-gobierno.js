@@ -1,17 +1,17 @@
-// server/conectores-gobierno.js — Conexión en TIEMPO REAL con entidades del gobierno
+// server/conectores-gobierno.js - conexion en tiempo real con entidades del gobierno
 //
 // ENTIDADES CONECTADAS:
-// 1. VUCE — Ventanilla Única de Comercio Exterior
-// 2. SUNAT — Aranceles y Tipo de Cambio
-// 3. MTC — Homologaciones de transporte
-// 4. DIGESA — Registros sanitarios
-// 5. SENASA — Permisos fitosanitarios
-// 6. MINAM — Permisos ambientales
-// 7. PRODUCE — Permisos de pesca y acuicultura
-// 8. INDECOPI — Antidumping y barreras
-// 9. ADUANET — Arancel en tiempo real
+// 1. VUCE - Ventanilla Unica de Comercio Exterior
+// 2. SUNAT - Aranceles y tipo de cambio
+// 3. MTC - Ministerio de Transportes y Comunicaciones
+// 4. DIGESA - Direccion General de Salud Ambiental
+// 5. SENASA - Servicio Nacional de Sanidad Agraria
+// 6. MINAM - Ministerio del Ambiente
+// 7. PRODUCE - Ministerio de la Produccion
+// 8. INDECOPI - Antidumping y barreras
+// 9. ADUANET - Arancel en tiempo real
 //
-// TODOS CON ACTUALIZACIÓN AUTOMÁTICA Y CACHE
+// TODOS CON ACTUALIZACION AUTOMATICA Y CACHE
 
 const http = require('http');
 const iconv = require('iconv-lite');
@@ -32,9 +32,9 @@ const CACHE_TTL = {
   aduanet: 3600000      // 1 hora
 };
 
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // HELPERS HTTP
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
 function httpGet(url, timeout = 15000) {
   return new Promise((resolve, reject) => {
     http.get(url, { timeout }, res => {
@@ -52,7 +52,7 @@ function httpGetResponse(options, timeout = 15000) {
     host: requestOptions.host || 'www.aduanet.gob.pe',
     timeout: requestOptions.timeout || timeout,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; CotizadorPeruUltimate/3.0)',
+      'User-Agent': 'Mozilla/5.0 (compatible; ImportAIAgentCotizador/1.0; +https://importaiagent.com)',
       Accept: 'text/html,application/xhtml+xml',
       ...(requestOptions.headers || {}),
     },
@@ -177,6 +177,7 @@ function parseAduanetDetalle(html, partida) {
   };
 
   const labelMap = {
+    'ad valorem': 'adValorem',
     'ad / valorem': 'adValorem',
     'impuesto selectivo al consumo': 'isc',
     'impuesto general a las ventas': 'igv',
@@ -280,9 +281,9 @@ function parseAduanetDescripciones(html) {
     }));
 }
 
-// ═══════════════════════════════════════════════════
-// 1. VUCE — Ventanilla Única de Comercio Exterior
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 1. VUCE - Ventanilla Unica de Comercio Exterior
+// -------------------------------------------------------------------
 const VUCE = {
   baseUrl: 'https://www.vuce.gob.pe',
   
@@ -292,7 +293,7 @@ const VUCE = {
     if (cached) return cached;
 
     try {
-      // NOTA: VUCE no tiene API pública documentada
+      // NOTA: VUCE no tiene API publica documentada
       // Usamos scraping o datos locales actualizados
       const result = {
         partida,
@@ -332,9 +333,9 @@ const VUCE = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 2. SUNAT — Aranceles y Tipo de Cambio
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 2. SUNAT - Aranceles y tipo de cambio
+// -------------------------------------------------------------------
 const SUNAT = {
   baseUrl: 'https://e-consultaruc.sunat.gob.pe',
   
@@ -420,9 +421,9 @@ const SUNAT = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 3. MTC — Ministerio de Transportes y Comunicaciones
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 3. MTC - Ministerio de Transportes y Comunicaciones
+// -------------------------------------------------------------------
 const MTC = {
   baseUrl: 'https://www.mtc.gob.pe',
   
@@ -432,7 +433,7 @@ const MTC = {
     if (cached) return cached;
 
     try {
-      // MTC no tiene API pública - usamos datos locales
+      // MTC no tiene API publica - usamos datos locales
       const result = {
         producto,
         marca,
@@ -471,9 +472,9 @@ const MTC = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 4. DIGESA — Dirección General de Salud Ambiental
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 4. DIGESA - Direccion General de Salud Ambiental
+// -------------------------------------------------------------------
 const DIGESA = {
   baseUrl: 'https://www.digesa.minsa.gob.pe',
   
@@ -483,7 +484,7 @@ const DIGESA = {
     if (cached) return cached;
 
     try {
-      // DIGESA no tiene API pública - usamos datos locales
+      // DIGESA no tiene API publica - usamos datos locales
       const result = {
         producto,
         laboratorio,
@@ -521,9 +522,9 @@ const DIGESA = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 5. SENASA — Servicio Nacional de Sanidad Agraria
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 5. SENASA - Servicio Nacional de Sanidad Agraria
+// -------------------------------------------------------------------
 const SENASA = {
   baseUrl: 'https://www.senasa.gob.pe',
   
@@ -533,7 +534,7 @@ const SENASA = {
     if (cached) return cached;
 
     try {
-      // SENASA no tiene API pública - usamos datos locales
+      // SENASA no tiene API publica - usamos datos locales
       const result = {
         producto,
         paisOrigen,
@@ -572,9 +573,9 @@ const SENASA = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 6. MINAM — Ministerio del Ambiente
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 6. MINAM - Ministerio del Ambiente
+// -------------------------------------------------------------------
 const MINAM = {
   baseUrl: 'https://www.gob.pe/minam',
   
@@ -602,9 +603,9 @@ const MINAM = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 7. PRODUCE — Ministerio de la Producción
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 7. PRODUCE - Ministerio de la Produccion
+// -------------------------------------------------------------------
 const PRODUCE = {
   baseUrl: 'https://www.gob.pe/produce',
   
@@ -616,7 +617,7 @@ const PRODUCE = {
     try {
       const result = {
         producto,
-        requierePermiso: producto.toLowerCase().includes('pesca') || producto.toLowerCase().includes('hidrobiológico'),
+        requierePermiso: producto.toLowerCase().includes('pesca') || producto.toLowerCase().includes('hidrobiologico'),
         tipoPermiso: 'Pesquero',
         estado: 'pendiente_verificacion',
         fuente: 'PRODUCE',
@@ -632,9 +633,9 @@ const PRODUCE = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 8. INDECOPI — Antidumping y Barreras
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 8. INDECOPI - Antidumping y barreras
+// -------------------------------------------------------------------
 const INDECOPI = {
   baseUrl: 'https://www.indecopi.gob.pe',
   
@@ -644,7 +645,7 @@ const INDECOPI = {
     if (cached) return cached;
 
     try {
-      // INDECOPI no tiene API pública - usamos datos locales actualizados
+      // INDECOPI no tiene API publica - usamos datos locales actualizados
       const result = {
         producto,
         pais,
@@ -664,7 +665,7 @@ const INDECOPI = {
     }
   },
 
-  async listarMedidasVigentes() {
+  async listarMedidasAplicables() {
     const cacheKey = 'indecopi.medidas';
     const cached = getCache(cacheKey);
     if (cached) return cached;
@@ -684,9 +685,9 @@ const INDECOPI = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// 9. ADUANET — Arancel en Tiempo Real
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
+// 9. ADUANET - Arancel en tiempo real
+// -------------------------------------------------------------------
 const ADUANET = {
   baseUrl: 'http://www.aduanet.gob.pe',
   
@@ -830,9 +831,9 @@ const ADUANET = {
   }
 };
 
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
 // EXPORTAR TODOS LOS CONECTORES
-// ═══════════════════════════════════════════════════
+// -------------------------------------------------------------------
 module.exports = {
   VUCE,
   SUNAT,
@@ -844,7 +845,7 @@ module.exports = {
   INDECOPI,
   ADUANET,
   
-  // Función para obtener todos los datos de una cotización
+  // Funcion para obtener todos los datos de una cotizacion
   async consultarTodo(partida, producto, pais) {
     const [arancel, tratamientoArancelario, tipoCambio, vuce, antidumping] = await Promise.all([
       SUNAT.consultarArancel(partida),
@@ -870,7 +871,7 @@ module.exports = {
     console.log('[CONECTORES] Cache limpiada');
   },
 
-  // Obtener estadísticas de cache
+  // Obtener estadisticas de cache
   getCacheStats() {
     return {
       total_entries: Object.keys(_cache).length,

@@ -20,9 +20,27 @@ function dbGet(sql, params = []) {
 
 function dbRun(sql, params = []) {
   if (!initialized) return { changes: 0, lastInsertRowid: 0 };
-  dbApi.run(sql, params);
-  const lastInsert = dbApi.get('SELECT last_insert_rowid() AS id');
-  return { changes: 0, lastInsertRowid: lastInsert?.id || 0 };
+  return dbApi.run(sql, params);
+}
+
+function safeJsonParse(value, fallback = null) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function safeJsonStringify(value, fallback = '{}') {
+  if (typeof value === 'string') return value;
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? fallback : serialized;
+  } catch (_error) {
+    return fallback;
+  }
 }
 
 async function init() {
@@ -110,7 +128,7 @@ async function init() {
   `);
 
   initialized = true;
-  console.log('[MEMORIA AGENTE] Inicializada');
+  console.log('[MEMORIA AGENTE] Tablas y configuracion preparadas');
 }
 
 class MemoriaAgente {
@@ -131,10 +149,10 @@ class MemoriaAgente {
           INSERT INTO agente_experiencias (agente, url, exito, tiempo_respuesta_ms, estrategia_usada, error_message, html_structure_hash)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `,
-        [this.agente, url, exito ? 1 : 0, tiempoMs, estrategia, error, htmlHash]
+        [this.agente, url, exito ? 1 : 0, tiempoMs, safeJsonStringify(estrategia), error, htmlHash]
       );
     } catch (_error) {
-      console.log('[MEMORIA AGENTE] Info: experiencia no guardada (tablas no listas)');
+      console.log('[MEMORIA AGENTE] Info: experiencia no guardada (tablas aun no preparadas)');
     }
 
     this._aprenderDeExperiencia(url, exito, tiempoMs, estrategia, error);
@@ -165,7 +183,7 @@ class MemoriaAgente {
       [this.agente, url]
     );
 
-    return experiencia ? JSON.parse(experiencia.estrategia_usada) : null;
+    return experiencia ? safeJsonParse(experiencia.estrategia_usada, null) : null;
   }
 
   guardarAprendizaje(clave, valor, confianza = 1.0) {
@@ -193,7 +211,7 @@ class MemoriaAgente {
                 ultima_verificacion = datetime('now'), updated_at = datetime('now')
             WHERE agente = ? AND clave = ?
           `,
-          [JSON.stringify(valor), confianza, this.agente, storageKey]
+          [safeJsonStringify(valor, 'null'), confianza, this.agente, storageKey]
         );
       } else {
         dbRun(
@@ -201,11 +219,11 @@ class MemoriaAgente {
             INSERT INTO agente_aprendizajes (agente, clave, valor, confianza)
             VALUES (?, ?, ?, ?)
           `,
-          [this.agente, storageKey, JSON.stringify(valor), confianza]
+          [this.agente, storageKey, safeJsonStringify(valor, 'null'), confianza]
         );
       }
     } catch (_error) {
-      console.log('[MEMORIA AGENTE] Info: aprendizaje no guardado (tablas no listas)');
+      console.log('[MEMORIA AGENTE] Info: aprendizaje no guardado (tablas aun no preparadas)');
     }
   }
 
@@ -263,7 +281,7 @@ class MemoriaAgente {
         );
       }
     } catch (_error) {
-      console.log('[MEMORIA AGENTE] Info: patron no guardado (tablas no listas)');
+      console.log('[MEMORIA AGENTE] Info: patron no guardado (tablas aun no preparadas)');
     }
   }
 
@@ -290,7 +308,7 @@ class MemoriaAgente {
         INSERT INTO agente_alertas (agente_origen, agente_destino, tipo, mensaje, datos)
         VALUES (?, ?, ?, ?, ?)
       `,
-      [this.agente, agenteDestino, tipo, mensaje, JSON.stringify(datos)]
+      [this.agente, agenteDestino, tipo, mensaje, safeJsonStringify(datos)]
     );
   }
 
@@ -303,7 +321,10 @@ class MemoriaAgente {
         ORDER BY created_at DESC
       `,
       [this.agente]
-    );
+    ).map((alerta) => ({
+      ...alerta,
+      datos: safeJsonParse(alerta.datos, {}),
+    }));
   }
 
   marcarAlertaLeida(id) {
@@ -323,11 +344,11 @@ class MemoriaAgente {
         WHERE agente = ?
       `,
       [
-        nuevaConfig.timeout_ms || this.config.timeout_ms,
-        nuevaConfig.reintentos || this.config.reintentos,
-        nuevaConfig.cache_ttl_ms || this.config.cache_ttl_ms,
-        nuevaConfig.user_agent || this.config.user_agent,
-        JSON.stringify(nuevaConfig.headers || this.config.headers),
+        nuevaConfig.timeout_ms ?? this.config.timeout_ms,
+        nuevaConfig.reintentos ?? this.config.reintentos,
+        nuevaConfig.cache_ttl_ms ?? this.config.cache_ttl_ms,
+        nuevaConfig.user_agent ?? this.config.user_agent,
+        safeJsonStringify(nuevaConfig.headers ?? this.config.headers),
         this.agente,
       ]
     );
@@ -344,16 +365,17 @@ class MemoriaAgente {
       dbGet('SELECT COUNT(*) as count FROM agente_experiencias WHERE agente = ? AND exito = 1', [this.agente])?.count || 0
     );
 
-    const promedioTiempo = Number(
-      dbGet(
-        `
-          SELECT AVG(tiempo_respuesta_ms) as avg
-          FROM agente_experiencias
-          WHERE agente = ? AND exito = 1
-        `,
-        [this.agente]
-      )?.avg || 0
-    );
+    const promedioTiempoRaw = dbGet(
+      `
+        SELECT AVG(tiempo_respuesta_ms) as avg
+        FROM agente_experiencias
+        WHERE agente = ? AND exito = 1
+      `,
+      [this.agente]
+    )?.avg;
+    const promedioTiempo = promedioTiempoRaw === null || promedioTiempoRaw === undefined
+      ? null
+      : Number(promedioTiempoRaw);
 
     const fallosRecientes = Number(
       dbGet(
@@ -371,7 +393,7 @@ class MemoriaAgente {
       total_navegaciones: total,
       exitosas,
       fallidas: total - exitosas,
-      tasa_exito: total > 0 ? ((exitosas / total) * 100).toFixed(2) : 0,
+      tasa_exito: total > 0 ? ((exitosas / total) * 100).toFixed(2) : null,
       tiempo_promedio_ms: promedioTiempo,
       fallos_ultima_hora: fallosRecientes,
       configuracion: this.config,
@@ -388,7 +410,7 @@ class MemoriaAgente {
         reintentos: row.reintentos,
         cache_ttl_ms: row.cache_ttl_ms,
         user_agent: row.user_agent,
-        headers: JSON.parse(row.headers || '{}'),
+        headers: safeJsonParse(row.headers, {}),
       }
       : {
         timeout_ms: 30000,
@@ -440,7 +462,7 @@ class MemoriaAgente {
     }
 
     if (exito && estrategia) {
-      const estratObj = JSON.parse(estrategia);
+      const estratObj = safeJsonParse(estrategia, {});
       if (estratObj.htmlHash) {
         this.guardarAprendizaje('html_structure', estratObj.htmlHash, 1.0);
       }
@@ -448,4 +470,11 @@ class MemoriaAgente {
   }
 }
 
-module.exports = { MemoriaAgente, init };
+module.exports = {
+  MemoriaAgente,
+  init,
+  _private: {
+    safeJsonParse,
+    safeJsonStringify,
+  },
+};

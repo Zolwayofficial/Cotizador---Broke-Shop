@@ -1,188 +1,56 @@
-# 🚚 APIs de Fletes - Documentación
+# APIs de fletes
 
-## 📊 Estrategia Implementada
+Este documento resume el contrato actual de cotizacion de flete. No vende precision consistente ni trata proveedores anteriores como si siguieran siendo referencia de trabajo.
 
-Tu cotizador usa una **estrategia híbreda inteligente**:
+## Estrategia actual
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. TrackingMore API (PRINCIPAL)                            │
-│     ✅ Gratis 100 requests/día                              │
-│     ✅ Tarifas reales de carriers                           │
-│     ⚠️ Si falla o se agota → fallback automático           │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (automático)
-┌─────────────────────────────────────────────────────────────┐
-│  2. Referencial Hardcoded (RESPALDO)                        │
-│     ✅ Ilimitado                                            │
-│     ✅ Siempre disponible                                   │
-│     ⚠️ Tarifas referenciales de mercado                    │
-└─────────────────────────────────────────────────────────────┘
-```
+El sistema combina tres niveles, en este orden:
 
-**Ventajas:**
+1. dato real del usuario o documento
+2. proveedor logistico real, si existe credencial util y respuesta util
+3. estimacion o fallback referencial claramente etiquetado
 
-- ✅ **Sin interrupciones** - Siempre hay respuesta
-- ✅ **Óptimo** - Usa API real cuando está disponible
-- ✅ **Económico** - Gratis (100/day + fallback ilimitado)
-- ✅ **Transparente** - Logs muestran qué se usó
+Eso implica dos reglas:
 
----
+- nunca presentar un fallback como tarifa con respaldo contractual
+- nunca ocultar que la cotizacion cayo a estimacion o referencia
 
-## 📊 Estado Actual
+## Modulos actuales
 
-Tu cotizador ahora tiene **2 niveles de precisión** para cotizaciones de flete:
+- `server/flete-api.js`
+- `server/flete.js`
+- `server/couriers/integrador-logistica.js`
+- `server/couriers/contingencia-api.js`
+- `tests/unit/flete-api.test.js`
+- `tests/unit/flete.test.js`
+- `tests/unit/logistica.test.js`
+- `tests/unit/contingencia.test.js`
 
-| Nivel | Fuente | Precisión | Costo | Configuración |
-|-------|--------|-----------|-------|---------------|
-| **1. API Real** | TrackingMore / Searates | ✅ 95% | Gratis/Pago | Opcional |
-| **2. Referencial** | `flete.js` hardcoded | ⚠️ 70% | Gratis | Default |
-| **3. Fallback** | Último recurso | ⚠️ 60% | Gratis | Automático |
+## Estado operativo
 
----
+Si no configuras APIs reales, el sistema sigue funcionando, pero la salida queda etiquetada como estimada o referencial.
 
-## 🎯 Opción 1: API Real (Recomendado)
+La lectura correcta hoy es:
 
-### TrackingMore API (Gratis 100 requests/día)
+- con credenciales y respuesta util: `source` real del proveedor
+- sin credenciales o sin respuesta util: `referencial`, `estimado` o fallback equivalente
 
-**Registro:** <https://www.trackingmore.com/api>
+## Variables opcionales
 
-**Pasos:**
+Segun el proveedor que actives, el entorno puede requerir llaves como:
 
-1. Crear cuenta en TrackingMore
-2. Obtener API Key (gratis, 100 requests/día)
-3. Configurar en `.env`:
+- `TRACKINGMORE_API_KEY`
+- `TRACKINGMORE_DAILY_LIMIT` para la cuota diaria local que quieres rastrear
+- `SEARATES_API_KEY`
+- agregadores o couriers configurados en el integrador logistico
 
-```env
-TRACKINGMORE_API_KEY=xxxxxxxxxxxxxxxxxxxx
-```
+La ausencia de esas variables no rompe el sistema. Solo obliga a degradar con trazabilidad.
 
-**Ventajas:**
+## Endpoints utiles
 
-- ✅ Tarifas reales de carriers
-- ✅ Actualización constante
-- ✅ 100 requests/día gratis (suficiente para ~3-4 cotizaciones/hora)
+### `POST /api/flete/estimar`
 
-**Limitaciones:**
-
-- ⚠️ Requiere registro
-- ⚠️ Límite de 100/day
-
----
-
-### Searates API (Requiere registro)
-
-**Registro:** <https://www.searates.com/>
-
-**Pasos:**
-
-1. Crear cuenta en Searates
-2. Solicitar acceso a API
-3. Configurar en `.env`:
-
-```env
-SEARATES_API_KEY=xxxxxxxxxxxxxxxxxxxx
-```
-
-**Ventajas:**
-
-- ✅ Tarifas de múltiples carriers
-- ✅ Comparación de precios
-- ✅ Cobertura global
-
-**Limitaciones:**
-
-- ⚠️ Requiere aprobación
-- ⚠️ Puede tener costo según uso
-
----
-
-## 📁 Opción 2: Tarifas Referenciales (Default)
-
-Si **NO configuras** ninguna API key, el sistema usa automáticamente tarifas hardcoded en `flete.js`.
-
-**Características:**
-
-- ✅ No requiere configuración
-- ✅ Ilimitado
-- ⚠️ **Referencial** - No son tarifas reales
-- ⚠️ Pueden estar desactualizadas
-
-**Ejemplo de tarifas:**
-
-```javascript
-// Marítimo China → Perú
-"CN-PE": { perCBM: 55, min20ft: 1200, min40ft: 2200, transit: "28-35 días" }
-
-// Aéreo USA → Perú
-"US-PE": { perKg: 2.50, min: 85, transit: "3-5 días" }
-```
-
-**Cuándo usar:**
-
-- ✅ Prototipo / Desarrollo
-- ✅ Cotizaciones preliminares
-- ⚠️ **NO** para cotizaciones finales a clientes
-
----
-
-## 🔧 Configuración
-
-### 1. Sin API (Referencial)
-
-```env
-# .env - Dejar vacío o comentar
-# TRACKINGMORE_API_KEY=
-# SEARATES_API_KEY=
-```
-
-**Resultado:**
-
-```bash
-curl http://localhost:3000/api/flete/status
-→ { trackingmore: false, searates: false, fallback: true }
-```
-
----
-
-### 2. Con TrackingMore API
-
-```env
-# .env
-TRACKINGMORE_API_KEY=tm_xxxxxxxxxxxxxxxxxxxx
-```
-
-**Resultado:**
-
-```bash
-curl http://localhost:3000/api/flete/status
-→ { trackingmore: true, searates: false, fallback: true }
-```
-
----
-
-### 3. Con Ambas APIs
-
-```env
-# .env
-TRACKINGMORE_API_KEY=tm_xxxxxxxxxxxxxxxxxxxx
-SEARATES_API_KEY=sr_xxxxxxxxxxxxxxxxxxxx
-```
-
-**Resultado:**
-
-```bash
-curl http://localhost:3000/api/flete/status
-→ { trackingmore: true, searates: true, fallback: true }
-```
-
----
-
-## 📝 Endpoints
-
-### POST /api/flete/estimar
-
-**Request:**
+Entrada base:
 
 ```json
 {
@@ -194,141 +62,54 @@ curl http://localhost:3000/api/flete/status
 }
 ```
 
-**Response (con API real):**
+Salida esperada:
 
-```json
-{
-  "flete": 850,
-  "tarifa": { "perCBM": 55, "transit": "28-35 días" },
-  "origen": "CN",
-  "destino": "PE",
-  "canal": "maritimo",
-  "transit": "28-35 días",
-  "source": "trackingmore",
-  "nota": "Tarifa de API real. Válido sujeto a confirmación del carrier."
-}
-```
+- `flete`
+- `canal`
+- `source`
+- `nota`
+- `transit` cuando aplique
+- tarifa o desglose, si el proveedor lo devuelve
 
-**Response (sin API - fallback):**
+La salida correcta depende del origen del dato. No hay un numero unico aplicable a todos los casos.
 
-```json
-{
-  "flete": 900,
-  "tarifa": { "perCBM": 55, "transit": "28-35 días" },
-  "origen": "CN",
-  "destino": "PE",
-  "canal": "maritimo",
-  "transit": "28-35 días",
-  "source": "referencial",
-  "nota": "Tarifa referencial de mercado. Solicitar cotización formal a freight forwarder."
-}
-```
+### `GET /api/flete/tarifas`
 
----
+Expone referencias o matrices utiles para fallback y soporte operativo. No debe leerse como tabla oficial ni como cotizacion final.
 
-### GET /api/flete/tarifas
+### `GET /api/flete/status`
 
-**Response:**
+Sirve para ver si el entorno tiene proveedores reales configurados, si el fallback sigue disponible y cual es el estado local de TrackingMore.
 
-```json
-{
-  "aereo": { ... },
-  "maritimo": { ... },
-  "courier": { ... },
-  "costosPuerto": { ... },
-  "nota": "Tarifas referenciales de mercado. Sujeto a cambio sin previo aviso."
-}
-```
+### `GET /api/flete/usage`
 
----
+Expone la cuota diaria local rastreada para TrackingMore.
 
-### GET /api/flete/status
+No representa una cuota oficial publicada por el proveedor. Es un control operativo local para saber cuando el modulo ya debe degradar a fallback referencial.
 
-**Response:**
+## Reglas de lectura
 
-```json
-{
-  "trackingmore": true,
-  "searates": false,
-  "fallback": true,
-  "nota": "API de TrackingMore configurada. Se usarán tarifas reales cuando estén disponibles."
-}
-```
+- `source` real del proveedor: dato operativo util, sujeto a revision comercial
+- `referencial`: referencia de mercado o fallback interno
+- `estimado`: calculo interno sin proveedor vivo
+- `documento_usuario` o equivalente: dato aportado por el usuario
 
----
+## Recomendaciones
 
-## 🎯 Recomendaciones
+Para produccion:
 
-### Para Producción
+- configurar al menos un proveedor real si quieres flete con mejor respaldo operativo
+- mantener el fallback interno para continuidad
+- dejar la UI etiquetando claramente cuando el dato no viene de un proveedor vivo
 
-1. **Configurar al menos TrackingMore** (gratis 100/day)
-2. **Mantener fallback referencial** como backup
-3. **Advertir al usuario** que las tarifas son referenciales
+Para desarrollo:
 
-### Para Desarrollo
+- puedes trabajar solo con fallback
+- las pruebas deben enfocarse en contrato, etiquetado y degradacion correcta
 
-1. **Usar fallback referencial** (no requiere API key)
-2. **Probar con API real** solo para validación final
+## Lo que no debe decir esta guia
 
----
-
-## 📊 Comparación de Precisión
-
-| Ruta | API Real | Referencial | Diferencia |
-|------|----------|-------------|------------|
-| CN→PE Marítimo | $55/CBM | $55/CBM | ✅ 0% |
-| CN→PE Aéreo | $3.80/kg | $3.80/kg | ✅ 0% |
-| US→PE Marítimo | $65/CBM | $65/CBM | ✅ 0% |
-| DE→PE Marítimo | $75/CBM | $70/CBM | ⚠️ 7% |
-| IN→PE Marítimo | $58/CBM | $52/CBM | ⚠️ 10% |
-
-**Nota:** Las tarifas referenciales están basadas en promedios de mercado. Pueden variar ±10-15% de tarifas reales.
-
----
-
-## 🔮 Futuras Mejoras
-
-### APIs Adicionales a Considerar
-
-| API | Costo | Precisión | Notas |
-|-----|-------|-----------|-------|
-| **Freightos** | Pago | ✅ 98% | Líder en la industria |
-| **Xeneta** | Pago | ✅ 98% | 400M+ rates |
-| **Cargoai** | Pago | ✅ 95% | Especializado en aire |
-| **iContainers** | Freemium | ✅ 90% | Bueno para PYMES |
-
-### Scraping Automático
-
-```javascript
-// Futuro: server/flete-scraper.js
-async function scrapeFletes() {
-  // Scrape de:
-  // - Freightos Baltic Index
-  // - Shanghai Containerized Freight Index
-  // - World Container Index
-  // Actualizar tarifas automáticamente
-}
-```
-
----
-
-## 📞 Soporte
-
-**Problemas comunes:**
-
-1. **"API key inválida"**
-   - Verificar que la API key esté bien copiada
-   - Revisar que la cuenta esté activa
-
-2. **"Rate limit exceeded"**
-   - TrackingMore: 100 requests/día
-   - Esperar 24h o upgrade a plan pago
-
-3. **"Sin respuesta de API"**
-   - Verificar conexión a internet
-   - Revisar firewall/proxy
-
----
-
-**Última actualización:** 2026-03-15
-**Versión:** 2.0 (con APIs de fletes)
+- no debe prometer cifras desactualizadas de precision
+- no debe asumir que una API concreta sera siempre la principal
+- no debe vender un fallback como tarifa real
+- no debe usar ejemplos demo como si fueran contrato productivo

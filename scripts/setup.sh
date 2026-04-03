@@ -1,127 +1,129 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "═══════════════════════════════════════════"
-echo "⬡ Cotizador de Importación Perú v2.0"
-echo "  Setup automático para Ubuntu VPS"
-echo "═══════════════════════════════════════════"
-echo ""
-
-# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# ── 1. System dependencies ──
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_PATH="${APP_PATH:-/var/www/importaiagent}"
+APP_NAME="importaiagent"
+PM2_APP_NAME="cotizador"
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Falta comando requerido: $1" >&2
+    exit 1
+  fi
+}
+
+echo "============================================================"
+echo "  IMPORTAIAGENT - BOOTSTRAP VPS"
+echo "============================================================"
+
 echo -e "${GREEN}[1/7] Instalando dependencias del sistema...${NC}"
 sudo apt-get update -qq
 sudo apt-get install -y -qq curl nginx certbot python3-certbot-nginx build-essential
 
-# ── 2. Node.js (v20 LTS) ──
-echo -e "${GREEN}[2/7] Instalando Node.js 20...${NC}"
-if ! command -v node &> /dev/null; then
+echo -e "${GREEN}[2/7] Verificando Node.js 20...${NC}"
+if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y -qq nodejs
 fi
-echo "  Node: $(node -v) · npm: $(npm -v)"
+echo "  Node: $(node -v) | npm: $(npm -v)"
 
-# ── 3. PM2 (process manager) ──
-echo -e "${GREEN}[3/7] Instalando PM2...${NC}"
-sudo npm install -g pm2 --silent 2>/dev/null || true
+echo -e "${GREEN}[3/7] Preparando proyecto...${NC}"
+cd "$PROJECT_ROOT"
+npm install
+npm install --prefix client
+npm run client:build
+mkdir -p data data/logs
 
-# ── 4. Project dependencies ──
-echo -e "${GREEN}[4/7] Instalando dependencias del proyecto...${NC}"
-cd "$(dirname "$0")/.."
-npm install --production --silent
-
-# ── 5. Data directory ──
-echo -e "${GREEN}[5/7] Preparando directorio de datos...${NC}"
-mkdir -p data
-
-if [ ! -f data/nandina.json ]; then
-  echo -e "${YELLOW}  ⚠ No se encontró data/nandina.json${NC}"
-  echo "  Coloca nandina.json (o NANDINA.TXT + NANDTASA.TXT) en data/"
-  echo "  El servidor los procesará automáticamente al iniciar."
+echo -e "${GREEN}[4/7] Revisando entorno de produccion...${NC}"
+if [ ! -f ".env.production" ]; then
+  echo "Falta .env.production. Copialo en el VPS antes de continuar." >&2
+  exit 1
 fi
 
-# ── 6. Environment ──
-echo -e "${GREEN}[6/7] Configurando entorno...${NC}"
-if [ ! -f .env ]; then
-  cp .env.example .env
-  echo -e "${YELLOW}  ⚠ Creado .env desde .env.example — edita las API keys${NC}"
-  echo "  nano .env"
+if [ ! -f ".env" ]; then
+  cp .env.production .env
 fi
 
-# ── 7. Nginx ──
-echo -e "${GREEN}[7/7] Configurando Nginx...${NC}"
-DOMAIN=$(grep DOMAIN .env 2>/dev/null | cut -d= -f2 | tr -d ' ')
+APP_PORT="$(
+  grep '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]'
+)"
+WS_PORT="$(
+  grep '^WS_PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]'
+)"
+if [ -z "$APP_PORT" ]; then
+  echo "PORT falta en .env.production" >&2
+  exit 1
+fi
+if [ -z "$WS_PORT" ]; then
+  echo "WS_PORT falta en .env.production" >&2
+  exit 1
+fi
+
+NODE_ENV=production npm run production:check
+
+echo -e "${GREEN}[5/7] Configurando PM2...${NC}"
+if ! command -v pm2 >/dev/null 2>&1; then
+  sudo npm install -g pm2 --silent
+fi
+
+pm2 delete "$PM2_APP_NAME" >/dev/null 2>&1 || true
+pm2 start ecosystem.config.js --only "$PM2_APP_NAME" --update-env
+pm2 save
+if command -v systemctl >/dev/null 2>&1; then
+  pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
+fi
+
+echo -e "${GREEN}[6/7] Configurando Nginx...${NC}"
+DOMAIN="$(
+  grep '^DOMAIN=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]'
+)"
 if [ -z "$DOMAIN" ]; then
-  DOMAIN="localhost"
+  DOMAIN="importaiagent.com"
 fi
 
-sudo tee /etc/nginx/sites-available/cotizador > /dev/null << NGINX
+sudo tee "/etc/nginx/sites-available/$APP_NAME" >/dev/null <<NGINX
 server {
     listen 80;
     server_name ${DOMAIN};
 
-    # Frontend
-    location / {
-        proxy_pass http://127.0.0.1:3000;
+    location /ws {
+        proxy_pass http://127.0.0.1:${WS_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host \$host;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:${APP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    # API — larger body for document uploads
-    location /api {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        client_max_body_size 10M;
-        proxy_read_timeout 120s;
-    }
-
-    # Cache static assets
-    location ~* \.(js|css|png|jpg|svg|ico|woff2)$ {
-        proxy_pass http://127.0.0.1:3000;
-        expires 7d;
-        add_header Cache-Control "public, immutable";
     }
 }
 NGINX
 
-sudo ln -sf /etc/nginx/sites-available/cotizador /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-sudo nginx -t && sudo systemctl reload nginx
+sudo ln -sf "/etc/nginx/sites-available/$APP_NAME" "/etc/nginx/sites-enabled/$APP_NAME"
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx || sudo systemctl restart nginx
 
-echo ""
-echo "═══════════════════════════════════════════"
-echo -e "${GREEN}✓ Setup completo!${NC}"
-echo "═══════════════════════════════════════════"
-echo ""
-echo "Próximos pasos:"
-echo ""
-echo "  1. Edita la configuración:"
-echo "     nano .env"
-echo ""
-echo "  2. Coloca la base arancelaria:"
-echo "     cp /ruta/a/nandina.json data/"
-echo "     # O coloca NANDINA.TXT + NANDTASA.TXT en data/"
-echo ""
-echo "  3. Inicia el servidor:"
-echo "     pm2 start server/index.js --name cotizador"
-echo "     pm2 save"
-echo "     pm2 startup"
-echo ""
-echo "  4. (Opcional) SSL con Let's Encrypt:"
-echo "     sudo certbot --nginx -d ${DOMAIN}"
-echo ""
-echo "  5. Verifica:"
-echo "     curl http://localhost:3000/api/nandina/status"
-echo ""
+echo -e "${GREEN}[7/7] Verificando servicio...${NC}"
+curl -fsS "http://127.0.0.1:${APP_PORT}/api/monitor/health" | head -c 200
+echo
+
+echo
+echo "Bootstrap completado."
+echo "App path:  $APP_PATH"
+echo "Dominio:   $DOMAIN"
+echo "PM2 app:   $PM2_APP_NAME"
+echo "Nginx site:/etc/nginx/sites-available/$APP_NAME"

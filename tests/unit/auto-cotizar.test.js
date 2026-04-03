@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { describe, it, expect, beforeEach } = require("@jest/globals");
 
 jest.mock("../../server/tipo-cambio-operativo", () => ({
@@ -56,7 +58,7 @@ describe("auto-cotizar", () => {
       seguroManual: 8,
     });
 
-    expect(resultado.exito).toBe(true);
+    expect(resultado.procesado).toBe(true);
     expect(resultado.totales.margenVenta).toBeUndefined();
     expect(resultado.perfilImportacion.objetivo.codigo).toBe("costo_importacion");
   });
@@ -73,7 +75,7 @@ describe("auto-cotizar", () => {
       seguroModo: "TABLA",
     });
 
-    expect(resultado.exito).toBe(true);
+    expect(resultado.procesado).toBe(true);
     expect(resultado.modo).toBe("POSTAL_FRANQUICIA");
     expect(resultado.totales.totalTributos).toBe(0);
     expect(resultado.trazabilidad.seguro.fuente).toBe("seguro_tabla");
@@ -91,7 +93,7 @@ describe("auto-cotizar", () => {
       seguroManual: 7,
     });
 
-    expect(resultado.exito).toBe(true);
+    expect(resultado.procesado).toBe(true);
     expect(resultado.tipoCambio.tasa).toBeCloseTo(3.71, 4);
     expect(resultado.metadata.tcFuente).toBe("SUNAT");
     expect(resultado.totales.totalPEN).toBeGreaterThan(0);
@@ -110,10 +112,118 @@ describe("auto-cotizar", () => {
       tc: 3.55,
     });
 
-    expect(resultado.exito).toBe(true);
+    expect(resultado.procesado).toBe(true);
     expect(resultado.tipoCambio.tasa).toBeCloseTo(3.55, 4);
     expect(resultado.tipoCambio.estado).toBe("manual_usuario");
     expect(resultado.trazabilidad.tipoCambio.fuente).toBe("manual_usuario");
     expect(resultado.tipoCambio.referenciaSunat.venta).toBeCloseTo(3.71, 4);
+  });
+
+  it("usa un ajuste DDP neutral y sin iconografia fuerte", () => {
+    const ajuste = autoCotizar.ajustarIncoterm(100, "DDP", 0, 0, 100);
+
+    expect(ajuste.advertencia).toBe(true);
+    expect(ajuste.ajuste).toContain("DDP incluye tributos en el precio.");
+    expect(ajuste.ajuste).toContain("El desglose es estimado (~65% FOB).");
+    expect(ajuste.ajuste).not.toMatch(/[⚠✅🔶📦⛔🛡🤝⏰]/);
+  });
+
+  it("mantiene los ajustes de incoterm en ASCII estable", () => {
+    const ajusteExw = autoCotizar.ajustarIncoterm(100, "EXW", 0, 0, 100);
+    const ajusteCif = autoCotizar.ajustarIncoterm(100, "CIF", 10, 5, 100);
+
+    expect(ajusteExw.ajuste).toContain("Precio en fabrica.");
+    expect(ajusteExw.ajuste).toContain("despacho exportacion");
+    expect(ajusteCif.ajuste).toContain("Costo, seguro y flete incluidos.");
+    expect(ajusteExw.ajuste).not.toContain("Precio en fábrica.");
+    expect(ajusteExw.ajuste).not.toContain("despacho exportación");
+  });
+
+  it("no revive emojis ni mojibake en los mensajes visibles de auto-cotizar", () => {
+    const content = fs.readFileSync(
+      path.join(__dirname, "..", "..", "server", "auto-cotizar.js"),
+      "utf8"
+    );
+
+    expect(content).toContain("Datos extraidos. Revisa antes de continuar.");
+    expect(content).toContain("punto(s) requieren revision.");
+    expect(content).toContain("difiere de la suma de items");
+    expect(content).not.toContain("Datos extraidos. Verifica y confirma.");
+    expect(content).toContain("ISC sistema especial; consultar SUNAT");
+    expect(content).toContain("// server/auto-cotizar.js - Motor de calculo completo para importacion Peru");
+    expect(content).toContain("// INCOTERMS - Ajuste del precio segun termino comercial");
+    expect(content).toContain("// ALERTAS NORMATIVAS");
+    expect(content).toContain("// DUDA RAZONABLE");
+    expect(content).toContain("// PASO 2: CALCULAR (despues de revision)");
+    expect(content).toContain("mayor precision.");
+    expect(content).toContain("Despacho Simplificado de Importacion (FOB <= US$2,000).");
+    expect(content).toContain("No se pudieron extraer items. Es una cotizacion de proveedor?");
+    expect(content).toContain("Descripcion vacia o muy corta");
+    expect(content).toContain("ajusteDesc: 'Precio en fabrica. Se suman: transporte a puerto origen, despacho exportacion, flete internacional, seguro.'");
+    expect(content).toContain("Extrae TODOS los items de esta cotizacion. Responde SOLO JSON:");
+    expect(content).toContain("qty y unit DEBEN ser numeros.");
+    expect(content).toContain("Extrae datos de esta cotizacion.");
+    expect(content).toContain("Flete extraido del precio");
+    expect(content).toContain("Seguro extraido del precio");
+    expect(content).toContain("TLC aplicable segun datos:");
+    expect(content).toContain("Consulta tributaria oficial: ADUANET devolvio gravamenes");
+    expect(content).toContain('toma como referencia de trabajo el bloque "Consulta oficial en vivo".');
+    expect(content).toContain("No hubo respuesta oficial en vivo para esta corrida.");
+    expect(content).toContain("Consulta oficial tributaria no disponible en esta corrida.");
+    expect(content).toContain("[ADUANET] Consulta oficial:");
+    expect(content).toContain("Consulta oficial no disponible:");
+    expect(content).toContain("Consulta oficial omitida:");
+    expect(content).toContain('//   3. Antidumping automatico (medidas INDECOPI aplicables)');
+    expect(content).toContain('// ANTIDUMPING - Medidas aplicables INDECOPI');
+    expect(content).toContain("async function resolverConsultaOficial(resultado, items, pais, log) {");
+    expect(content).toContain("const consultaOficial = await construirValidacionOficialImportacion({ items, pais });");
+    expect(content).toContain("agregarAlertaConsultaTributaria(resultado, consultaOficial);");
+    expect(content).toContain("tipo: 'tlc_aplicable', nivel: 'info'");
+    expect(content).toContain("resultado.etapas.dudaRazonable = { revisados: dudas.length, riesgosos: riesgosos.length };");
+    expect(content).toContain("const resultado = { procesado: false, items: [], totales: {}, alertas: [], etapas: {}, tiempoMs: 0 };");
+    expect(content).toContain("item(s) con riesgo de duda razonable SUNAT");
+    expect(content).not.toContain("const resultado = { exito: false, items: [], totales: {}, alertas: [], etapas: {}, tiempoMs: 0 };");
+    expect(content).not.toContain("resultado.exito = true;");
+    expect(content).not.toContain("TLC activo:");
+    expect(content).not.toContain('toma como vigente el bloque "Consulta oficial en vivo".');
+    expect(content).not.toContain("Validacion tributaria oficial: ADUANET confirmo gravamenes");
+    expect(content).not.toContain("No se obtuvo confirmacion oficial en vivo para esta corrida.");
+    expect(content).not.toContain("Validacion oficial tributaria no disponible en esta consulta.");
+    expect(content).not.toContain("[ADUANET] Validacion oficial:");
+    expect(content).not.toContain('//   3. Antidumping automatico (medidas INDECOPI vigentes)');
+    expect(content).not.toContain('// ANTIDUMPING - Medidas vigentes INDECOPI');
+    expect(content).not.toContain("Validacion oficial no disponible:");
+    expect(content).not.toContain("Validacion oficial omitida:");
+    expect(content).not.toContain("async function resolverValidacionOficial(resultado, items, pais, log) {");
+    expect(content).not.toContain("const validacionOficial = await construirValidacionOficialImportacion({ items, pais });");
+    expect(content).not.toContain("agregarAlertaTributariaOficial(resultado, validacionOficial);");
+    expect(content).not.toContain("tipo: 'tlc_activo', nivel: 'info'");
+    expect(content).not.toContain("resultado.etapas.dudaRazonable = { verificados: dudas.length, riesgosos: riesgosos.length };");
+    expect(content).not.toContain("⚠");
+    expect(content).not.toContain("✅");
+    expect(content).not.toContain("🔶");
+    expect(content).not.toContain("📦");
+    expect(content).not.toContain("⛔");
+    expect(content).not.toContain("🛡");
+    expect(content).not.toContain("🤝");
+    expect(content).not.toContain("⏰");
+    expect(content).not.toContain("â‰");
+    expect(content).not.toContain("ðŸ");
+    expect(content).not.toContain("—");
+    expect(content).not.toContain("→");
+    expect(content).not.toContain("═");
+    expect(content).not.toContain("── ALERTAS NORMATIVAS ──");
+    expect(content).not.toContain("── DUDA RAZONABLE ──");
+    expect(content).not.toContain("// PASO 2: CALCULAR (después de confirmación)");
+    expect(content).not.toContain("mayor precisión.");
+    expect(content).not.toContain("Despacho Simplificado de Importación (FOB ≤ US$2,000).");
+    expect(content).not.toContain("No se pudieron extraer items. ¿Es una cotización de proveedor?");
+    expect(content).not.toContain("Descripción vacía o muy corta");
+    expect(content).not.toContain("ajusteDesc: 'Precio en fábrica. Se suman: transporte a puerto origen, despacho exportación, flete internacional, seguro.'");
+    expect(content).not.toContain("Extrae TODOS los items de esta cotización. Responde SOLO JSON:");
+    expect(content).not.toContain("qty y unit DEBEN ser números.");
+    expect(content).not.toContain("Extrae datos de esta cotización.");
+    expect(content).not.toContain("Flete extraído del precio");
+    expect(content).not.toContain("Seguro extraído del precio");
   });
 });

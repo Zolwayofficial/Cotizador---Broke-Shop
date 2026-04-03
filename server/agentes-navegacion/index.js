@@ -1,6 +1,6 @@
 // server/agentes-navegacion/index.js
-// 
-// ÍNDICE DE TODOS LOS AGENTES DE NAVEGACIÓN ESPECIALISTAS
+//
+// Indice de todos los agentes de navegacion especialistas.
 
 const { MemoriaAgente, init: initMemoria } = require('./MemoriaAgente');
 
@@ -17,7 +17,7 @@ const AgenteNavegadorSENASA = require('./AgenteNavegadorSENASA');
 const AgenteNavegadorMINAM = require('./AgenteNavegadorMINAM');
 const AgenteNavegadorPRODUCE = require('./AgenteNavegadorPRODUCE');
 
-// Agentes (se crean PERO no se inicializan hasta después)
+// Agentes (se crean pero no se inicializan hasta despues)
 const sunat = new AgenteNavegadorSUNAT();
 const aduanet = new AgenteNavegadorADUANET();
 const vuce = new AgenteNavegadorVUCE();
@@ -40,40 +40,65 @@ const NAVEGACION_AGENT_REGISTRY = [
   { id: 'produce', nombre: 'PRODUCE', categoria: 'navegacion' },
 ];
 
-// Inicializar memoria compartida PRIMERO
-async function init() {
-  console.log('[AGENTES NAVEGACIÓN] Inicializando...');
+let initialized = false;
+let initPromise = null;
 
-  // 1. Inicializar memoria PRIMERO (crea las tablas)
-  await initMemoria();
-  console.log('[MEMORIA] ✅ Tablas creadas');
-
-  // 2. AHORA inicializar cada agente (ya pueden usar las tablas)
-  await sunat.init();
-  await aduanet.init();
-  await vuce.init();
-  await indecopi.init();
-  await mtc.init();
-  await digesa.init();
-  await senasa.init();
-  await minam.init();
-  await produce.init();
-
-  console.log('[AGENTES NAVEGACIÓN] ✅ Listo');
-  console.log('   - SUNAT: ✅');
-  console.log('   - ADUANET: ✅');
-  console.log('   - VUCE: ✅');
-  console.log('   - INDECOPI: ✅');
-  console.log('   - MTC: ✅');
-  console.log('   - DIGESA: ✅');
-  console.log('   - SENASA: ✅');
-  console.log('   - MINAM: ✅');
-  console.log('   - PRODUCE: ✅');
+function safeObtenerEstadisticas(nombre, agente) {
+  try {
+    return agente.obtenerEstadisticas();
+  } catch (error) {
+    return {
+      agente: nombre,
+      error: error.message,
+    };
+  }
 }
 
-// Exportar todos los agentes
+// Inicializar memoria compartida primero
+async function init() {
+  if (initialized) return;
+  if (initPromise) {
+    await initPromise;
+    return;
+  }
+
+  console.log('[AGENTES NAVEGACION] Inicializando...');
+
+  initPromise = (async () => {
+    await initMemoria();
+    console.log('[MEMORIA] Tablas preparadas');
+
+    await sunat.init();
+    await aduanet.init();
+    await vuce.init();
+    await indecopi.init();
+    await mtc.init();
+    await digesa.init();
+    await senasa.init();
+    await minam.init();
+    await produce.init();
+
+    initialized = true;
+    console.log('[AGENTES NAVEGACION] Inicializacion completada');
+    console.log('   - SUNAT: inicializado');
+    console.log('   - ADUANET: inicializado');
+    console.log('   - VUCE: inicializado');
+    console.log('   - INDECOPI: inicializado');
+    console.log('   - MTC: inicializado');
+    console.log('   - DIGESA: inicializado');
+    console.log('   - SENASA: inicializado');
+    console.log('   - MINAM: inicializado');
+    console.log('   - PRODUCE: inicializado');
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
+}
+
 module.exports = {
-  // Inicialización
   init,
 
   // Agentes de Gobierno
@@ -96,19 +121,26 @@ module.exports = {
   obtenerEstadisticasGenerales() {
     return {
       agentes_activos: NAVEGACION_AGENT_REGISTRY.map((agent) => agent.nombre),
-      memoria: 'Inicializada',
+      memoria: initialized ? 'Preparada' : 'Pendiente de preparacion',
       total_agentes: NAVEGACION_AGENT_REGISTRY.length,
-      sunat: sunat.obtenerEstadisticas(),
-      aduanet: aduanet.obtenerEstadisticas(),
-      vuce: vuce.obtenerEstadisticas(),
-      indecopi: indecopi.obtenerEstadisticas(),
-      mtc: mtc.obtenerEstadisticas(),
-      digesa: digesa.obtenerEstadisticas(),
-      senasa: senasa.obtenerEstadisticas(),
-      minam: minam.obtenerEstadisticas(),
-      produce: produce.obtenerEstadisticas()
+      sunat: safeObtenerEstadisticas('SUNAT', sunat),
+      aduanet: safeObtenerEstadisticas('ADUANET', aduanet),
+      vuce: safeObtenerEstadisticas('VUCE', vuce),
+      indecopi: safeObtenerEstadisticas('INDECOPI', indecopi),
+      mtc: safeObtenerEstadisticas('MTC', mtc),
+      digesa: safeObtenerEstadisticas('DIGESA', digesa),
+      senasa: safeObtenerEstadisticas('SENASA', senasa),
+      minam: safeObtenerEstadisticas('MINAM', minam),
+      produce: safeObtenerEstadisticas('PRODUCE', produce),
     };
   },
 
-  NAVEGACION_AGENT_REGISTRY
+  NAVEGACION_AGENT_REGISTRY,
+  _private: {
+    safeObtenerEstadisticas,
+    resetInitStateForTests() {
+      initialized = false;
+      initPromise = null;
+    },
+  },
 };

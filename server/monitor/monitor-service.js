@@ -1,19 +1,60 @@
 // server/monitor/monitor-service.js
-// 
+//
 // SERVICIO DE MONITOREO DEL SISTEMA
-// 
+//
 // Features:
 // - Monitoreo de salud del sistema
-// - Métricas de rendimiento
-// - Alertas automáticas
+// - Metricas de rendimiento
+// - Alertas automaticas
 // - Logs centralizados
-// - 100% gratis
+// - Enfoque conservador sin dependencias de pago obligatorias
 
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(process.env.DATA_DIR || './data', 'monitor.json');
+const DEFAULT_DATA_DIR = path.resolve(__dirname, '..', '..', 'data');
+
+function resolveDataDir() {
+  if (!process.env.DATA_DIR) {
+    return DEFAULT_DATA_DIR;
+  }
+
+  return path.isAbsolute(process.env.DATA_DIR)
+    ? process.env.DATA_DIR
+    : path.resolve(__dirname, '..', '..', process.env.DATA_DIR);
+}
+
+const DB_PATH = path.join(resolveDataDir(), 'monitor.json');
+
+function toFiniteNumber(value, fallback = 0) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function hasTrafficSample(totalRequests) {
+  return Number.isFinite(totalRequests) && totalRequests > 0;
+}
+
+function determineMonitorStatus({ requests, errors, avgResponseTime, memoryMB }) {
+  const errorRate = hasTrafficSample(requests)
+    ? ((errors / requests) * 100)
+    : 0;
+
+  if (errorRate > 10 || memoryMB > 500 || avgResponseTime > 1000) {
+    return 'critico';
+  }
+
+  if (errorRate > 5 || memoryMB > 400 || avgResponseTime > 500) {
+    return 'alerta';
+  }
+
+  if (!hasTrafficSample(requests)) {
+    return 'sin_muestra';
+  }
+
+  return 'saludable';
+}
 
 class MonitorService {
   constructor() {
@@ -27,16 +68,15 @@ class MonitorService {
     };
 
     this.alerts = [];
-    this.maxMetrics = 1000; // Mantener últimos 1000 registros
+    this.maxMetrics = 1000; // Mantener ultimos 1000 registros
     this.monitoringIntervals = [];
     this.started = false;
+    this.nextAlertId = 1;
 
     this._cargarMetricas();
   }
 
-  // ═══════════════════════════════════════════════════
-  // MÉTODOS PÚBLICOS
-  // ═══════════════════════════════════════════════════
+  // METODOS PUBLICOS
 
   // Registrar request
   registrarRequest(tiempoRespuesta, error = null) {
@@ -52,7 +92,7 @@ class MonitorService {
       this.metrics.requests
     );
 
-    // Guardar métricas periódicamente
+    // Guardar metricas periodicamente
     if (this.metrics.requests % 100 === 0) {
       this._guardarMetricas();
     }
@@ -63,6 +103,9 @@ class MonitorService {
     const uptime = Date.now() - this.metrics.startTime;
     const memory = process.memoryUsage();
     const cpu = os.loadavg();
+    const uptimeSeconds = Math.max(uptime / 1000, 0.001);
+    const cpuInfo = os.cpus();
+    const trafficSample = hasTrafficSample(this.metrics.requests);
 
     return {
       status: this._determinarEstado(),
@@ -71,12 +114,12 @@ class MonitorService {
       requests: {
         total: this.metrics.requests,
         errors: this.metrics.errors,
-        errorRate: this.metrics.requests > 0 ?
-          ((this.metrics.errors / this.metrics.requests) * 100).toFixed(2) : 0
+        errorRate: trafficSample ?
+          ((this.metrics.errors / this.metrics.requests) * 100).toFixed(2) : null
       },
       performance: {
-        avgResponseTime: `${this.metrics.avgResponseTime.toFixed(2)}ms`,
-        requestsPerSecond: (this.metrics.requests / (uptime / 1000)).toFixed(2)
+        avgResponseTime: trafficSample ? `${this.metrics.avgResponseTime.toFixed(2)}ms` : null,
+        requestsPerSecond: trafficSample ? (this.metrics.requests / uptimeSeconds).toFixed(2) : null
       },
       resources: {
         memory: {
@@ -86,8 +129,8 @@ class MonitorService {
         },
         cpu: {
           load: cpu.map(c => c.toFixed(2)).join(', '),
-          cores: os.cpus().length,
-          model: os.cpus()[0].model
+          cores: cpuInfo.length,
+          model: cpuInfo[0]?.model || 'Desconocido'
         },
         disk: this._obtenerUsoDisco()
       },
@@ -100,12 +143,14 @@ class MonitorService {
     };
   }
 
-  // Obtener métricas detalladas
+  // Obtener metricas detalladas
   obtenerMetricas() {
+    const trafficSample = hasTrafficSample(this.metrics.requests);
+
     return {
       requests: this.metrics.requests,
       errors: this.metrics.errors,
-      avgResponseTime: this.metrics.avgResponseTime,
+      avgResponseTime: trafficSample ? this.metrics.avgResponseTime : null,
       memoryHistory: this.metrics.memoryUsage.slice(-100),
       cpuHistory: this.metrics.cpuUsage.slice(-100),
       alerts: this.alerts.slice(-50)
@@ -120,7 +165,7 @@ class MonitorService {
   // Agregar alerta
   agregarAlerta(tipo, mensaje, datos = {}) {
     const alerta = {
-      id: this.alerts.length + 1,
+      id: this.nextAlertId++,
       tipo,
       mensaje,
       datos,
@@ -140,7 +185,7 @@ class MonitorService {
     return alerta;
   }
 
-  // Marcar alerta como leída
+  // Marcar alerta como leida
   marcarAlertaLeida(id) {
     const alerta = this.alerts.find(a => a.id === id);
 
@@ -152,7 +197,7 @@ class MonitorService {
     return false;
   }
 
-  // Limpiar alertas leídas
+  // Limpiar alertas leidas
   limpiarAlertasLeidas() {
     const antes = this.alerts.length;
     this.alerts = this.alerts.filter(a => !a.leida);
@@ -171,9 +216,7 @@ class MonitorService {
     this.started = false;
   }
 
-  // ═══════════════════════════════════════════════════
-  // MÉTODOS PRIVADOS
-  // ═══════════════════════════════════════════════════
+  // METODOS PRIVADOS
 
   _iniciarMonitoreoAutomatico() {
     // Monitorear cada 10 segundos
@@ -190,7 +233,7 @@ class MonitorService {
     this.monitoringIntervals.push(metricsInterval, saveInterval);
     this.monitoringIntervals.forEach(interval => interval.unref?.());
 
-    console.log('[MONITOR] Monitoreo automático iniciado');
+    console.log('[MONITOR] Monitoreo automatico iniciado');
   }
 
   _registrarMetricasSistema() {
@@ -219,39 +262,32 @@ class MonitorService {
     const salud = this.obtenerSalud();
 
     // Verificar errores
-    const errorRate = parseFloat(salud.requests.errorRate);
+    const errorRate = toFiniteNumber(salud.requests.errorRate);
     if (errorRate > 5) {
       this.agregarAlerta('error', `Tasa de errores alta: ${errorRate}%`, { errorRate });
     }
 
     // Verificar memoria
-    const memoryMB = parseFloat(salud.resources.memory.heapUsed);
+    const memoryMB = toFiniteNumber(salud.resources.memory.heapUsed);
     if (memoryMB > 400) { // 400 MB
       this.agregarAlerta('memoria', `Uso de memoria alto: ${memoryMB} MB`, { memoryMB });
     }
 
     // Verificar tiempo de respuesta
-    const avgTime = parseFloat(salud.performance.avgResponseTime);
+    const avgTime = toFiniteNumber(salud.performance.avgResponseTime);
     if (avgTime > 500) { // 500ms
       this.agregarAlerta('performance', `Tiempo de respuesta alto: ${avgTime}ms`, { avgTime });
     }
   }
 
   _determinarEstado() {
-    const errorRate = this.metrics.requests > 0 ?
-      ((this.metrics.errors / this.metrics.requests) * 100) : 0;
     const memoryMB = parseFloat((process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2));
-    const avgTime = this.metrics.avgResponseTime;
-
-    if (errorRate > 10 || memoryMB > 500 || avgTime > 1000) {
-      return 'critico';
-    }
-
-    if (errorRate > 5 || memoryMB > 400 || avgTime > 500) {
-      return 'alerta';
-    }
-
-    return 'saludable';
+    return determineMonitorStatus({
+      requests: this.metrics.requests,
+      errors: this.metrics.errors,
+      avgResponseTime: this.metrics.avgResponseTime,
+      memoryMB,
+    });
   }
 
   _formatearUptime(ms) {
@@ -302,7 +338,7 @@ class MonitorService {
         timestamp: Date.now()
       }, null, 2));
     } catch (e) {
-      console.error('[MONITOR] Error guardando métricas:', e.message);
+      console.error('[MONITOR] Error guardando metricas:', e.message);
     }
   }
 
@@ -312,18 +348,23 @@ class MonitorService {
         const data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
         this.metrics = { ...this.metrics, ...data.metrics };
         this.alerts = data.alerts || [];
-        console.log('[MONITOR] Métricas cargadas desde disco');
+        this.nextAlertId = this.alerts.reduce((maxId, alerta) => {
+          return Math.max(maxId, toFiniteNumber(alerta?.id, 0));
+        }, 0) + 1;
+        console.log('[MONITOR] Metricas cargadas desde disco');
       }
     } catch (e) {
-      console.error('[MONITOR] Error cargando métricas:', e.message);
+      console.error('[MONITOR] Error cargando metricas:', e.message);
     }
   }
 }
 
-// ═══════════════════════════════════════════════════
-// EXPORTAR INSTANCIA ÚNICA
-// ═══════════════════════════════════════════════════
-
 const monitorService = new MonitorService();
 
 module.exports = monitorService;
+module.exports._private = {
+  resolveDataDir,
+  DB_PATH,
+  hasTrafficSample,
+  determineMonitorStatus,
+};

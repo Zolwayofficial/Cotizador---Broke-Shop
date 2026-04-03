@@ -18,7 +18,7 @@ function expectCurrencyClose(actual, expected, tolerance = expectedFixture.toler
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
 }
 
-describe('advanced import benchmark', () => {
+describe('comparativa avanzada de importacion', () => {
   it('extrae los campos clave del texto del examen', () => {
     const resultado = extractAdvancedImportCaseFromText(textFixture);
 
@@ -39,7 +39,7 @@ describe('advanced import benchmark', () => {
     expect(resultado.report.missing).toEqual([]);
   });
 
-  it('calcula el benchmark academico con los resultados esperados', () => {
+  it('calcula la comparativa academica con los resultados esperados', () => {
     const resultado = calculateAdvancedImportBenchmark({
       ...caseFixture,
       benchmarkMode: 'academic',

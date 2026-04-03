@@ -2,21 +2,21 @@
 
 Este documento separa tres cosas:
 
-1. Que integraciones puedo investigar, documentar y dejar listas en el codigo.
-2. Que credenciales o convenios debes crear tu.
+1. Que integraciones el repositorio puede investigar, documentar y dejar preparadas en el codigo.
+2. Que credenciales o convenios debe gestionar la cuenta propietaria.
 3. Que partes del proyecto hoy son API real, tracking o scraping/fallback.
 
 ## Resumen rapido
 
-### Yo puedo dejarte listo
+### Lo que el repositorio puede dejar preparado
 
 - Conectar el codigo a la variable de entorno correcta.
 - Ajustar endpoints, cabeceras y payloads segun documentacion oficial.
-- Preparar fallbacks y validaciones cuando falte una credencial.
-- Probar que la integracion responde bien cuando pongas la key.
-- Documentar el flujo exacto de alta y uso.
+- Preparar fallbacks y revisiones cuando falte una credencial.
+- Probar que la integracion responde bien una vez cargada la key.
+- Documentar el flujo actual de alta y uso.
 
-### Tu debes crear o conseguir
+### Lo que requiere gestion externa
 
 - API keys privadas.
 - Cuentas de proveedor.
@@ -26,25 +26,25 @@ Este documento separa tres cosas:
 
 ## Matriz canonica
 
-| Servicio | Uso real en el proyecto | Estado oficial confirmado | Variable en el repo | Quien consigue acceso | Nota honesta |
+| Servicio | Uso real en el proyecto | Estado oficial revisado en esta pasada | Variable en el repo | Quien consigue acceso | Nota honesta |
 | --- | --- | --- | --- | --- | --- |
-| Groq | IA para clasificacion, dashboard y chat | API oficial con key privada | `GROQ_API_KEY` | Tu | Yo no puedo generar tu key; se obtiene desde tu cuenta de Groq. |
-| Shippo | Cotizacion multi-courier real | API oficial publica | `SHIPPO_TOKEN` | Tu | Buena opcion para rates reales; el repo ya la soporta. |
-| EasyPost | Cotizacion multi-courier real | API oficial publica | `EASYPOST_TOKEN` | Tu | Muy buena opcion para rates reales; el repo ya la soporta. |
-| AfterShip | Tracking y directorio de couriers | API oficial publica | `AFTERSHIP_TOKEN` | Tu | Sirve para tracking; no es una solucion real de rates en este repo. |
-| 17TRACK | Tracking universal | API oficial publica | `TRACK17_API_KEY` | Tu | Util para tracking; no resuelve cotizaciones multi-courier. |
-| TrackingMore | Tracking | API oficial publica | `TRACKINGMORE_API_KEY` | Tu | En el repo aparece en `flete-api`, pero hoy no entrega rates reales ahi. |
-| SeaRates | Freight maritimo/logistica | API oficial publica | `SEARATES_API_KEY` | Tu | Requiere cuenta; mejor para freight que para courier liviano. |
-| Interparcel | Agregador logistico | API oficial publica encontrada | `INTERPARCEL_TOKEN` | Tu | Hay pagina oficial para developers; el acceso sigue dependiendo de cuenta. |
-| ParcelMonkey | Agregador logistico | No confirme docs publicas claras en esta pasada | `PARCELMONKEY_TOKEN` | Tu | Puede requerir acuerdo comercial o acceso no publico. |
-| SUNAT SOL + APIs CPE/SIRE | APIs oficiales SUNAT por servicio | Acceso oficial confirmado via SOL y endpoints SUNAT | No parametrizado aun en el repo | Tu | No uses `apiportal.sunat.gob.pe`; hoy lo correcto es generar credenciales dentro de SOL y consumir endpoints oficiales por servicio. |
-| SUNAT paginas publicas | Tipo de cambio y consultas publicas | Portal publico oficial | Sin key | Yo | Esto si puedo integrarlo via scraping/control de fallos donde aplique. |
-| ADUANET | Aranceles/consulta de partidas | Portal publico oficial | Sin key | Yo | En esta pasada no confirme REST publica; hoy conviene scraping + NANDINA. |
-| OLCE API (MINCETUR) | API oficial relacionada a comercio exterior | Portal y solicitud de API key confirmados | No parametrizado aun en el repo | Tu | Buen candidato oficial para integrar mas data sin scraping. |
-| VUCE portal | Tramites y restricciones | Portal oficial confirmado | Sin key directa hoy | Mixto | No confirme una API publica equivalente a lo que hoy hace el agente; hoy sigue mejor con scraping/fallback. |
-| INDECOPI / MTC / DIGESA / SENASA / MINAM / PRODUCE | Restricciones, registros y permisos | Portales oficiales si; APIs publicas claras no confirmadas en esta pasada | Sin key hoy | Mixto | Lo realista hoy es scraping dirigido o reglas locales, salvo que tu entidad/empresa tenga acceso formal. |
+| Groq | IA para clasificacion, dashboard y chat | API oficial con key privada | `GROQ_API_KEY` | Cuenta propietaria | La key se obtiene desde la cuenta de Groq del proyecto. |
+| Shippo | Cotizacion multi-courier real | API oficial publica | `SHIPPO_TOKEN` | Cuenta propietaria | Buena opcion para rates reales; el repo ya la soporta. |
+| EasyPost | Cotizacion multi-courier real | API oficial publica | `EASYPOST_TOKEN` | Cuenta propietaria | Muy buena opcion para rates reales; el repo ya la soporta. |
+| AfterShip | Tracking y directorio de couriers | API oficial publica | `AFTERSHIP_TOKEN` | Cuenta propietaria | Sirve para tracking; no es una solucion real de rates en este repo. |
+| 17TRACK | Tracking universal | API oficial publica | `TRACK17_API_KEY` | Cuenta propietaria | Util para tracking; no resuelve cotizaciones multi-courier. |
+| TrackingMore | Tracking | API oficial publica | `TRACKINGMORE_API_KEY` | Cuenta propietaria | En el repo aparece en `flete-api`, pero hoy no entrega rates reales ahi. |
+| SeaRates | Freight maritimo/logistica | API oficial publica | `SEARATES_API_KEY` | Cuenta propietaria | Requiere cuenta; mejor para freight que para courier liviano. |
+| Interparcel | Agregador logistico | API oficial publica encontrada | `INTERPARCEL_TOKEN` | Cuenta propietaria | Hay pagina oficial para developers; el acceso sigue dependiendo de cuenta. |
+| ParcelMonkey | Agregador logistico | No se identificaron docs publicas claras en esta pasada | `PARCELMONKEY_TOKEN` | Cuenta propietaria | Puede requerir acuerdo comercial o acceso no publico. |
+| SUNAT SOL + APIs CPE/SIRE | APIs oficiales SUNAT por servicio | Acceso oficial revisado via SOL y endpoints SUNAT | No parametrizado aun en el repo | Cuenta propietaria | No uses `apiportal.sunat.gob.pe`; hoy lo correcto es generar credenciales dentro de SOL y consumir endpoints oficiales por servicio. |
+| SUNAT paginas publicas | Tipo de cambio y consultas publicas | Portal publico oficial | Sin key | Repositorio | Se integra via scraping/control de fallos donde aplique. |
+| ADUANET | Aranceles/consulta de partidas | Portal publico oficial | Sin key | Repositorio | En esta pasada no se identifico REST publica; hoy conviene scraping + NANDINA. |
+| OLCE API (MINCETUR) | API oficial relacionada a comercio exterior | Portal y solicitud de API key revisados en esta pasada | No parametrizado aun en el repo | Cuenta propietaria | Buen candidato oficial para integrar mas data sin scraping. |
+| VUCE portal | Tramites y restricciones | Portal oficial revisado en esta pasada | Sin key directa hoy | Mixto | No se identifico una API publica equivalente a lo que hoy hace el agente; hoy sigue mejor con scraping/fallback. |
+| INDECOPI / MTC / DIGESA / SENASA / MINAM / PRODUCE | Restricciones, registros y permisos | Portales oficiales si; APIs publicas claras no identificadas en esta pasada | Sin key hoy | Mixto | Lo realista hoy es scraping dirigido o reglas locales, salvo que la entidad o empresa tenga acceso formal. |
 
-## Lo que recomiendo activar primero
+## Lo que conviene priorizar primero
 
 ### Imprescindible
 
@@ -54,9 +54,9 @@ Este documento separa tres cosas:
 
 ### Muy recomendables
 
-1. `SEARATES_API_KEY` si haras maritimo real.
+1. `SEARATES_API_KEY` si se va a operar maritimo real.
 2. `EMAIL_SMTP_HOST`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`
-3. `INTERPARCEL_TOKEN` si quieres otro agregador adicional.
+3. `INTERPARCEL_TOKEN` si se necesita otro agregador adicional.
 
 ### Opcionales o de siguiente fase
 
@@ -67,7 +67,7 @@ Este documento separa tres cosas:
 
 ## Lectura honesta del codigo actual
 
-### Lo que ya esta realmente listo para conectar
+### Lo que ya tiene base de integracion para conectar
 
 - `server/ai-proxy.js`
 - `server/dashboard/dashboard-service.js`
@@ -99,11 +99,11 @@ Este documento separa tres cosas:
 
 ## Proxima accion recomendada
 
-Primero crea o consigue estas credenciales:
+Primero consigue o habilita estas credenciales:
 
 - `GROQ_API_KEY`
 - `SHIPPO_TOKEN` o `EASYPOST_TOKEN`
 - `TRACK17_API_KEY`
 - SMTP basico
 
-Luego me las pasas o las colocas en `.env.production`, y yo te dejo la activacion real, pruebas y smoke de cada integracion.
+Luego cargalas en `.env.production` y ejecuta las pruebas y smokes correspondientes de cada integracion.

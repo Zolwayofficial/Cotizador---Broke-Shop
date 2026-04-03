@@ -1,65 +1,50 @@
-// server-minimo.js - Versión mínima funcional del servidor
+// server-minimo.js - Version minima funcional del servidor
 
 const express = require('express');
-const app = express();
-const PORT = 3001;
+const { parsePort } = require('./scripts/runtime-script-helpers.cjs');
 
-console.log("\n=== INICIANDO SERVIDOR MÍNIMO ===\n");
+const app = express();
+const PORT = parsePort(process.env.PORT, 3000);
+
+console.log('\n=== INICIANDO SERVIDOR MINIMO ===\n');
 
 app.use(express.json());
 
-// Endpoint de health
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'healthy',
-    server: 'Cotizador Perú Ultimate v3.0',
-    timestamp: new Date().toISOString()
+    source: 'demo_local',
+    nota: 'Servidor minimo: health local sin chequeos de dependencias reales.',
+    status: 'demo_local',
+    server: 'ImportAIAgent Cotizador - servidor minimo',
+    timestamp: new Date().toISOString(),
   });
 });
 
-// Endpoint de dashboard
 app.get('/api/dashboard', (req, res) => {
   res.json({
-    kpis: {
-      totalCotizaciones: { valor: 156, variacion: 12.5, tendencia: 'up' },
-      totalDolares: { valor: 2450000, variacion: 8.3, tendencia: 'up' },
-      ticketPromedio: { valor: 1960, variacion: -3.2, tendencia: 'down' },
-      paisesActivos: { valor: 15, variacion: 2, tendencia: 'up' }
-    },
-    graficos: {
-      evolucionMensual: {
-        tipo: 'line',
-        titulo: 'Evolución de Cotizaciones',
-        datos: [
-          { mes: 'Ene', cotizaciones: 180 },
-          { mes: 'Feb', cotizaciones: 220 },
-          { mes: 'Mar', cotizaciones: 195 }
-        ]
-      }
-    }
+    source: 'demo_local',
+    nota: 'Servidor minimo: dashboard no conectado a datos reales.',
+    kpis: {},
+    graficos: {},
   });
 });
 
-// Endpoint de membresías
 app.get('/api/membresias/estadisticas', (req, res) => {
   res.json({
-    total: 150,
-    porNivel: {
-      gratis: 100,
-      premium: 40,
-      vip: 10
-    },
-    ingresosMes: 1599.60
+    source: 'demo_local',
+    total: null,
+    porNivel: {},
+    ingresosMes: null,
+    nota: 'Servidor minimo: estadisticas de membresias no conectadas a datos reales.',
   });
 });
 
-// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`✅ Servidor escuchando en http://localhost:${PORT}`);
-  console.log(`✅ API: http://localhost:${PORT}/api`);
-  console.log(`✅ Health: http://localhost:${PORT}/api/health`);
-  console.log(`✅ Dashboard: http://localhost:${PORT}/api/dashboard`);
-  console.log("\n=== SERVIDOR LISTO ===\n");
-  console.log("Abre tu navegador en: http://localhost:" + PORT);
-  console.log("O prueba: curl http://localhost:" + PORT + "/api/health\n");
+  console.log(`Servidor demo_local minimo escuchando en http://localhost:${PORT}`);
+  console.log(`API demo: http://localhost:${PORT}/api`);
+  console.log(`Health demo: http://localhost:${PORT}/api/health`);
+  console.log(`Dashboard demo: http://localhost:${PORT}/api/dashboard`);
+  console.log('\n=== SERVIDOR DEMO DISPONIBLE ===\n');
+  console.log(`Abre el dashboard demo local en: http://localhost:${PORT}`);
+  console.log(`O prueba el health demo: curl http://localhost:${PORT}/api/health\n`);
 });

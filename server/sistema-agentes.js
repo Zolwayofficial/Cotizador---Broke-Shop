@@ -25,6 +25,7 @@ class SistemaUnificadoDeAgentes {
     };
 
     this.inicializado = false;
+    this._initPromise = null;
   }
 
   _buildRegistroAgentes() {
@@ -66,7 +67,7 @@ class SistemaUnificadoDeAgentes {
     if (!this.inicializado) {
       return {
         agentes_activos: agentesActivos,
-        memoria: 'Pendiente de inicializacion',
+        memoria: 'Pendiente de preparacion',
         total_agentes: agentesActivos.length,
       };
     }
@@ -76,7 +77,7 @@ class SistemaUnificadoDeAgentes {
     } catch (error) {
       return {
         agentes_activos: agentesActivos,
-        memoria: 'Inicializada con advertencias',
+        memoria: 'Preparada con advertencias',
         total_agentes: agentesActivos.length,
         error: error.message,
       };
@@ -86,7 +87,7 @@ class SistemaUnificadoDeAgentes {
   _obtenerEstadisticasAutoRepair() {
     if (!this.inicializado || !autoRepair.getEstadisticas) {
       return {
-        estado: 'Pendiente de inicializacion',
+        estado: 'Pendiente de preparacion',
       };
     }
 
@@ -94,7 +95,7 @@ class SistemaUnificadoDeAgentes {
       return autoRepair.getEstadisticas();
     } catch (error) {
       return {
-        estado: 'Inicializado con advertencias',
+        estado: 'Preparado con advertencias',
         error: error.message,
       };
     }
@@ -102,33 +103,44 @@ class SistemaUnificadoDeAgentes {
 
   async inicializar() {
     if (this.inicializado) {
-      console.log('[SISTEMA AGENTES] OK Ya inicializado');
+      console.log('[SISTEMA AGENTES] Inicializacion ya completada');
       return;
     }
 
-    const registro = this.obtenerRegistroAgentes();
-    console.log(`[SISTEMA AGENTES] Inicializando ${registro.total} agentes...`);
-
-    try {
-      await agentesNavegacion.init();
-      console.log(`   OK ${registro.resumen.navegacion} Agentes de Navegacion: ${registro.navegacion.map((agent) => agent.nombre).join(', ')}`);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      await autoRepair.init();
-      console.log('   OK Auto-Repair: Agentes que se autocorrigen');
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      this.agentes.registro = this.obtenerRegistroAgentes();
-      this.agentes.total = this.agentes.registro.total;
-      this.inicializado = true;
-
-      console.log(`[SISTEMA AGENTES] OK ${this.agentes.total} agentes inicializados\n`);
-    } catch (error) {
-      console.error('[SISTEMA AGENTES] Error:', error.message);
-      throw error;
+    if (this._initPromise) {
+      await this._initPromise;
+      return;
     }
+
+    this._initPromise = (async () => {
+      const registro = this.obtenerRegistroAgentes();
+      console.log(`[SISTEMA AGENTES] Inicializando ${registro.total} agentes...`);
+
+      try {
+        await agentesNavegacion.init();
+        console.log(`   Navegacion inicializada: ${registro.resumen.navegacion} agentes registrados: ${registro.navegacion.map((agent) => agent.nombre).join(', ')}`);
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        await autoRepair.init();
+        console.log('   Auto-Repair preparado para autocorreccion');
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        this.agentes.registro = this.obtenerRegistroAgentes();
+        this.agentes.total = this.agentes.registro.total;
+        this.inicializado = true;
+
+        console.log(`[SISTEMA AGENTES] Inicializacion completada para ${this.agentes.total} agentes\n`);
+      } catch (error) {
+        console.error('[SISTEMA AGENTES] Error:', error.message);
+        throw error;
+      } finally {
+        this._initPromise = null;
+      }
+    })();
+
+    await this._initPromise;
   }
 
   obtenerEstadisticas() {
@@ -144,38 +156,54 @@ class SistemaUnificadoDeAgentes {
     };
   }
 
-  async consultarGobierno(tipo, datos) {
+  async consultarGobierno(tipo, datos = {}) {
     if (!this.inicializado) {
       await this.inicializar();
     }
 
-    switch (tipo) {
+    switch (String(tipo || '').trim().toLowerCase()) {
     case 'tipo_cambio':
       return await agentesNavegacion.SUNAT.consultarTipoCambio();
 
     case 'arancel':
-      return await agentesNavegacion.SUNAT.consultarArancel(datos.partida);
+      return await agentesNavegacion.SUNAT.consultarArancel(this._requireDato(datos, 'partida', tipo));
 
     case 'restricciones':
-      return await agentesNavegacion.VUCE.consultarRestricciones(datos.partida, datos.pais);
+      return await agentesNavegacion.VUCE.consultarRestricciones(
+        this._requireDato(datos, 'partida', tipo),
+        this._requireDato(datos, 'pais', tipo)
+      );
 
     case 'antidumping':
-      return await agentesNavegacion.INDECOPI.consultarAntidumping(datos.producto, datos.pais);
+      return await agentesNavegacion.INDECOPI.consultarAntidumping(
+        this._requireDato(datos, 'producto', tipo),
+        this._requireDato(datos, 'pais', tipo)
+      );
 
     case 'homologacion':
-      return await agentesNavegacion.MTC.consultarHomologacion(datos.producto, datos.marca, datos.modelo);
+      return await agentesNavegacion.MTC.consultarHomologacion(
+        this._requireDato(datos, 'producto', tipo),
+        this._requireDato(datos, 'marca', tipo),
+        this._requireDato(datos, 'modelo', tipo)
+      );
 
     case 'registro_sanitario':
-      return await agentesNavegacion.DIGESA.consultarRegistroSanitario(datos.producto, datos.laboratorio);
+      return await agentesNavegacion.DIGESA.consultarRegistroSanitario(
+        this._requireDato(datos, 'producto', tipo),
+        this._requireDato(datos, 'laboratorio', tipo)
+      );
 
     case 'permiso_fitosanitario':
-      return await agentesNavegacion.SENASA.consultarPermisoFitosanitario(datos.producto, datos.pais);
+      return await agentesNavegacion.SENASA.consultarPermisoFitosanitario(
+        this._requireDato(datos, 'producto', tipo),
+        this._requireDato(datos, 'pais', tipo)
+      );
 
     case 'permiso_ambiental':
-      return await agentesNavegacion.MINAM.consultarPermisoAmbiental(datos.producto);
+      return await agentesNavegacion.MINAM.consultarPermisoAmbiental(this._requireDato(datos, 'producto', tipo));
 
     case 'permiso_pesca':
-      return await agentesNavegacion.PRODUCE.consultarPermisoPesca(datos.producto);
+      return await agentesNavegacion.PRODUCE.consultarPermisoPesca(this._requireDato(datos, 'producto', tipo));
 
     default:
       throw new Error(`Tipo de consulta no reconocido: ${tipo}`);
@@ -193,62 +221,102 @@ class SistemaUnificadoDeAgentes {
       pais,
       permisos: [],
       alertas: [],
+      errores_fuente: [],
     };
 
-    const mtc = await agentesNavegacion.MTC.detectarSiRequiereHomologacion(producto, categoria);
-    if (mtc.requiereHomologacion) {
-      requisitos.permisos.push({
-        entidad: 'MTC',
-        tramite: 'Certificado de Homologacion',
-        obligatorio: true,
-      });
-    }
+    const categoriaNormalizada = categoria || '';
+    const paisNormalizado = pais || '';
 
-    const digesa = await agentesNavegacion.DIGESA.detectarSiRequiereRegistro(producto, categoria);
-    if (digesa.requiereRegistroSanitario) {
-      requisitos.permisos.push({
-        entidad: 'DIGESA',
-        tramite: 'Registro Sanitario',
-        obligatorio: true,
-      });
-    }
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'mtc',
+      async () => agentesNavegacion.MTC.detectarSiRequiereHomologacion(producto, categoriaNormalizada),
+      (mtc) => {
+        if (mtc?.requiereHomologacion) {
+          requisitos.permisos.push({
+            entidad: 'MTC',
+            tramite: 'Certificado de Homologacion',
+            obligatorio: true,
+          });
+        }
+      }
+    );
 
-    const senasa = await agentesNavegacion.SENASA.detectarSiRequierePermiso(producto, categoria, pais);
-    if (senasa.requierePermisoFitosanitario) {
-      requisitos.permisos.push({
-        entidad: 'SENASA',
-        tramite: 'Permiso Fitosanitario',
-        obligatorio: true,
-      });
-    }
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'digesa',
+      async () => agentesNavegacion.DIGESA.detectarSiRequiereRegistro(producto, categoriaNormalizada),
+      (digesa) => {
+        if (digesa?.requiereRegistroSanitario) {
+          requisitos.permisos.push({
+            entidad: 'DIGESA',
+            tramite: 'Registro Sanitario',
+            obligatorio: true,
+          });
+        }
+      }
+    );
 
-    const minam = await agentesNavegacion.MINAM.detectarSiRequierePermiso(producto, categoria);
-    if (minam.requierePermisoAmbiental) {
-      requisitos.permisos.push({
-        entidad: 'MINAM',
-        tramite: 'Permiso Ambiental',
-        obligatorio: true,
-      });
-    }
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'senasa',
+      async () => agentesNavegacion.SENASA.detectarSiRequierePermiso(producto, categoriaNormalizada, paisNormalizado),
+      (senasa) => {
+        if (senasa?.requierePermisoFitosanitario) {
+          requisitos.permisos.push({
+            entidad: 'SENASA',
+            tramite: 'Permiso Fitosanitario',
+            obligatorio: true,
+          });
+        }
+      }
+    );
 
-    const producePesca = await agentesNavegacion.PRODUCE.detectarSiRequierePermisoPesca(producto, categoria);
-    if (producePesca.esPesquero) {
-      requisitos.permisos.push({
-        entidad: 'PRODUCE-SANIPES',
-        tramite: 'Permiso de Importacion de Productos Pesqueros',
-        obligatorio: true,
-      });
-    }
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'minam',
+      async () => agentesNavegacion.MINAM.detectarSiRequierePermiso(producto, categoriaNormalizada),
+      (minam) => {
+        if (minam?.requierePermisoAmbiental) {
+          requisitos.permisos.push({
+            entidad: 'MINAM',
+            tramite: 'Permiso Ambiental',
+            obligatorio: true,
+          });
+        }
+      }
+    );
 
-    const indecopi = await agentesNavegacion.INDECOPI.consultarAntidumping(producto, pais);
-    if (indecopi.tieneAntidumping) {
-      requisitos.alertas.push({
-        tipo: 'antidumping',
-        entidad: 'INDECOPI',
-        mensaje: `Antidumping aplicado: ${indecopi.tasa}%`,
-        nivel: 'alto',
-      });
-    }
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'produce',
+      async () => agentesNavegacion.PRODUCE.detectarSiRequierePermisoPesca(producto, categoriaNormalizada),
+      (producePesca) => {
+        if (producePesca?.esPesquero) {
+          requisitos.permisos.push({
+            entidad: 'PRODUCE-SANIPES',
+            tramite: 'Permiso de Importacion de Productos Pesqueros',
+            obligatorio: true,
+          });
+        }
+      }
+    );
+
+    await this._ejecutarConsultaSegura(
+      requisitos.errores_fuente,
+      'indecopi',
+      async () => agentesNavegacion.INDECOPI.consultarAntidumping(producto, paisNormalizado),
+      (indecopi) => {
+        if (indecopi?.tieneAntidumping) {
+          requisitos.alertas.push({
+            tipo: 'antidumping',
+            entidad: 'INDECOPI',
+            mensaje: `Antidumping aplicado: ${indecopi.tasa}%`,
+            nivel: 'alto',
+          });
+        }
+      }
+    );
 
     return requisitos;
   }
@@ -269,22 +337,86 @@ class SistemaUnificadoDeAgentes {
       antidumping: null,
       permisos_requeridos: [],
       alertas: [],
+      errores_fuente: [],
     };
 
-    try {
-      reporte.arancel = await agentesNavegacion.SUNAT.consultarArancel(partida);
-      reporte.tipo_cambio = await agentesNavegacion.SUNAT.consultarTipoCambio();
-      reporte.restricciones = await agentesNavegacion.VUCE.consultarRestricciones(partida, pais);
-      reporte.antidumping = await agentesNavegacion.INDECOPI.consultarAntidumping(producto, pais);
+    await this._ejecutarConsultaSegura(
+      reporte.errores_fuente,
+      'arancel',
+      async () => agentesNavegacion.SUNAT.consultarArancel(partida),
+      (value) => {
+        reporte.arancel = value;
+      }
+    );
+    await this._ejecutarConsultaSegura(
+      reporte.errores_fuente,
+      'tipo_cambio',
+      async () => agentesNavegacion.SUNAT.consultarTipoCambio(),
+      (value) => {
+        reporte.tipo_cambio = value;
+      }
+    );
+    await this._ejecutarConsultaSegura(
+      reporte.errores_fuente,
+      'restricciones',
+      async () => agentesNavegacion.VUCE.consultarRestricciones(partida, pais),
+      (value) => {
+        reporte.restricciones = value;
+      }
+    );
+    await this._ejecutarConsultaSegura(
+      reporte.errores_fuente,
+      'antidumping',
+      async () => agentesNavegacion.INDECOPI.consultarAntidumping(producto, pais),
+      (value) => {
+        reporte.antidumping = value;
+      }
+    );
+    await this._ejecutarConsultaSegura(
+      reporte.errores_fuente,
+      'requisitos',
+      async () => this.detectarRequisitos(producto, '', pais),
+      (requisitos) => {
+        reporte.permisos_requeridos = requisitos.permisos || [];
+        reporte.alertas = requisitos.alertas || [];
+        if (Array.isArray(requisitos.errores_fuente) && requisitos.errores_fuente.length > 0) {
+          reporte.errores_fuente.push(
+            ...requisitos.errores_fuente.map((item) => ({
+              fuente: `requisitos:${item.fuente}`,
+              error: item.error,
+            }))
+          );
+        }
+      }
+    );
 
-      const requisitos = await this.detectarRequisitos(producto, '', pais);
-      reporte.permisos_requeridos = requisitos.permisos;
-      reporte.alertas = requisitos.alertas;
-    } catch (error) {
-      reporte.error = error.message;
+    if (!reporte.arancel && !reporte.tipo_cambio && !reporte.restricciones && !reporte.antidumping && reporte.errores_fuente.length > 0) {
+      reporte.error = 'No se pudo completar ninguna consulta oficial';
     }
 
     return reporte;
+  }
+
+  _requireDato(datos, campo, tipo) {
+    const valor = datos?.[campo];
+    if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) {
+      throw new Error(`Falta "${campo}" para la consulta ${tipo}`);
+    }
+    return typeof valor === 'string' ? valor.trim() : valor;
+  }
+
+  async _ejecutarConsultaSegura(errores, fuente, consulta, onSuccess) {
+    try {
+      const result = await consulta();
+      onSuccess(result);
+      return result;
+    } catch (error) {
+      errores.push({
+        fuente,
+        error: error.message,
+      });
+      return null;
+    }
   }
 }
 

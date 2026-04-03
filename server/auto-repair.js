@@ -4,8 +4,75 @@ const dbApi = require('./db');
 
 let initialized = false;
 
+function normalizeText(value) {
+  return String(value ?? '').trim();
+}
+
 function buildKnowledgeKey(agente, clave) {
-  return `${agente}::${clave}`;
+  return `${normalizeText(agente)}::${normalizeText(clave)}`;
+}
+
+function safeStringify(value, fallback = 'null') {
+  try {
+    const seen = new WeakSet();
+    const serialized = JSON.stringify(value, (_key, currentValue) => {
+      if (typeof currentValue === 'bigint') {
+        return currentValue.toString();
+      }
+
+      if (typeof currentValue === 'function') {
+        return `[Function ${currentValue.name || 'anonymous'}]`;
+      }
+
+      if (currentValue && typeof currentValue === 'object') {
+        if (seen.has(currentValue)) {
+          return '[Circular]';
+        }
+        seen.add(currentValue);
+      }
+
+      return currentValue;
+    });
+
+    return serialized === undefined ? fallback : serialized;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function normalizePositiveInteger(value, fallback = 1) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function normalizeConfidence(value, fallback = 1.0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  if (parsed < 0) return 0;
+  if (parsed > 1) return 1;
+  return parsed;
+}
+
+function ensureDbInitialized() {
+  if (typeof dbApi.raw === 'function' && dbApi.raw()) {
+    return true;
+  }
+
+  throw new Error('Base de datos no inicializada. Ejecuta db.init() antes de auto-repair.init().');
+}
+
+function normalizeDays(value, fallback = 30) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
 }
 
 function isDbReady() {
@@ -14,6 +81,7 @@ function isDbReady() {
 
 async function init() {
   if (initialized) return;
+  ensureDbInitialized();
 
   dbApi.exec(`
     CREATE TABLE IF NOT EXISTS agent_failures (
@@ -78,7 +146,7 @@ async function init() {
   dbApi.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_patterns_unique ON agent_patterns(agente, patron)');
 
   initialized = true;
-  console.log('[AUTO-REPAIR] Base de datos inicializada');
+  console.log('[AUTO-REPAIR] Base de datos preparada');
 }
 
 function dbAll(sql, params = []) {
@@ -93,30 +161,32 @@ function dbGet(sql, params = []) {
 
 function dbRun(sql, params = []) {
   if (!isDbReady()) return { changes: 0, lastInsertRowid: 0 };
-  dbApi.run(sql, params);
-  const lastInsert = dbApi.get('SELECT last_insert_rowid() AS id');
-  return { changes: 0, lastInsertRowid: lastInsert?.id || 0 };
+  return dbApi.run(sql, params);
 }
 
 function registrarFallo(agente, error, contexto = {}) {
   if (!isDbReady()) return null;
   try {
+    const agenteNormalizado = normalizeText(agente) || 'desconocido';
+    const errorType = normalizeText(error?.type) || 'unknown';
+    const errorMessage = normalizeText(error?.message) || safeStringify(error, '"Error desconocido"').replace(/^"|"$/g, '');
+    const intento = normalizePositiveInteger(error?.intento, 1);
     const failureId = dbRun(
       `
         INSERT INTO agent_failures (agente, error_type, error_message, contexto, intento_numero)
         VALUES (?, ?, ?, ?, ?)
       `,
       [
-        agente,
-        error.type || 'unknown',
-        error.message || JSON.stringify(error),
-        JSON.stringify(contexto),
-        error.intento || 1,
+        agenteNormalizado,
+        errorType,
+        errorMessage,
+        safeStringify(contexto, '{}'),
+        intento,
       ]
     ).lastInsertRowid;
 
-    console.log(`[AUTO-REPAIR] ${agente} fallo: ${error.message || 'Error desconocido'}`);
-    verificarPatronRepetitivo(agente, error.type || 'unknown');
+    console.log(`[AUTO-REPAIR] ${agenteNormalizado} fallo: ${errorMessage || 'Error desconocido'}`);
+    verificarPatronRepetitivo(agenteNormalizado, errorType);
     return failureId;
   } catch (e) {
     console.error('[AUTO-REPAIR] Error registrando fallo:', e.message);
@@ -126,6 +196,7 @@ function registrarFallo(agente, error, contexto = {}) {
 
 function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
   if (!isDbReady()) return false;
+  if (!Number.isFinite(Number(failureId)) || Number(failureId) <= 0) return false;
   try {
     dbRun(
       `
@@ -136,7 +207,7 @@ function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
     );
 
     if (funciono) {
-      aprenderPatronExitoso(failureId, solucion);
+      aprenderPatronAplicado(failureId, solucion);
       console.log(`[AUTO-REPAIR] Solucion registrada: ${solucion}`);
     }
 
@@ -150,6 +221,10 @@ function registrarSolucion(failureId, solucion, funciono, tiempoEjecucion) {
 function obtenerSolucionesPrevias(agente, errorType) {
   if (!isDbReady()) return [];
   try {
+    const agenteNormalizado = normalizeText(agente);
+    const errorTypeNormalizado = normalizeText(errorType);
+    if (!agenteNormalizado || !errorTypeNormalizado) return [];
+
     const results = dbAll(
       `
         SELECT s.solucion, s.tiempo_ejecucion_ms, COUNT(*) as veces_usado,
@@ -162,11 +237,11 @@ function obtenerSolucionesPrevias(agente, errorType) {
         ORDER BY exit_rate DESC, veces_usado DESC
         LIMIT 5
       `,
-      [agente, errorType]
+      [agenteNormalizado, errorTypeNormalizado]
     );
 
     if (results.length > 0) {
-      console.log(`[AUTO-REPAIR] ${agente}: ${results.length} solucion(es) previas para ${errorType}`);
+      console.log(`[AUTO-REPAIR] ${agenteNormalizado}: ${results.length} solucion(es) previas para ${errorTypeNormalizado}`);
     }
 
     return results;
@@ -179,6 +254,10 @@ function obtenerSolucionesPrevias(agente, errorType) {
 function verificarPatronRepetitivo(agente, errorType) {
   if (!isDbReady()) return;
   try {
+    const agenteNormalizado = normalizeText(agente);
+    const errorTypeNormalizado = normalizeText(errorType);
+    if (!agenteNormalizado || !errorTypeNormalizado) return;
+
     const count = dbGet(
       `
         SELECT COUNT(*) as count
@@ -186,11 +265,11 @@ function verificarPatronRepetitivo(agente, errorType) {
         WHERE agente = ? AND error_type = ?
           AND created_at > datetime('now', '-1 hour')
       `,
-      [agente, errorType]
+      [agenteNormalizado, errorTypeNormalizado]
     );
 
     if (count && count.count >= 5) {
-      console.warn(`[AUTO-REPAIR] Patron detectado: ${agente} falla ${errorType} ${count.count} veces en 1 hora`);
+      console.warn(`[AUTO-REPAIR] Patron detectado: ${agenteNormalizado} falla ${errorTypeNormalizado} ${count.count} veces en 1 hora`);
 
       dbRun(
         `
@@ -200,7 +279,7 @@ function verificarPatronRepetitivo(agente, errorType) {
             frecuencia = frecuencia + 1,
             updated_at = datetime('now')
         `,
-        [agente, errorType]
+        [agenteNormalizado, errorTypeNormalizado]
       );
     }
   } catch (e) {
@@ -208,7 +287,7 @@ function verificarPatronRepetitivo(agente, errorType) {
   }
 }
 
-function aprenderPatronExitoso(failureId, solucion) {
+function aprenderPatronAplicado(failureId, solucion) {
   if (!isDbReady()) return;
   try {
     const failure = dbGet('SELECT * FROM agent_failures WHERE id = ?', [failureId]);
@@ -235,6 +314,9 @@ function aprenderPatronExitoso(failureId, solucion) {
 function obtenerPatrones(agente) {
   if (!isDbReady()) return [];
   try {
+    const agenteNormalizado = normalizeText(agente);
+    if (!agenteNormalizado) return [];
+
     return dbAll(
       `
         SELECT patron, solucion_recomendada, frecuencia, exit_rate
@@ -243,7 +325,7 @@ function obtenerPatrones(agente) {
         ORDER BY frecuencia DESC
         LIMIT 10
       `,
-      [agente]
+      [agenteNormalizado]
     );
   } catch (e) {
     console.error('[AUTO-REPAIR] Error obteniendo patrones:', e.message);
@@ -254,7 +336,11 @@ function obtenerPatrones(agente) {
 function guardarConocimiento(agente, clave, valor, confianza = 1.0) {
   if (!isDbReady()) return;
   try {
-    const storageKey = buildKnowledgeKey(agente, clave);
+    const agenteNormalizado = normalizeText(agente);
+    const claveNormalizada = normalizeText(clave);
+    if (!agenteNormalizado || !claveNormalizada) return;
+
+    const storageKey = buildKnowledgeKey(agenteNormalizado, claveNormalizada);
     dbRun(
       `
         INSERT INTO agent_knowledge (agente, clave, valor, confianza)
@@ -266,7 +352,7 @@ function guardarConocimiento(agente, clave, valor, confianza = 1.0) {
           veces_usado = veces_usado + 1,
           updated_at = datetime('now')
       `,
-      [agente, storageKey, JSON.stringify(valor), confianza]
+      [agenteNormalizado, storageKey, safeStringify(valor), normalizeConfidence(confianza)]
     );
   } catch (e) {
     console.error('[AUTO-REPAIR] Error guardando conocimiento:', e.message);
@@ -276,14 +362,18 @@ function guardarConocimiento(agente, clave, valor, confianza = 1.0) {
 function obtenerConocimiento(agente, clave) {
   if (!isDbReady()) return null;
   try {
-    const storageKey = buildKnowledgeKey(agente, clave);
+    const agenteNormalizado = normalizeText(agente);
+    const claveNormalizada = normalizeText(clave);
+    if (!agenteNormalizado || !claveNormalizada) return null;
+
+    const storageKey = buildKnowledgeKey(agenteNormalizado, claveNormalizada);
     const row = dbGet(
       `
         SELECT valor, confianza, veces_usado
         FROM agent_knowledge
         WHERE agente = ? AND clave = ? AND confianza > 0.7
       `,
-      [agente, storageKey]
+      [agenteNormalizado, storageKey]
     );
 
     if (!row) return null;
@@ -295,7 +385,7 @@ function obtenerConocimiento(agente, clave) {
             ultima_verificacion = datetime('now')
         WHERE agente = ? AND clave = ?
       `,
-      [agente, storageKey]
+      [agenteNormalizado, storageKey]
     );
 
     return {
@@ -311,6 +401,7 @@ function obtenerConocimiento(agente, clave) {
 async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
   const startTime = Date.now();
   const maxIntentos = 3;
+  let pendingRetry = null;
 
   for (let intento = 1; intento <= maxIntentos; intento += 1) {
     try {
@@ -324,6 +415,11 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
       const resultado = await funcion();
       const duracion = Date.now() - startTime;
 
+      if (pendingRetry) {
+        registrarSolucion(pendingRetry.failureId, pendingRetry.solucion, true, duracion);
+        pendingRetry = null;
+      }
+
       guardarConocimiento(agente, 'ultimo_exito', {
         contexto: Object.keys(contexto),
         duracion_promedio: duracion,
@@ -332,6 +428,12 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
       return resultado;
     } catch (error) {
       const duracion = Date.now() - startTime;
+
+      if (pendingRetry) {
+        registrarSolucion(pendingRetry.failureId, pendingRetry.solucion, false, duracion);
+        pendingRetry = null;
+      }
+
       const failureId = registrarFallo(
         agente,
         {
@@ -359,7 +461,12 @@ async function ejecutarConAutoReparacion(agente, funcion, contexto = {}) {
         throw error;
       }
 
-      registrarSolucion(failureId, `reintento_${intento}`, true, duracion);
+      if (failureId) {
+        pendingRetry = {
+          failureId,
+          solucion: `reintento_${intento}`,
+        };
+      }
       await new Promise((resolve) => setTimeout(resolve, 100 * Math.pow(2, intento)));
     }
   }
@@ -370,7 +477,7 @@ function getEstadisticas() {
   try {
     const fallosTotales = Number(dbGet('SELECT COUNT(*) as count FROM agent_failures')?.count || 0);
     const solucionesTotales = Number(dbGet('SELECT COUNT(*) as count FROM agent_solutions')?.count || 0);
-    const solucionesExitosas = Number(dbGet('SELECT COUNT(*) as count FROM agent_solutions WHERE funciono = 1')?.count || 0);
+    const solucionesAplicadas = Number(dbGet('SELECT COUNT(*) as count FROM agent_solutions WHERE funciono = 1')?.count || 0);
     const patrones = Number(dbGet('SELECT COUNT(*) as count FROM agent_patterns')?.count || 0);
     const conocimiento = Number(dbGet('SELECT COUNT(*) as count FROM agent_knowledge')?.count || 0);
 
@@ -385,13 +492,15 @@ function getEstadisticas() {
       LIMIT 10
     `);
 
-    const tasaExito = solucionesTotales > 0 ? ((solucionesExitosas / solucionesTotales) * 100).toFixed(2) : 0;
+    const tasaExito = solucionesTotales > 0
+      ? `${((solucionesAplicadas / solucionesTotales) * 100).toFixed(2)}%`
+      : null;
 
     return {
       fallos_totales: fallosTotales,
       soluciones_totales: solucionesTotales,
-      soluciones_exitosas: solucionesExitosas,
-      tasa_exito: `${tasaExito}%`,
+      soluciones_aplicadas: solucionesAplicadas,
+      tasa_exito: tasaExito,
       patrones_aprendidos: patrones,
       conocimientos_guardados: conocimiento,
       fallos_por_agente: fallosPorAgente,
@@ -405,7 +514,8 @@ function getEstadisticas() {
 function limpiarDatosAntiguos(dias = 30) {
   if (!isDbReady()) return null;
   try {
-    const threshold = `-${dias}`;
+    const safeDays = normalizeDays(dias, 30);
+    const threshold = `-${safeDays}`;
     const fallosAntes = Number(
       dbGet('SELECT COUNT(*) as count FROM agent_failures WHERE created_at < datetime(\'now\', ? || \' days\')', [threshold])?.count || 0
     );
@@ -447,4 +557,12 @@ module.exports = {
   dbAll,
   dbGet,
   dbRun,
+  _private: {
+    ensureDbInitialized,
+    normalizeConfidence,
+    normalizeDays,
+    normalizePositiveInteger,
+    normalizeText,
+    safeStringify,
+  },
 };

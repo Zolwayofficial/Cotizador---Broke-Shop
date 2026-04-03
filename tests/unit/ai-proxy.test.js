@@ -1,4 +1,8 @@
 const { EventEmitter } = require('events');
+const fs = require('fs');
+const path = require('path');
+
+const AI_PROXY_SOURCE_PATH = path.resolve(__dirname, '../../server/ai-proxy.js');
 
 function buildHttpsMock(sequence, seenBodies) {
   return {
@@ -21,7 +25,9 @@ function buildHttpsMock(sequence, seenBodies) {
 
         process.nextTick(() => {
           callback(res);
-          if (current.body !== null) {
+          if (current.rawBody !== undefined) {
+            res.emit('data', Buffer.from(String(current.rawBody)));
+          } else if (current.body !== null) {
             res.emit('data', Buffer.from(JSON.stringify(current.body)));
           }
           res.emit('end');
@@ -67,5 +73,44 @@ describe('ai-proxy', () => {
     expect(result.text).toBe('respuesta-ok');
     expect(result.model).toBe('model-secondary');
     expect(seenBodies.map((body) => body.model)).toEqual(['model-primary', 'model-secondary']);
+  });
+
+  it('expone un error mas preciso cuando el proveedor devuelve body no JSON', async () => {
+    const seenBodies = [];
+    const httpsMock = buildHttpsMock(
+      [
+        {
+          statusCode: 502,
+          rawBody: 'upstream html error',
+        },
+      ],
+      seenBodies
+    );
+
+    jest.doMock('https', () => httpsMock);
+    jest.doMock('../../server/auto-repair', () => ({
+      ejecutarConAutoReparacion: jest.fn(async (_agent, fn) => await fn()),
+    }));
+
+    const aiProxy = require('../../server/ai-proxy');
+
+    await expect(aiProxy.call([{ role: 'user', content: 'hola' }], 'groq', 'model-primary')).rejects.toMatchObject({
+      message: 'Respuesta no interpretable del proveedor',
+      statusCode: 502,
+      rawBody: 'upstream html error',
+    });
+
+    expect(seenBodies.map((body) => body.model)).toEqual(['model-primary']);
+  });
+
+  it('prioriza un modelo fallback explicito sin seguir vendiendolo como unlimited', () => {
+    const content = fs.readFileSync(AI_PROXY_SOURCE_PATH, 'utf8');
+
+    expect(content).toContain('const DEFAULT_FALLBACK_MODEL =');
+    expect(content).toContain('process.env.GROQ_MODEL_FALLBACK');
+    expect(content).toContain('process.env.GROQ_MODEL_UNLIMITED');
+    expect(content).toContain("new Error('Respuesta no interpretable del proveedor')");
+    expect(content).not.toContain('const DEFAULT_UNLIMITED_MODEL =');
+    expect(content).not.toContain("new Error('Invalid response')");
   });
 });

@@ -1,3 +1,5 @@
+const fs = require("fs");
+const path = require("path");
 const { describe, it, expect } = require("@jest/globals");
 
 function loadDashboardService(rows = []) {
@@ -109,7 +111,30 @@ describe("Dashboard Service", () => {
 
       expect(analisis).toBeDefined();
       expect(Array.isArray(analisis.insights)).toBe(true);
+      expect(analisis.recomendacion).toBe(
+        "Empieza con una cotizacion real y revisa el flujo completo antes de produccion."
+      );
     });
+  });
+
+  it("usa revision del flujo en el fallback del dashboard y no revive wording anterior", () => {
+    const content = fs.readFileSync(
+      path.join(__dirname, "..", "..", "server", "dashboard", "dashboard-service.js"),
+      "utf8"
+    );
+
+    expect(content).toContain(
+      "Empieza con una cotizacion real y revisa el flujo completo antes de produccion."
+    );
+    expect(content).toContain(
+      "Sin cotizaciones guardadas todavia; el dashboard esta en estado vacio."
+    );
+    expect(content).not.toContain(
+      "Empieza con una cotizacion real y valida el flujo completo antes de produccion."
+    );
+    expect(content).not.toContain(
+      "Sin datos historicos todavia; el dashboard esta en estado vacio."
+    );
   });
 
   describe("sugerirGraficos()", () => {
@@ -132,7 +157,7 @@ describe("Dashboard Service", () => {
   });
 
   describe("generarSQL()", () => {
-    it("genera un fallback SQL valido", async () => {
+    it("genera un fallback SQL utilizable", async () => {
       const dashboardService = loadDashboardService([]);
       const sql = await dashboardService.generarSQL("Obtener todas las cotizaciones", {
         tablas: {

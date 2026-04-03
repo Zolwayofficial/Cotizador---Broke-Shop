@@ -42,7 +42,7 @@ describe('alertas-normativas', () => {
       'restriccion',
       'SUNAT',
       'Nueva restriccion para vinos',
-      'Validar permisos especiales',
+      'Revisar permisos especiales',
       { nivel: 'critico', pais_afectado: 'ES' }
     );
 
@@ -67,5 +67,23 @@ describe('alertas-normativas', () => {
     expect(alertas.obtenerEstadisticas().criticas).toBe(1);
     expect(alertas.limpiarAlertasAntiguas(365)).toBe(0);
     expect(alertas.limpiarAlertasLeidas().eliminadas).toBe(1);
+  });
+
+  it('no marca como leida una alerta inexistente y revisa el email de suscripcion', async () => {
+    const db = require('../../server/db');
+    await db.init();
+    const alertas = require('../../server/alertas-normativas');
+    await alertas.init();
+
+    expect(alertas.marcarAlertaLeida(99999)).toBe(false);
+    expect(() => alertas.suscribirAlertas('   ', ['restriccion'])).toThrow('Email requerido');
+    expect(alertas._private.normalizeDays(-5, 90)).toBe(90);
+  });
+
+  it('mantiene el source con wording honesto de inicializacion', () => {
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'alertas-normativas.js'), 'utf8');
+
+    expect(content).toContain('[ALERTAS] Tablas preparadas');
+    expect(content).not.toContain('[ALERTAS] Tablas listas');
   });
 });

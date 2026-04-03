@@ -1,75 +1,53 @@
 # URLs locales
 
-## Arranque correcto
+## Carpeta de trabajo actual
 
-El servidor local real de este proyecto corre en `http://localhost:3000` por defecto.
-
-Usa uno de estos comandos desde `C:\Users\Billy\AppData\Local\Programs\Antigravity\cotizador`:
-
-```powershell
-node server/index.js
+```text
+C:\Users\Billy\OneDrive\Documentos\Playground\Cotizador---Broke-Shop
 ```
 
-o:
+## Arranque recomendado
 
 ```powershell
 node start-local.js
 ```
 
-Tambien puedes abrir:
-
-```powershell
-arrancar-local.bat
-```
-
-## URLs principales
-
-Frontend y API:
-
-```text
-http://localhost:3000
-http://127.0.0.1:3000
-```
-
-Health check:
-
-```text
-http://localhost:3000/api/health
-```
-
-Dashboard:
-
-```text
-http://localhost:3000/api/dashboard
-```
-
-WebSocket:
-
-```text
-ws://localhost:3002
-```
-
-## Nota sobre puertos
-
-- `3000` es el puerto local por defecto del servidor Express.
-- `3002` es el puerto del WebSocket.
-- `3001` solo debe usarse si configuras `PORT=3001` en tu entorno o en produccion detras de Nginx.
-
-## Si el navegador muestra ERR_CONNECTION_REFUSED
-
-Eso significa que no hay ningun proceso escuchando en `localhost:3000`.
-
-Verifica primero:
+Alternativas utiles:
 
 ```powershell
 node server/index.js
+arrancar-local.bat
 ```
 
-Cuando en consola aparezca `Server:  http://localhost:3000`, recien abre el navegador.
+## Puertos
 
-## Pruebas rapidas
+- App HTTP: usa `PORT` si esta definido; si no, el valor local por defecto suele ser `3000`
+- WebSocket: usa `WS_PORT` si esta definido; si no, el valor local por defecto suele ser `3002`
+
+La referencia correcta siempre es el puerto que anuncia `start-local.js` al arrancar.
+
+## Rutas utiles
+
+Usa placeholders ligados al puerto real:
+
+```text
+BASE_URL=http://localhost:PUERTO_REAL
+WS_URL=ws://localhost:WS_PORT_REAL
+
+%BASE_URL%/
+%BASE_URL%/api/health
+%BASE_URL%/api/monitor/health
+%WS_URL%
+```
+
+Reemplaza `PUERTO_REAL` y `WS_PORT_REAL` por los valores anunciados por `start-local.js`.
+
+El dashboard y el panel admin requieren iniciar sesion; no debes probarlos como si fueran endpoints publicos sin token.
+
+## Smoke rapido
 
 ```powershell
-curl http://localhost:3000/api/health
-curl http://localhost:3000/api/dashboard
+curl %BASE_URL%/api/health
+curl %BASE_URL%/api/monitor/health
+node test-produccion.js
 ```

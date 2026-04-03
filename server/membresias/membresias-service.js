@@ -1,19 +1,19 @@
 // server/membresias/membresias-service.js
-// 
-// SERVICIO DE MEMBRESÍAS COMUNITARIAS
-// 
+//
+// SERVICIO DE MEMBRESIAS COMUNITARIAS
+//
 // Features:
-// - Registro con código de invitación
+// - Registro con codigo de invitacion
 // - Niveles: Gratis, Premium, VIP
-// - Validación de grupo
+// - Control de grupo
 // - Control de acceso
 // - Referidos
 
 const db = require('../db');
 
-// ═══════════════════════════════════════════════════
-// NIVELES DE MEMBRESÍA
-// ═══════════════════════════════════════════════════
+// --------------------------------------------------
+// NIVELES DE MEMBRESIA
+// --------------------------------------------------
 
 const NIVELES = {
   GRATIS: {
@@ -37,7 +37,7 @@ const NIVELES = {
   VIP: {
     nombre: 'VIP',
     precio: 99.99,
-    limiteCotizaciones: -1, // Ilimitado
+    limiteCotizaciones: -1,
     limiteConsultas: -1,
     accesoDashboard: true,
     accesoComunidad: true,
@@ -45,39 +45,54 @@ const NIVELES = {
   }
 };
 
-// ═══════════════════════════════════════════════════
-// SERVICIO DE MEMBRESÍAS
-// ═══════════════════════════════════════════════════
+// --------------------------------------------------
+// SERVICIO DE MEMBRESIAS
+// --------------------------------------------------
 
 class MembresiasService {
   constructor() {
-    // Las tablas se crean en db.js automáticamente
+    // Las tablas se crean en db.js automaticamente
   }
 
-  // ═══════════════════════════════════════════════════
-  // REGISTRAR USUARIO CON MEMBRESÍA
-  // ═══════════════════════════════════════════════════
+  _asegurarMembresiaBase(usuarioId) {
+    const membresia = db.get(`
+      SELECT * FROM membresias WHERE usuario_id = ?
+    `, [usuarioId]);
+
+    if (membresia) {
+      return membresia;
+    }
+
+    db.run(`
+      INSERT INTO membresias (usuario_id, nivel, activo)
+      VALUES (?, 'GRATIS', 1)
+    `, [usuarioId]);
+
+    return db.get(`
+      SELECT * FROM membresias WHERE usuario_id = ?
+    `, [usuarioId]);
+  }
+
+  // --------------------------------------------------
+  // REGISTRAR USUARIO CON MEMBRESIA
+  // --------------------------------------------------
 
   async registrarUsuario(email, password, nombre, codigoInvitacion = null) {
-    // Verificar código de invitación si es requerido
     if (codigoInvitacion) {
-      const codigoValido = await this._validarCodigoInvitacion(codigoInvitacion);
-      if (!codigoValido) {
-        throw new Error('Código de invitación inválido o expirado');
+      const codigoDisponible = await this._cargarCodigoInvitacionDisponible(codigoInvitacion);
+      if (!codigoDisponible) {
+        throw new Error('Codigo de invitacion no disponible o expirado');
       }
     }
 
-    // Registrar usuario (usando auth.js)
     const auth = require('../auth');
     const usuario = auth.register(email, password, nombre);
 
-    // Crear membresía
     db.run(`
       INSERT INTO membresias (usuario_id, nivel, codigo_invitacion, referido_por)
       VALUES (?, 'GRATIS', ?, ?)
     `, [usuario.id, codigoInvitacion, codigoInvitacion ? this._obtenerCreadorCodigo(codigoInvitacion) : null]);
 
-    // Actualizar usos del código
     if (codigoInvitacion) {
       this._incrementarUsoCodigo(codigoInvitacion);
     }
@@ -88,13 +103,13 @@ class MembresiasService {
     };
   }
 
-  // ═══════════════════════════════════════════════════
-  // VALIDAR CÓDIGO DE INVITACIÓN
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // REVISAR CODIGO DE INVITACION
+  // --------------------------------------------------
 
-  async _validarCodigoInvitacion(codigo) {
+  async _cargarCodigoInvitacionDisponible(codigo) {
     const codigoData = db.get(`
-      SELECT * FROM codigos_invitacion 
+      SELECT * FROM codigos_invitacion
       WHERE codigo = ? AND activo = 1
     `, [codigo]);
 
@@ -114,15 +129,15 @@ class MembresiasService {
 
   _incrementarUsoCodigo(codigo) {
     db.run(`
-      UPDATE codigos_invitacion 
+      UPDATE codigos_invitacion
       SET usos_actuales = usos_actuales + 1
       WHERE codigo = ?
     `, [codigo]);
   }
 
-  // ═══════════════════════════════════════════════════
-  // GENERAR CÓDIGO DE INVITACIÓN
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // GENERAR CODIGO DE INVITACION
+  // --------------------------------------------------
 
   generarCodigoInvitacion(creadoPor, tipo = 'NORMAL', usosMaximos = 1) {
     const codigo = 'INV-' + Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -135,17 +150,19 @@ class MembresiasService {
     return codigo;
   }
 
-  // ═══════════════════════════════════════════════════
-  // ACTUALIZAR NIVEL DE MEMBRESÍA
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // ACTUALIZAR NIVEL DE MEMBRESIA
+  // --------------------------------------------------
 
   actualizarNivel(usuarioId, nuevoNivel, fechaVencimiento = null) {
     if (!NIVELES[nuevoNivel]) {
-      throw new Error('Nivel de membresía inválido');
+      throw new Error('Nivel de membresia fuera de catalogo');
     }
 
+    this._asegurarMembresiaBase(usuarioId);
+
     db.run(`
-      UPDATE membresias 
+      UPDATE membresias
       SET nivel = ?, fecha_vencimiento = ?, updated_at = datetime('now')
       WHERE usuario_id = ?
     `, [nuevoNivel, fechaVencimiento, usuarioId]);
@@ -153,17 +170,15 @@ class MembresiasService {
     return { nivel: nuevoNivel, vencimiento: fechaVencimiento };
   }
 
-  // ═══════════════════════════════════════════════════
-  // VERIFICAR LÍMITES DE USO
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // VERIFICAR LIMITES DE USO
+  // --------------------------------------------------
 
   verificarLimite(usuarioId, tipo) {
-    const membresia = db.get(`
-      SELECT * FROM membresias WHERE usuario_id = ? AND activo = 1
-    `, [usuarioId]);
+    const membresia = this._asegurarMembresiaBase(usuarioId);
 
-    if (!membresia) {
-      throw new Error('Membresía no encontrada');
+    if (!membresia || !membresia.activo) {
+      throw new Error('Membresia no encontrada');
     }
 
     const nivel = NIVELES[membresia.nivel];
@@ -195,31 +210,35 @@ class MembresiasService {
     return { permitido: true };
   }
 
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
   // REGISTRAR USO
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
 
   registrarUso(usuarioId, tipo) {
+    this._asegurarMembresiaBase(usuarioId);
+
     if (tipo === 'cotizacion') {
       db.run(`
-        UPDATE membresias 
+        UPDATE membresias
         SET cotizaciones_usadas = cotizaciones_usadas + 1, updated_at = datetime('now')
         WHERE usuario_id = ?
       `, [usuarioId]);
     } else if (tipo === 'consulta') {
       db.run(`
-        UPDATE membresias 
+        UPDATE membresias
         SET consultas_usadas = consultas_usadas + 1, updated_at = datetime('now')
         WHERE usuario_id = ?
       `, [usuarioId]);
     }
   }
 
-  // ═══════════════════════════════════════════════════
-  // OBTENER MEMBRESÍA DE USUARIO
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // OBTENER MEMBRESIA DE USUARIO
+  // --------------------------------------------------
 
   obtenerMembresia(usuarioId) {
+    this._asegurarMembresiaBase(usuarioId);
+
     const membresia = db.get(`
       SELECT m.*, u.email, u.name
       FROM membresias m
@@ -239,9 +258,9 @@ class MembresiasService {
     };
   }
 
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
   // LISTAR MIEMBROS DE LA COMUNIDAD
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
 
   listarMiembros(filtros = {}) {
     let query = `
@@ -268,23 +287,54 @@ class MembresiasService {
     return db.all(query, params);
   }
 
-  // ═══════════════════════════════════════════════════
-  // REGISTRAR PAGO DE MEMBRESÍA
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // REGISTRAR PAGO DE MEMBRESIA
+  // --------------------------------------------------
 
   registrarPago(usuarioId, monto, nivel, periodo, estado = 'pendiente') {
+    const fechaPago = estado === 'pagado' ? new Date().toISOString() : null;
     db.run(`
-      INSERT INTO pagos_membresia (usuario_id, monto, nivel, periodo, estado)
-      VALUES (?, ?, ?, ?, ?)
-    `, [usuarioId, monto, nivel, periodo, estado]);
+      INSERT INTO pagos_membresia (usuario_id, monto, nivel, periodo, estado, fecha_pago)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [usuarioId, monto, nivel, periodo, estado, fechaPago]);
 
-    // Si está pagado, actualizar membresía
+    const pagoId = db.get(`
+      SELECT id
+      FROM pagos_membresia
+      WHERE usuario_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `, [usuarioId])?.id || null;
+
     if (estado === 'pagado') {
       const fechaVencimiento = this._calcularVencimiento(periodo);
       this.actualizarNivel(usuarioId, nivel, fechaVencimiento);
     }
 
-    return { ok: true };
+    return { ok: true, id: pagoId, estado, fecha_pago: fechaPago };
+  }
+
+  actualizarEstadoPago(pagoId, estado) {
+    const pago = db.get('SELECT * FROM pagos_membresia WHERE id = ?', [pagoId]);
+
+    if (!pago) {
+      throw new Error('Pago no encontrado');
+    }
+
+    const fechaPago = estado === 'pagado' ? (pago.fecha_pago || new Date().toISOString()) : pago.fecha_pago;
+
+    db.run(`
+      UPDATE pagos_membresia
+      SET estado = ?, fecha_pago = ?
+      WHERE id = ?
+    `, [estado, fechaPago, pagoId]);
+
+    if (estado === 'pagado' && pago.estado !== 'pagado') {
+      const fechaVencimiento = this._calcularVencimiento(pago.periodo);
+      this.actualizarNivel(pago.usuario_id, pago.nivel, fechaVencimiento);
+    }
+
+    return { ok: true, id: pagoId, estado, fecha_pago: fechaPago };
   }
 
   _calcularVencimiento(periodo) {
@@ -299,9 +349,9 @@ class MembresiasService {
     return ahora.toISOString();
   }
 
-  // ═══════════════════════════════════════════════════
-  // OBTENER ESTADÍSTICAS DE MEMBRESÍAS
-  // ═══════════════════════════════════════════════════
+  // --------------------------------------------------
+  // OBTENER ESTADISTICAS DE MEMBRESIAS
+  // --------------------------------------------------
 
   obtenerEstadisticas() {
     const total = db.get('SELECT COUNT(*) as count FROM membresias WHERE activo = 1')?.count || 0;
@@ -310,7 +360,7 @@ class MembresiasService {
     const vip = db.get('SELECT COUNT(*) as count FROM membresias WHERE nivel = \'VIP\' AND activo = 1')?.count || 0;
 
     const ingresosMes = db.get(`
-      SELECT SUM(monto) as total FROM pagos_membresia 
+      SELECT SUM(monto) as total FROM pagos_membresia
       WHERE estado = 'pagado' AND strftime('%m', fecha_pago) = strftime('%m', 'now')
     `)?.total || 0;
 
@@ -322,9 +372,9 @@ class MembresiasService {
   }
 }
 
-// ═══════════════════════════════════════════════════
-// EXPORTAR INSTANCIA ÚNICA
-// ═══════════════════════════════════════════════════
+// --------------------------------------------------
+// EXPORTAR INSTANCIA UNICA
+// --------------------------------------------------
 
 const membresiasService = new MembresiasService();
 

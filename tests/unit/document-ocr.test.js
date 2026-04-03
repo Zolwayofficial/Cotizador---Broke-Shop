@@ -37,7 +37,7 @@ describe('document OCR', () => {
     expect(config.configured).toBe(false);
   });
 
-  it('arma configuracion valida cuando Document AI esta completo', () => {
+  it('arma configuracion utilizable cuando Document AI esta completo', () => {
     process.env.DOCUMENT_OCR_ENABLED = 'true';
     process.env.GOOGLE_CLOUD_PROJECT_ID = 'demo-project';
     process.env.GOOGLE_DOCUMENT_AI_LOCATION = 'us';

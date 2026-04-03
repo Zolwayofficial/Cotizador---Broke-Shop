@@ -1,370 +1,181 @@
-# 🧪 PRUEBA COMPLETA DE PRODUCCIÓN - COTIZADOR PERÚ ULTIMATE v3.0
+# Prueba completa de produccion
 
-**Fecha:** 2026-03-15
-**Versión:** 3.0 Ultimate
-**Estado:** ✅ Listo para producción
+Fecha: 2026-03-24
+Estado: guia operativa alineada al contrato actual
 
----
+## Objetivo
 
-## 📋 CHECKLIST DE PRUEBAS
+Esta guia revisa el sistema real antes de un despliegue o despues de cambios sensibles.
+No reemplaza la suite automatica; la complementa con smoke manual y verificacion operativa.
 
-### **FASE 1: INICIALIZACIÓN DEL SISTEMA**
+Orden recomendado:
 
-```bash
-# 1. Verificar que todos los módulos carguen correctamente
-node -e "
-  console.log('🔍 Probando carga de módulos...');
-  
-  try {
-    require('./server/agentes-navegacion');
-    console.log('✅ Agentes de Navegación');
-  } catch(e) { console.log('❌ Agentes de Navegación:', e.message); }
-  
-  try {
-    require('./server/alertas-normativas');
-    console.log('✅ Alertas Normativas');
-  } catch(e) { console.log('❌ Alertas Normativas:', e.message); }
-  
-  try {
-    require('./server/exportar-cotizacion');
-    console.log('✅ Exportar Cotizaciones');
-  } catch(e) { console.log('❌ Exportar Cotizaciones:', e.message); }
-  
-  try {
-    require('./server/sistema-agentes');
-    console.log('✅ Sistema Unificado');
-  } catch(e) { console.log('❌ Sistema Unificado:', e.message); }
-  
-  console.log('\\n✅ TODOS LOS MÓDULOS CARGAN CORRECTAMENTE');
-"
-```
+1. Revisar entorno
+2. Ejecutar pruebas automatizadas
+3. Levantar servidor local
+4. Probar endpoints base con autenticacion
+5. Ejecutar smoke manual de produccion
 
-**Resultado esperado:** ✅ Todos los módulos cargan sin errores
-
----
-
-### **FASE 2: PRUEBA DE ENDPOINTS**
+## Fase 1: Revisar entorno
 
 ```bash
-# 2. Iniciar servidor y probar endpoints
-# (En otra terminal: npm start)
-
-# Probar endpoint de salud del sistema
-curl http://localhost:3000/api/health
-
-# Probar agentes de navegación
-curl http://localhost:3000/api/agentes/stats
-
-# Probar alertas
-curl http://localhost:3000/api/alertas/stats
-
-# Probar exportación
-curl -X POST http://localhost:3000/api/exportar/pdf \
-  -H "Content-Type: application/json" \
-  -d '{
-    "producto": "Laptops HP",
-    "pais_origen": "US",
-    "incoterm": "EXW",
-    "total_landed": 58625
-  }'
+npm run production:check
 ```
 
-**Resultado esperado:** ✅ Todos los endpoints responden correctamente
+Resultado esperado:
 
----
+- puede mostrar advertencias operativas opcionales
+- no debe dejar bloqueantes sin resolver en:
+  - `WS_PORT`
+  - `JWT_SECRET`
+  - `DOMAIN` o `ALLOWED_ORIGINS`
 
-### **FASE 3: PRUEBA DE INCOTERMS**
+## Fase 2: Suite automatica
 
-```javascript
-// 3. Probar ajuste de Incoterms (EXW, FOB, CIF)
-
-const { ajustarIncoterm } = require('./server/auto-cotizar');
-
-// Probar EXW → FOB (+8%)
-const exw = ajustarIncoterm(450, 'EXW', 120, 6.75, 450);
-console.log('EXW → FOB:', exw);
-// Esperado: fob: 486, extraOrigen: 36
-
-// Probar FOB (base)
-const fob = ajustarIncoterm(450, 'FOB', 120, 6.75, 450);
-console.log('FOB:', fob);
-// Esperado: fob: 450, extraOrigen: 0
-
-// Probar CIF → FOB (-flete -seguro)
-const cif = ajustarIncoterm(450, 'CIF', 120, 6.75, 450);
-console.log('CIF → FOB:', cif);
-// Esperado: fob: 323.25 (450 - 120 - 6.75)
+```bash
+npm run lint
+npm run client:build
+npm test -- --runInBand
 ```
 
-**Resultado esperado:** ✅ Todos los Incoterms ajustan correctamente
+Resultado esperado:
 
----
+- lint ok
+- build ok
+- toda la suite en verde
 
-### **FASE 4: PRUEBA DE EXPORTACIÓN**
+## Fase 3: Arranque local
 
-```javascript
-// 4. Probar exportación a PDF y Excel
-
-const { exportarCotizacion } = require('./server/exportar-cotizacion');
-
-const cotizacion = {
-  id: 'cot_test_001',
-  producto: 'Laptops HP',
-  hs_code: '8471.30.00.00',
-  pais_origen: 'US',
-  incoterm: 'EXW',
-  canal: 'AEREO',
-  tc: 3.70,
-  fecha: new Date().toISOString(),
-  fob: 45000,
-  flete: 1200,
-  seguro: 675,
-  cif: 46875,
-  ad_valorem: 2812.50,
-  igv: 7500,
-  ipm: 937.50,
-  total_tributos: 11250,
-  costos_operativos: 500,
-  total_landed: 58625,
-  total_landed_pen: 216912.50
-};
-
-// Probar PDF
-const pdf = exportarCotizacion(cotizacion, 'pdf');
-console.log('PDF generado:', pdf.length > 0 ? '✅' : '❌');
-
-// Probar Excel
-const excel = exportarCotizacion(cotizacion, 'excel');
-console.log('Excel generado:', excel.length > 0 ? '✅' : '❌');
-
-// Probar documentación
-const docs = exportarCotizacion.generarDocumentacion(cotizacion);
-console.log('Documentación:', docs.length > 0 ? '✅' : '❌');
-
-// Probar recomendaciones
-const recs = exportarCotizacion.generarRecomendaciones(cotizacion);
-console.log('Recomendaciones:', recs.length > 0 ? '✅' : '❌');
-
-// Probar apuntes
-const apuntes = exportarCotizacion.generarApuntes(cotizacion);
-console.log('Apuntes:', apuntes.length > 0 ? '✅' : '❌');
+```bash
+node start-local.js
 ```
 
-**Resultado esperado:** ✅ Todos los formatos de exportación funcionan
+Resultado esperado:
 
----
+- el servidor levanta sin errores fatales
+- el banner anuncia las rutas reales del puerto efectivo
+- el arranque debe anunciar `WS_PORT` y el servidor debe usarlo
 
-### **FASE 5: PRUEBA DE AGENTES**
+## Fase 4: Endpoints base
+
+Muchos endpoints sensibles requieren autenticacion. Exportacion, dashboard, agentes y alertas no deben probarse sin token.
+
+```bash
+set AUTH_TOKEN=pega_aqui_tu_token
+set BASE_URL=http://localhost:PUERTO_REAL
+
+curl %BASE_URL%/api/health
+curl %BASE_URL%/api/monitor/health
+
+curl %BASE_URL%/api/agentes/stats ^
+  -H "Authorization: Bearer %AUTH_TOKEN%"
+
+curl %BASE_URL%/api/alertas/stats ^
+  -H "Authorization: Bearer %AUTH_TOKEN%"
+
+curl -X POST %BASE_URL%/api/exportar/pdf ^
+  -H "Authorization: Bearer %AUTH_TOKEN%" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"id\":\"cot_test_001\",\"producto\":\"Laptops HP\",\"pais_origen\":\"US\",\"incoterm\":\"EXW\",\"total_landed\":58625}"
+```
+
+Resultado esperado:
+
+- `BASE_URL` apunta al puerto real que anuncio `start-local.js`
+- `/api/health` responde `200`
+- `/api/monitor/health` responde `200`
+- agentes, alertas y exportacion responden autenticados
+- sin token, esos endpoints protegidos deben devolver `401` o `403`
+
+## Fase 5: Smoke manual de produccion
+
+```bash
+node test-produccion.js
+```
+
+Este smoke recorre:
+
+- carga de modulos
+- ajuste de Incoterms
+- exportacion PDF y Excel
+- documentacion, recomendaciones y apuntes
+- inicializacion de agentes
+- inicializacion de alertas
+- rendimiento basico de exportacion
+
+Resultado esperado:
+
+- termina con `Todas las pruebas manuales pasaron.`
+
+## Fase 6: Contrato de exportacion
 
 ```javascript
-// 5. Probar agentes de navegación
+const exportacion = require('./server/exportar-cotizacion');
 
+const pdf = exportacion.exportarCotizacion(cotizacion, 'pdf');
+const excel = exportacion.exportarCotizacion(cotizacion, 'excel');
+const docs = exportacion.generarDocumentacion(cotizacion);
+const recs = exportacion.generarRecomendaciones(cotizacion);
+const apuntes = exportacion.generarApuntes(cotizacion);
+```
+
+Resultado esperado:
+
+- PDF y Excel se generan sin lanzar excepciones
+- los arreglos de documentacion, recomendaciones y apuntes se reciben como listas utilizables
+
+## Fase 7: Agentes y alertas
+
+```javascript
 const agentesNavegacion = require('./server/agentes-navegacion');
-
-async function probarAgentes() {
-  await agentesNavegacion.init();
-  console.log('✅ Agentes inicializados');
-  
-  const stats = agentesNavegacion.obtenerEstadisticasGenerales();
-  console.log('Estadísticas:', stats);
-  
-  // Probar SUNAT
-  const sunatStats = agentesNavegacion.SUNAT.obtenerEstadisticas();
-  console.log('SUNAT:', sunatStats ? '✅' : '❌');
-  
-  // Probar ADUANET
-  const aduanetStats = agentesNavegacion.ADUANET.obtenerEstadisticas();
-  console.log('ADUANET:', aduanetStats ? '✅' : '❌');
-  
-  // Probar VUCE
-  const vuceStats = agentesNavegacion.VUCE.obtenerEstadisticas();
-  console.log('VUCE:', vuceStats ? '✅' : '❌');
-  
-  // Probar INDECOPI
-  const indecopiStats = agentesNavegacion.INDECOPI.obtenerEstadisticas();
-  console.log('INDECOPI:', indecopiStats ? '✅' : '❌');
-}
-
-probarAgentes();
-```
-
-**Resultado esperado:** ✅ Todos los agentes funcionan correctamente
-
----
-
-### **FASE 6: PRUEBA DE ALERTAS**
-
-```javascript
-// 6. Probar sistema de alertas
-
 const alertasNormativas = require('./server/alertas-normativas');
 
-async function probarAlertas() {
+async function smoke() {
+  await agentesNavegacion.init();
+  const statsAgentes = agentesNavegacion.obtenerEstadisticasGenerales();
+  console.log(statsAgentes.total_agentes);
+
   await alertasNormativas.init();
-  console.log('✅ Alertas inicializadas');
-  
-  // Crear alerta de prueba
-  const alertaId = alertasNormativas.crearAlerta(
-    alertasNormativas.TIPOS_ALERTA.CAMBIO_ARANCEL,
-    'SUNAT',
-    'Cambio de Ad Valorem detectado',
-    'Partida 8471.30.00.00: Ad Valorem cambió de 0% a 6%',
-    {
-      nivel: alertasNormativas.NIVELES_ALERTA.ALTO,
-      partida_afectada: '8471.30.00.00'
-    }
-  );
-  console.log('Alerta creada:', alertaId ? '✅' : '❌');
-  
-  // Obtener alertas no leídas
-  const noLeidas = alertasNormativas.obtenerAlertasNoLeidas();
-  console.log('Alertas no leídas:', noLeidas.length);
-  
-  // Obtener estadísticas
-  const stats = alertasNormativas.obtenerEstadisticas();
-  console.log('Estadísticas:', stats);
+  const statsAlertas = alertasNormativas.obtenerEstadisticas();
+  console.log(statsAlertas);
 }
 
-probarAlertas();
+smoke();
 ```
 
-**Resultado esperado:** ✅ Sistema de alertas funciona correctamente
+Resultado esperado:
 
----
+- `agentesNavegacion.init()` no falla
+- `statsAgentes.total_agentes` existe
+- `alertasNormativas.obtenerEstadisticas()` devuelve un objeto utilizable
 
-### **FASE 7: PRUEBA DE RENDIMIENTO**
+## Criterio operativo
 
-```javascript
-// 7. Probar rendimiento del sistema
+Se puede pasar al siguiente control operativo si:
 
-const startTime = Date.now();
+- `production:check` no deja bloqueantes
+- lint, build y tests pasan
+- `test-produccion.js` termina en verde
+- el arranque local y los endpoints base responden como se espera
 
-// Simular 100 cotizaciones
-for (let i = 0; i < 100; i++) {
-  const cotizacion = {
-    producto: `Producto ${i}`,
-    pais_origen: 'CN',
-    incoterm: 'FOB',
-    total_landed: 10000 + i
-  };
-  
-  exportarCotizacion(cotizacion, 'pdf');
-}
+Requiere ajustes si:
 
-const endTime = Date.now();
-const tiempoTotal = endTime - startTime;
-const promedio = tiempoTotal / 100;
+- hay fallos en smoke manual
+- hay contratos desalineados entre scripts, docs y servidor
+- hay warnings convertidos en lectura enganosa o falsos positivos operativos
 
-console.log(`100 cotizaciones exportadas en ${tiempoTotal}ms`);
-console.log(`Promedio: ${promedio.toFixed(2)}ms por cotización`);
-console.log('Rendimiento:', promedio < 100 ? '✅ Excelente' : promedio < 500 ? '✅ Bueno' : '⚠️ Mejorable');
-```
+Detener y corregir si:
 
-**Resultado esperado:** ✅ < 100ms por cotización (excelente)
+- hay errores criticos
+- el servidor no inicia
+- los endpoints base no responden
+- exportacion o autenticacion fallan en rutas protegidas
 
----
+## Notas
 
-## 📊 RESULTADOS ESPERADOS
-
-| Prueba | Resultado Esperado | Estado |
-|--------|-------------------|--------|
-| **Carga de módulos** | 0 errores | ✅ |
-| **Endpoints HTTP** | 200 OK | ✅ |
-| **Incoterms** | Ajuste correcto | ✅ |
-| **Exportación PDF** | HTML válido | ✅ |
-| **Exportación Excel** | CSV válido | ✅ |
-| **Documentación** | Lista completa | ✅ |
-| **Recomendaciones** | Personalizadas | ✅ |
-| **Apuntes** | Relevantes | ✅ |
-| **Agentes** | Todos operativos | ✅ |
-| **Alertas** | Sistema funcional | ✅ |
-| **Rendimiento** | < 100ms | ✅ |
-
----
-
-## 🏆 CRITERIOS DE APROBACIÓN
-
-### **✅ APROBADO PARA PRODUCCIÓN SI:**
-
-- ✅ Todas las pruebas pasan (100%)
-- ✅ 0 errores críticos
-- ✅ 0 errores de sintaxis
-- ✅ Rendimiento < 100ms por cotización
-- ✅ Todos los Incoterms funcionan
-- ✅ Exportación PDF/Excel funciona
-- ✅ Agentes de navegación operativos
-- ✅ Sistema de alertas funcional
-
-### **⚠️ REQUIERE AJUSTES SI:**
-
-- ⚠️ Alguna prueba falla (< 100%)
-- ⚠️ Errores no críticos presentes
-- ⚠️ Rendimiento > 500ms
-
-### **❌ NO APROBADO SI:**
-
-- ❌ Errores críticos presentes
-- ❌ Módulos no cargan
-- ❌ Endpoints no responden
-- ❌ Rendimiento > 1000ms
-
----
-
-## 📝 RESUMEN DE FEATURES PARA PRODUCCIÓN
-
-### **✅ FEATURES IMPLEMENTADAS:**
-
-```
-✅ 29 agentes especializados
-✅ 11 Incoterms 2020 (EXW, FOB, CIF, etc.)
-✅ 28+ endpoints HTTP
-✅ 12 tablas en base de datos
-✅ 9 conectores de gobierno
-✅ 8 tipos de alertas normativas
-✅ Exportación a PDF (profesional)
-✅ Exportación a Excel (CSV)
-✅ Documentación automática
-✅ Recomendaciones personalizadas
-✅ Apuntes importantes
-✅ Aprendizaje automático
-✅ Auto-reparación
-✅ Memoria compartida
-✅ 100% funcional
-```
-
-### **📊 ESTADÍSTICAS DEL SISTEMA:**
-
-```
-Líneas de código: ~5,500+
-Archivos creados: 20+
-Endpoints HTTP: 33+
-Tablas BD: 12
-Agentes: 29
-Incoterms: 11/11 (100%)
-```
-
----
-
-## 🎯 VEREDICTO FINAL
-
-> **"¡JEFE, SISTEMA LISTO PARA PRODUCCIÓN!** 🇨🇳
->
-> **PRUEBAS:**
-> - ✅ Todas las fases completadas
-> - ✅ 0 errores críticos
-> - ✅ Rendimiento excelente
-> - ✅ Todas las features funcionan
->
-> **ESTADO:**
-> - ✅ 100% funcional
-> - ✅ 100% probado
-> - ✅ 100% documentado
-> - ✅ LISTO PARA PRODUCCIÓN
->
-> **¿DESEAS QUE INICIE EL SERVIDOR EN PRODUCCIÓN?** 🫡"
-
----
-
-**Fecha:** 2026-03-15
-**Probado por:** Chinito Cochino 👨‍💻
-**Estado:** ✅ **APROBADO PARA PRODUCCIÓN**
+- el dashboard y la exportacion protegida requieren autenticacion
+- las cifras de agentes, endpoints o capacidades deben tomarse del sistema real y no de conteos desactualizados copiados a mano
+- si actualizas contratos de smoke, actualiza tambien:
+  - `test-produccion.js`
+  - `start-local.js`
+  - esta guia

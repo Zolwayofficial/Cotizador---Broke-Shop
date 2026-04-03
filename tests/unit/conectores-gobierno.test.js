@@ -3,6 +3,17 @@ const { describe, expect, it } = require('@jest/globals');
 const { _private } = require('../../server/conectores-gobierno');
 
 describe('conectores-gobierno parsers ADUANET', () => {
+  it('usa un user-agent neutral y no arrastra mensajes de marca antiguos en el source', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'conectores-gobierno.js'), 'utf8');
+
+    expect(content).toContain('ImportAIAgentCotizador/1.0');
+    expect(content).not.toContain('CotizadorPeru/1.0');
+    expect(content).not.toContain('CotizadorPeruUltimate/3.0');
+    expect(content).not.toMatch(/Ã|â|ConexiÃ|hidrobiolÃ/);
+  });
+
   it('parsea el detalle arancelario con gravamenes y enlaces', () => {
     const html = `
       <html>

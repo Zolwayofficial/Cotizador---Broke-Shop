@@ -1,40 +1,50 @@
 // server/websocket/websocket-server.js
-// 
-// SERVIDOR WEB SOCKET PARA TIEMPO REAL
-// 
-// Features:
-// - Actualizaciones en tiempo real del dashboard
-// - Notificaciones de alertas
-// - Monitoreo en vivo
-// - 100% gratis
+// Servidor WebSocket para actualizaciones del dashboard y alertas en tiempo real.
 
 const WebSocket = require('ws');
 
+function normalizePort(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 class WebSocketServer {
-  constructor(port = 3002) {
-    this.port = port;
+  constructor(port = null) {
+    this.port = normalizePort(port);
     this.wss = null;
     this.clients = new Set();
     this.monitorInterval = null;
+    this.monitorService = null;
   }
 
-  // Iniciar servidor WebSocket
+  setPort(port) {
+    this.port = normalizePort(port);
+    return this.port;
+  }
+
   start(monitorService) {
-    this.wss = new WebSocket.Server({ port: this.port });
+    if (!Number.isInteger(this.port) || this.port <= 0) {
+      throw new Error('WS_PORT no configurado o fuera de rango');
+    }
+
+    this.stop();
+
     this.monitorService = monitorService;
+    this.wss = new WebSocket.Server({ port: this.port });
 
     this.wss.on('connection', (ws) => {
       console.log('[WS] Cliente conectado');
+      ws.channels = new Set(['metricas', 'alertas']);
       this.clients.add(ws);
 
-      // Enviar saludo inicial
-      ws.send(JSON.stringify({
-        type: 'connected',
-        message: 'Conectado al servidor WebSocket',
-        timestamp: new Date().toISOString()
-      }));
+      ws.send(
+        JSON.stringify({
+          type: 'connected',
+          message: 'Conectado al servidor WebSocket',
+          timestamp: new Date().toISOString(),
+        }),
+      );
 
-      // Enviar datos iniciales
       this.enviarDatosIniciales(ws);
 
       ws.on('message', (message) => {
@@ -52,136 +62,146 @@ class WebSocketServer {
       });
     });
 
-    // Iniciar monitoreo en tiempo real
     this.iniciarMonitoreoTiempoReal();
-
     console.log(`[WS] Servidor WebSocket iniciado en puerto ${this.port}`);
   }
 
-  // Enviar datos iniciales al cliente
   enviarDatosIniciales(ws) {
-    const salud = this.monitorService.obtenerSalud();
-    
-    ws.send(JSON.stringify({
-      type: 'datos_iniciales',
-      data: salud,
-      timestamp: new Date().toISOString()
-    }));
+    const salud = this.monitorService?.obtenerSalud?.() || null;
+
+    ws.send(
+      JSON.stringify({
+        type: 'datos_iniciales',
+        data: salud,
+        timestamp: new Date().toISOString(),
+      }),
+    );
   }
 
-  // Manejar mensajes del cliente
   manejarMensaje(ws, message) {
     try {
       const data = JSON.parse(message);
-      
+
       switch (data.type) {
       case 'ping':
         ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
         break;
-        
       case 'suscribir':
         this.suscribir(ws, data.channels);
         break;
-        
       case 'desuscribir':
         this.desuscribir(ws, data.channels);
         break;
-        
       default:
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          message: 'Tipo de mensaje no reconocido' 
-        }));
+        ws.send(JSON.stringify({ type: 'error', message: 'Tipo de mensaje no reconocido' }));
       }
-    } catch (error) {
-      ws.send(JSON.stringify({ 
-        type: 'error', 
-        message: 'Error procesando mensaje' 
-      }));
+    } catch (_error) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Error procesando mensaje' }));
     }
   }
 
-  // Suscribir a canales
   suscribir(ws, channels) {
-    ws.channels = ws.channels || new Set();
-    channels.forEach(channel => ws.channels.add(channel));
-    
-    ws.send(JSON.stringify({
-      type: 'suscrito',
-      channels: Array.from(ws.channels),
-      timestamp: new Date().toISOString()
-    }));
+    const nextChannels = Array.isArray(channels) ? channels : [];
+    ws.channels = ws.channels || new Set(['metricas', 'alertas']);
+    nextChannels.forEach((channel) => {
+      if (channel) ws.channels.add(channel);
+    });
+
+    ws.send(
+      JSON.stringify({
+        type: 'suscrito',
+        channels: Array.from(ws.channels),
+        timestamp: new Date().toISOString(),
+      }),
+    );
   }
 
-  // Desuscribir de canales
   desuscribir(ws, channels) {
-    if (!ws.channels) return;
-    channels.forEach(channel => ws.channels.delete(channel));
-    
-    ws.send(JSON.stringify({
-      type: 'desuscrito',
-      channels: Array.from(ws.channels),
-      timestamp: new Date().toISOString()
-    }));
+    const nextChannels = Array.isArray(channels) ? channels : [];
+    ws.channels = ws.channels || new Set(['metricas', 'alertas']);
+    nextChannels.forEach((channel) => ws.channels.delete(channel));
+
+    ws.send(
+      JSON.stringify({
+        type: 'desuscrito',
+        channels: Array.from(ws.channels),
+        timestamp: new Date().toISOString(),
+      }),
+    );
   }
 
-  // Iniciar monitoreo en tiempo real
-  iniciarMonitoreoTiempoReal() {
-    // Enviar actualizaciones cada 5 segundos
-    this.monitorInterval = setInterval(() => {
-      if (this.clients.size === 0) return;
-
-      const salud = this.monitorService.obtenerSalud();
-      const mensaje = JSON.stringify({
-        type: 'actualizacion',
-        data: salud,
-        timestamp: new Date().toISOString()
-      });
-
-      // Enviar a todos los clientes
-      this.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(mensaje);
-        }
-      });
-    }, 5000);
-
-    console.log('[WS] Monitoreo en tiempo real iniciado');
+  isClientSubscribed(client, channel) {
+    if (!channel) return true;
+    if (!client.channels) return true;
+    return client.channels.has(channel);
   }
 
-  // Enviar alerta a todos los clientes
-  enviarAlerta(alerta) {
-    const mensaje = JSON.stringify({
-      type: 'alerta',
-      data: alerta,
-      timestamp: new Date().toISOString()
+  broadcast(type, data, requiredChannel = null) {
+    const payload = JSON.stringify({
+      type,
+      data,
+      timestamp: new Date().toISOString(),
     });
 
-    this.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(mensaje);
+    this.clients.forEach((client) => {
+      if (client.readyState !== WebSocket.OPEN) {
+        this.clients.delete(client);
+        return;
       }
+
+      if (!this.isClientSubscribed(client, requiredChannel)) {
+        return;
+      }
+
+      client.send(payload);
     });
   }
 
-  // Detener servidor
-  stop() {
+  iniciarMonitoreoTiempoReal() {
     if (this.monitorInterval) {
       clearInterval(this.monitorInterval);
     }
+
+    this.monitorInterval = setInterval(() => {
+      if (this.clients.size === 0) return;
+      const salud = this.monitorService?.obtenerSalud?.() || null;
+      this.broadcast('actualizacion', salud, 'metricas');
+    }, 5000);
+
+    this.monitorInterval.unref?.();
+    console.log('[WS] Monitoreo en tiempo real iniciado');
+  }
+
+  enviarAlerta(alerta) {
+    this.broadcast('alerta', alerta, 'alertas');
+  }
+
+  stop() {
+    if (this.monitorInterval) {
+      clearInterval(this.monitorInterval);
+      this.monitorInterval = null;
+    }
+
+    this.clients.forEach((client) => {
+      try {
+        client.close?.();
+      } catch (_error) {
+        // best effort
+      }
+    });
+    this.clients.clear();
 
     if (this.wss) {
       this.wss.close(() => {
         console.log('[WS] Servidor WebSocket detenido');
       });
+      this.wss = null;
     }
   }
 }
 
-// ═══════════════════════════════════════════════════
-// EXPORTAR INSTANCIA ÚNICA
-// ═══════════════════════════════════════════════════
-
 const websocketServer = new WebSocketServer();
 
 module.exports = websocketServer;
+module.exports.WebSocketServer = WebSocketServer;
+module.exports.normalizePort = normalizePort;

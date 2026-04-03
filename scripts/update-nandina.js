@@ -2,37 +2,61 @@
 // Run manually: node scripts/update-nandina.js
 // Checks Aduanet for NANDINA updates and applies them
 
-require("dotenv").config();
-const nandinaService = require("../server/nandina");
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env') });
+const nandinaService = require('../server/nandina');
 
-async function main() {
-  console.log("⬡ Verificando actualizaciones NANDINA...\n");
-
-  await nandinaService.init();
-  console.log(`  Estado actual: ${nandinaService.getData().length} partidas`);
-  console.log(`  Última actualización: ${nandinaService.getLastUpdate()}`);
-  console.log(`  Fuente: ${nandinaService.getSource()}\n`);
-
-  console.log("  Consultando Aduanet...");
-  const result = await nandinaService.checkForUpdates();
-
-  if (result.updated) {
-    console.log(`\n  ✅ ACTUALIZADO: ${result.count} partidas`);
-    if (result.changes?.length > 0) {
-      console.log(`  📋 ${result.changes.length} cambios detectados:\n`);
-      result.changes.slice(0, 20).forEach(c => {
-        if (c.type === "added") console.log(`    + ${c.hs} ${c.desc}`);
-        else if (c.type === "removed") console.log(`    - ${c.hs} ${c.desc}`);
-        else if (c.type === "av_changed") console.log(`    ∆ ${c.hs} Ad Valorem: ${c.from}% → ${c.to}%`);
-        else if (c.type === "isc_changed") console.log(`    ∆ ${c.hs} ISC: ${c.from}% → ${c.to}%`);
-      });
-      if (result.changes.length > 20) console.log(`    ... y ${result.changes.length - 20} más`);
-    }
-  } else {
-    console.log("\n  ✓ Sin cambios. La base está al día.");
-  }
-
-  console.log(`\n  Última verificación: ${nandinaService.getLastCheck()}`);
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
-main().catch(e => { console.error("Error:", e.message); process.exit(1); });
+function formatChangeLine(change) {
+  if (!change || typeof change !== 'object') return null;
+  if (change.type === 'added') return `    + ${change.hs} ${change.desc}`;
+  if (change.type === 'removed') return `    - ${change.hs} ${change.desc}`;
+  if (change.type === 'av_changed') return `    * ${change.hs} Ad Valorem: ${change.from}% -> ${change.to}%`;
+  if (change.type === 'isc_changed') return `    * ${change.hs} ISC: ${change.from}% -> ${change.to}%`;
+  return null;
+}
+
+async function main() {
+  console.log('Verificando actualizaciones NANDINA...\n');
+
+  await nandinaService.init();
+  const currentData = asArray(nandinaService.getData?.());
+  console.log(`  Estado actual: ${currentData.length} partidas`);
+  console.log(`  Ultima actualizacion: ${nandinaService.getLastUpdate?.() || 'sin dato'}`);
+  console.log(`  Fuente: ${nandinaService.getSource?.() || 'sin dato'}\n`);
+
+  console.log('  Consultando Aduanet...');
+  const result = await nandinaService.checkForUpdates();
+  const changes = asArray(result?.changes);
+
+  if (result?.updated) {
+    console.log(`\n  ACTUALIZADO: ${result.count || currentData.length} partidas`);
+    if (changes.length > 0) {
+      console.log(`  ${changes.length} cambios detectados:\n`);
+      changes.slice(0, 20).forEach((change) => {
+        const line = formatChangeLine(change);
+        if (line) console.log(line);
+      });
+      if (changes.length > 20) console.log(`    ... y ${changes.length - 20} mas`);
+    }
+  } else {
+    console.log('\n  Sin cambios. La base esta al dia.');
+  }
+
+  console.log(`\n  Ultima verificacion: ${nandinaService.getLastCheck?.() || 'sin dato'}`);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('Error:', error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  asArray,
+  formatChangeLine,
+  main,
+};

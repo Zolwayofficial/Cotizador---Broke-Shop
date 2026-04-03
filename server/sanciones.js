@@ -1,25 +1,44 @@
-// server/sanciones.js — Denied Party Screening (OFAC, ONU, UE)
-// Uses OpenSanctions.org free API to check if a party is sanctioned
+// server/sanciones.js - Screening de sanciones (OFAC, ONU, UE)
+// Usa la API publica de OpenSanctions para verificar coincidencias.
 const https = require('https');
-const autoRepair = require('./auto-repair'); // Auto-corrección
+const autoRepair = require('./auto-repair');
 
 const OPENSANCTIONS_API = 'https://api.opensanctions.org/match/default';
-// Free tier: 500 lookups/month. For more, get API key at opensanctions.org
+// OpenSanctions ofrece una capa publica limitada para este tipo de consulta.
 
 const _cache = {};
 const CACHE_TTL = 86400000 * 7; // 7 days
 const CACHE_MAX = 500;
 
-// Prune old cache entries to prevent memory leak
 function pruneCache() {
   const now = Date.now();
   const keys = Object.keys(_cache);
-  if (keys.length <= CACHE_MAX) return;
-  // Remove expired entries first
-  for (const k of keys) { if (now - _cache[k].ts > CACHE_TTL) delete _cache[k]; }
-  // If still too many, remove oldest
+
+  for (const k of keys) {
+    if (now - _cache[k].ts > CACHE_TTL) {
+      delete _cache[k];
+    }
+  }
+
+  const remainingKeys = Object.keys(_cache);
+  if (remainingKeys.length <= CACHE_MAX) return;
+
   const remaining = Object.entries(_cache).sort((a, b) => a[1].ts - b[1].ts);
-  while (remaining.length > CACHE_MAX) { delete _cache[remaining.shift()[0]]; }
+  while (remaining.length > CACHE_MAX) {
+    delete _cache[remaining.shift()[0]];
+  }
+}
+
+function readFreshCacheEntry(cacheKey) {
+  const entry = _cache[cacheKey];
+  if (!entry) return null;
+
+  if (Date.now() - entry.ts >= CACHE_TTL) {
+    delete _cache[cacheKey];
+    return null;
+  }
+
+  return entry.data;
 }
 
 function httpsPost(url, body) {
@@ -42,15 +61,24 @@ function httpsPost(url, body) {
   });
 }
 
-// Screen a company or person against sanctions lists (CON AUTO-REPAIR)
+function buildSanctionsMessage(matches) {
+  if (!matches.length) {
+    return 'No se encontraron coincidencias en listas de sanciones internacionales.';
+  }
+
+  return `${matches.length} coincidencia(s) en listas de sanciones. Revisar antes de continuar.`;
+}
+
+// Screen a company or person against sanctions lists
 async function verificar(nombre, pais, tipo) {
   return await autoRepair.ejecutarConAutoReparacion(
     'sanciones',
     async () => {
       if (!nombre || nombre.length < 3) return { error: 'Nombre muy corto' };
 
-      const cacheKey = `${nombre}:${pais || ''}`.toLowerCase();
-      if (_cache[cacheKey] && Date.now() - _cache[cacheKey].ts < CACHE_TTL) return _cache[cacheKey].data;
+      const cacheKey = `${tipo || 'empresa'}:${nombre}:${pais || ''}`.toLowerCase();
+      const cached = readFreshCacheEntry(cacheKey);
+      if (cached) return cached;
 
       try {
         const query = {
@@ -63,7 +91,7 @@ async function verificar(nombre, pais, tipo) {
 
         const resp = await httpsPost(OPENSANCTIONS_API, query);
         if (!resp || !resp.responses) {
-          return { verificado: false, error: 'API no disponible', fallback: true };
+          return { consultado: false, error: 'API no disponible', fallback: true };
         }
 
         const matches = (resp.responses || [])
@@ -72,30 +100,32 @@ async function verificar(nombre, pais, tipo) {
             nombre: r.caption,
             score: r.score,
             listas: r.datasets || [],
-            pais: r.properties?.country?.[0] || '—',
+            pais: r.properties?.country?.[0] || 'N/D',
             tipo: r.schema,
-            motivo: r.properties?.notes?.[0] || r.properties?.summary?.[0] || '—',
+            motivo: r.properties?.notes?.[0] || r.properties?.summary?.[0] || 'N/D',
           }));
 
         const result = {
-          verificado: true,
+          consultado: true,
           consultaFecha: new Date().toISOString(),
           nombre,
           pais: pais || null,
           enListaNegra: matches.length > 0,
           matches,
           riesgo: matches.length === 0 ? 'limpio' : matches.some(m => m.score > 0.9) ? 'alto' : 'medio',
-          mensaje: matches.length === 0
-            ? '✅ No se encontraron coincidencias en listas de sanciones internacionales.'
-            : `🔴 ${matches.length} coincidencia(s) en listas de sanciones. NO proceder sin verificación legal.`,
-          fuentes: 'OpenSanctions (OFAC SDN, ONU, UE, UK, y 30+ listas)',
+          mensaje: buildSanctionsMessage(matches),
+          fuentes: 'OpenSanctions (OFAC SDN, ONU, UE, UK y otras listas integradas)',
         };
 
         _cache[cacheKey] = { data: result, ts: Date.now() };
         pruneCache();
         return result;
       } catch (e) {
-        return { verificado: false, error: e.message, mensaje: '⚠ No se pudo verificar. Verificar manualmente en sanctionssearch.ofac.treas.gov' };
+        return {
+          consultado: false,
+          error: e.message,
+          mensaje: 'No se pudo verificar. Revisar manualmente en sanctionssearch.ofac.treas.gov',
+        };
       }
     },
     { nombre, pais, tipo }
@@ -112,4 +142,16 @@ async function verificarImportador(nombre, pais) {
   return verificar(nombre, pais || 'PE', 'empresa');
 }
 
-module.exports = { verificar, verificarProveedor, verificarImportador };
+module.exports = {
+  verificar,
+  verificarProveedor,
+  verificarImportador,
+  _private: {
+    pruneCache,
+    readFreshCacheEntry,
+    buildSanctionsMessage,
+    CACHE_TTL,
+    CACHE_MAX,
+    _cache,
+  },
+};

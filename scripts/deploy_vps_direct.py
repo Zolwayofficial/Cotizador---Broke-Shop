@@ -19,7 +19,15 @@ EXCLUDES = {
     "node_modules",
     "coverage",
     "data",
+    "secure",
+    ".venv-official-fx",
     ".env",
+    ".env.production",
+    "LOCAL_SECRETS.md",
+    "backups",
+    "restored-backups",
+    "output",
+    "tmp",
     "local-start.err.log",
     "local-start.out.log",
 }
@@ -31,7 +39,6 @@ APP_PATH="$1"
 ARCHIVE_NAME="$2"
 DOMAIN="$3"
 HOST_IP="$4"
-APP_PORT="$5"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -40,11 +47,22 @@ mkdir -p "$APP_PATH"
 
 CURRENT_SCRIPT="$(basename "$0")"
 BACKUP_ITEMS=()
+PRESERVE_ITEMS=(data secure .venv-official-fx .env .env.production)
 
 for item in "$APP_PATH"/* "$APP_PATH"/.[!.]* "$APP_PATH"/..?*; do
   [ -e "$item" ] || continue
   base="$(basename "$item")"
   if [ "$base" = "$ARCHIVE_NAME" ] || [ "$base" = "$CURRENT_SCRIPT" ]; then
+    continue
+  fi
+  preserve=false
+  for keep in "${PRESERVE_ITEMS[@]}"; do
+    if [ "$base" = "$keep" ]; then
+      preserve=true
+      break
+    fi
+  done
+  if [ "$preserve" = true ]; then
     continue
   fi
   BACKUP_ITEMS+=("$item")
@@ -70,11 +88,28 @@ cd "$APP_PATH"
 tar -xzf "$ARCHIVE_NAME"
 rm -f "$ARCHIVE_NAME"
 
-if [ -f ".env.production" ]; then
+mkdir -p data data/logs
+
+if [ ! -f ".env.production" ]; then
+  echo ".env.production no existe en el VPS y no se desplegara desde local" >&2
+  exit 1
+fi
+
+if [ -f ".env.production" ] && [ ! -f ".env" ]; then
   cp .env.production .env
 fi
 
-mkdir -p data data/logs
+APP_PORT="$(grep '^PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+WS_PORT="$(grep '^WS_PORT=' .env.production 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+if [ -z "$APP_PORT" ]; then
+  echo "PORT falta en .env.production" >&2
+  exit 1
+fi
+if [ -z "$WS_PORT" ]; then
+  echo "WS_PORT falta en .env.production" >&2
+  exit 1
+fi
+
 npm install --omit=dev
 
 if ! command -v pm2 >/dev/null 2>&1; then
@@ -95,7 +130,7 @@ server {
     server_name ${DOMAIN} ${HOST_IP};
 
     location /ws {
-        proxy_pass http://127.0.0.1:3002;
+        proxy_pass http://127.0.0.1:${WS_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "Upgrade";
@@ -164,7 +199,19 @@ def copy_project(stage_dir: Path):
             shutil.copytree(
                 item,
                 destination,
-                ignore=shutil.ignore_patterns("node_modules", "coverage", ".git", "data"),
+                ignore=shutil.ignore_patterns(
+                    "node_modules",
+                    "coverage",
+                    ".git",
+                    "data",
+                    "secure",
+                    ".venv-official-fx",
+                    "__pycache__",
+                    "backups",
+                    "restored-backups",
+                    "output",
+                    "tmp",
+                ),
             )
         else:
             shutil.copy2(item, destination)
@@ -252,7 +299,7 @@ def deploy(args):
 
         command = (
             f"bash {remote_script} {args.path} {archive_path.name} "
-            f"{args.domain} {args.host} {args.port}"
+            f"{args.domain} {args.host}"
         )
         exec_remote(client, command)
     finally:
@@ -266,7 +313,6 @@ def parse_args():
     parser.add_argument("--user", default="root")
     parser.add_argument("--path", default="/var/www/importaiagent")
     parser.add_argument("--domain", default="importaiagent.com")
-    parser.add_argument("--port", default="3000")
     parser.add_argument("--password-env", default="VPS_PASSWORD")
     parser.add_argument("--password")
     return parser.parse_args()

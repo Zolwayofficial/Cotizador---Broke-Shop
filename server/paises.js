@@ -1,6 +1,6 @@
 const COUNTRY_ALIASES = {
   CN: ['CN', 'CHN', 'CHINA', 'REPUBLICA POPULAR CHINA', 'PEOPLES REPUBLIC OF CHINA'],
-  US: ['US', 'USA', 'EEUU', 'ESTADOS UNIDOS', 'UNITED STATES', 'UNITED STATES OF AMERICA'],
+  US: ['US', 'USA', 'EEUU', 'EE UU', 'ESTADOS UNIDOS', 'UNITED STATES', 'UNITED STATES OF AMERICA'],
   BR: ['BR', 'BRA', 'BRASIL', 'BRAZIL'],
   MX: ['MX', 'MEX', 'MEXICO'],
   ES: ['ES', 'ESP', 'ESPANA', 'SPAIN'],
@@ -29,7 +29,7 @@ function sanitizeCountry(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[.'"]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();

@@ -18,10 +18,10 @@ function dedupePermisos(base = [], items = []) {
       entidad: permiso.entidad,
       nombre: permiso.nombre || permiso.entidad,
       ministerio: permiso.ministerio || '',
-      icon: permiso.icon || '⚠',
+      icon: permiso.icon || 'info',
       color: permiso.color || 'orange',
       tramite: permiso.tramite || '',
-      pasos: Array.isArray(permiso.pasos) ? permiso.pasos : [],
+      pasos: Array.isArray(permiso.pasos) ? [...permiso.pasos] : [],
       web: permiso.web || '',
       vuce: Boolean(permiso.vuce),
       telefono: permiso.telefono || '',
@@ -61,8 +61,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
       tipo: 'permisos',
       nivel: 'critico',
       titulo: 'Permisos antes del embarque',
-      mensaje: `Esta operación requiere ${resultado.permisos.length} permiso(s) o validación(es) previas.`,
-      accion: 'Revisa VUCE y tramita cada autorización antes de embarcar.',
+      mensaje: `Esta operacion requiere ${resultado.permisos.length} permiso(s) o revision(es) previas.`,
+      accion: 'Revisa VUCE y tramita cada autorizacion antes de embarcar.',
     });
   }
 
@@ -82,8 +82,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
       tipo: 'flete',
       nivel: 'medio',
       titulo: 'Cierra el flete real',
-      mensaje: 'El flete aún es estimado o referencial.',
-      accion: 'Ingresa una tarifa real de courier/naviera o una cotización contractual.',
+      mensaje: 'El flete aun es estimado o referencial.',
+      accion: 'Ingresa una tarifa real de courier/naviera o una cotizacion contractual.',
     });
   }
 
@@ -91,8 +91,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
     push({
       tipo: 'seguro',
       nivel: 'medio',
-      titulo: 'Confirma el seguro',
-      mensaje: 'El seguro todavía no viene de una póliza o valor comercial real.',
+      titulo: 'Revisa el seguro',
+      mensaje: 'El seguro todavia no viene de una poliza o valor comercial real.',
       accion: 'Ingresa el seguro real del proveedor o de tu corredor.',
     });
   }
@@ -102,8 +102,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
       tipo: 'incoterm',
       nivel: 'alto',
       titulo: 'Pide desglose FOB',
-      mensaje: `El incoterm ${incoterm || 'actual'} requirió estimaciones para desarmar el CIF.`,
-      accion: 'Pide al proveedor una cotización FOB o un desglose real de flete y seguro.',
+      mensaje: `El incoterm ${incoterm || 'actual'} requirio estimaciones para desarmar el CIF.`,
+      accion: 'Pide al proveedor una cotizacion FOB o un desglose real de flete y seguro.',
     });
   }
 
@@ -111,9 +111,9 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
     push({
       tipo: 'antidumping',
       nivel: 'alto',
-      titulo: 'Verifica antidumping vigente',
-      mensaje: 'El producto quedó alcanzado por medidas antidumping.',
-      accion: 'Confirma la resolución de INDECOPI y valora el impacto antes de cerrar la compra.',
+      titulo: 'Verifica antidumping aplicable',
+      mensaje: 'El producto quedo alcanzado por medidas antidumping.',
+      accion: 'Revisa la resolucion de INDECOPI y valora el impacto antes de cerrar la compra.',
     });
   }
 
@@ -122,8 +122,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
       tipo: 'valoracion',
       nivel: 'alto',
       titulo: 'Prepara sustento de valor',
-      mensaje: 'SUNAT podría cuestionar el valor declarado.',
-      accion: 'Reúne contrato, cotizaciones comparativas, comprobantes y lista de precios del proveedor.',
+      mensaje: 'SUNAT podria cuestionar el valor declarado.',
+      accion: 'Reune contrato, cotizaciones comparativas, comprobantes y lista de precios del proveedor.',
     });
   }
 
@@ -131,9 +131,9 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
     push({
       tipo: 'canal',
       nivel: 'info',
-      titulo: 'Revisa límites de courier',
-      mensaje: 'El canal courier simplifica la operación, pero no siempre es el más eficiente para volúmenes altos.',
-      accion: 'Compara con importación definitiva si el peso o el valor siguen creciendo.',
+      titulo: 'Revisa limites de courier',
+      mensaje: 'El canal courier simplifica la operacion, pero no siempre es el mas eficiente para volumenes altos.',
+      accion: 'Compara con importacion definitiva si el peso o el valor siguen creciendo.',
     });
   }
 
@@ -152,8 +152,8 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
       tipo: 'origen',
       nivel: 'info',
       titulo: 'Compra desde China',
-      mensaje: 'China suele tener buen precio, pero el tránsito y las medidas comerciales requieren más control.',
-      accion: 'Valida tiempos, antidumping y documentación del proveedor antes del embarque.',
+      mensaje: 'China suele tener buen precio, pero el transito y las medidas comerciales requieren mas control.',
+      accion: 'Revisa tiempos, antidumping y documentacion del proveedor antes del embarque.',
     });
   }
 
@@ -161,9 +161,9 @@ function generarRecomendacionesResultado({ pais, canal, incoterm, resultado }) {
     push({
       tipo: 'general',
       nivel: 'info',
-      titulo: 'Operación limpia',
-      mensaje: 'No se detectaron observaciones críticas adicionales para esta cotización.',
-      accion: 'Confirma la documentación comercial y el cronograma de embarque.',
+      titulo: 'Operacion limpia',
+      mensaje: 'No se detectaron observaciones criticas adicionales para esta cotizacion.',
+      accion: 'Revisa la documentacion comercial y el cronograma de embarque.',
     });
   }
 

@@ -13,6 +13,14 @@ function parseJson(value, fallback) {
 
 let initialized = false;
 
+function normalizeDays(value, fallback = 90) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
 async function init() {
   if (initialized) return;
 
@@ -58,7 +66,7 @@ async function init() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_alertas_leido ON alertas_normativas(leido)');
 
   initialized = true;
-  console.log('[ALERTAS] Tablas listas');
+  console.log('[ALERTAS] Tablas preparadas');
 }
 
 function hydrateAlerta(row) {
@@ -169,6 +177,8 @@ function obtenerAlertasNoLeidas() {
 }
 
 function marcarAlertaLeida(id) {
+  const exists = Number(db.get('SELECT COUNT(*) AS count FROM alertas_normativas WHERE id = ?', [id])?.count || 0);
+  if (!exists) return false;
   db.run('UPDATE alertas_normativas SET leido = 1 WHERE id = ?', [id]);
   return true;
 }
@@ -186,7 +196,7 @@ function limpiarAlertasLeidas() {
 }
 
 function limpiarAlertasAntiguas(dias = 90) {
-  const threshold = `-${Number(dias || 90)} days`;
+  const threshold = `-${normalizeDays(dias, 90)} days`;
   const eliminadas = Number(
     db.get('SELECT COUNT(*) AS count FROM alertas_normativas WHERE created_at < datetime(\'now\', ?)', [threshold])?.count || 0
   );
@@ -195,9 +205,14 @@ function limpiarAlertasAntiguas(dias = 90) {
 }
 
 function suscribirAlertas(email, tipos = [], telegramChatId = null) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new Error('Email requerido');
+  }
+
   db.run(
     'INSERT INTO suscripciones_alertas (email, tipos, telegram_chat_id, activo) VALUES (?, ?, ?, 1)',
-    [String(email || '').trim().toLowerCase(), JSON.stringify(tipos || []), telegramChatId || null]
+    [normalizedEmail, JSON.stringify(Array.isArray(tipos) ? tipos : []), telegramChatId || null]
   );
 
   const inserted = db.get('SELECT last_insert_rowid() AS id');
@@ -249,4 +264,7 @@ module.exports = {
   detectarCambiosAutomaticos,
   registrarCambio,
   obtenerEstadisticas,
+  _private: {
+    normalizeDays,
+  },
 };

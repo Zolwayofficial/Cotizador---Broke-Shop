@@ -1,5 +1,5 @@
 const { ADUANET } = require('./conectores-gobierno');
-const { normalizarCodigoPais } = require('./paises');
+const { normalizarCodigoPais, normalizarPaisParaRuta } = require('./paises');
 
 const MAX_SUBPARTIDAS_DEFAULT = 3;
 
@@ -8,26 +8,47 @@ function normalizarPartida(value) {
   return clean.length >= 8 ? clean.padEnd(10, '0').slice(0, 10) : '';
 }
 
+function normalizarMaxSubpartidas(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : MAX_SUBPARTIDAS_DEFAULT;
+}
+
+function normalizarBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'si', 'sí', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
 function dedupeItemsPorPartida(items, maxSubpartidas) {
   const seen = new Set();
   const collected = [];
+  const limit = normalizarMaxSubpartidas(maxSubpartidas);
 
   (items || []).forEach((item) => {
-    const partida = normalizarPartida(item?.hs);
+    const partida = normalizarPartida(
+      item?.hs ||
+      item?.hs_code ||
+      item?.subpartida ||
+      item?.subpartidaNacional ||
+      item?.partida
+    );
     if (!partida || seen.has(partida)) return;
 
     seen.add(partida);
     collected.push({
       partida,
-      descripcion: item?.descOficial || item?.desc || item?.descripcion || '',
-      item: item?.desc || item?.descripcion || '',
+      descripcion: item?.descOficial || item?.descripcionOficial || item?.desc || item?.descripcion || item?.producto || '',
+      item: item?.desc || item?.descripcion || item?.producto || '',
     });
   });
 
   return {
     totalDetectadas: collected.length,
-    subpartidas: collected.slice(0, maxSubpartidas),
-    truncado: collected.length > maxSubpartidas,
+    subpartidas: collected.slice(0, limit),
+    truncado: collected.length > limit,
   };
 }
 
@@ -95,12 +116,13 @@ async function construirValidacionOficialImportacion({
   maxSubpartidas = MAX_SUBPARTIDAS_DEFAULT,
   enabled = process.env.NODE_ENV !== 'test',
 } = {}) {
-  if (!enabled) return null;
+  if (!normalizarBoolean(enabled, process.env.NODE_ENV !== 'test')) return null;
 
-  const dedupe = dedupeItemsPorPartida(items, maxSubpartidas);
+  const limit = normalizarMaxSubpartidas(maxSubpartidas);
+  const dedupe = dedupeItemsPorPartida(items, limit);
   if (!dedupe.subpartidas.length) return null;
 
-  const paisOrigen = normalizarCodigoPais(pais) || String(pais || '').trim().toUpperCase();
+  const paisOrigen = normalizarCodigoPais(pais) || normalizarPaisParaRuta(pais);
 
   try {
     const responses = await Promise.allSettled(
@@ -114,8 +136,31 @@ async function construirValidacionOficialImportacion({
       .filter((response) => response.status === 'fulfilled')
       .map((response) => response.value)
       .filter(Boolean);
+    const erroresFuente = responses
+      .filter((response) => response.status === 'rejected')
+      .map((response) => ({
+        fuente: 'ADUANET',
+        error: response.reason?.message || 'Error desconocido consultando ADUANET',
+      }));
 
-    if (!subpartidas.length) return null;
+    if (!subpartidas.length) {
+      return {
+        fuente: 'ADUANET',
+        paisOrigen,
+        actualizado: new Date().toISOString(),
+        subpartidas: [],
+        totalDetectadas: dedupe.totalDetectadas,
+        truncado: dedupe.truncado,
+        resumen: {
+          consultadas: 0,
+          conveniosDetectados: 0,
+          restriccionesDetectadas: 0,
+          conFuenteOficial: 0,
+        },
+        errores_fuente: erroresFuente,
+        error: erroresFuente[0]?.error || 'No se pudo obtener consulta oficial',
+      };
+    }
 
     return {
       fuente: 'ADUANET',
@@ -130,6 +175,7 @@ async function construirValidacionOficialImportacion({
         restriccionesDetectadas: subpartidas.reduce((count, subpartida) => count + (subpartida.restricciones?.total || 0), 0),
         conFuenteOficial: subpartidas.filter((subpartida) => subpartida.oficialEnVivo).length,
       },
+      errores_fuente: erroresFuente,
     };
   } catch (error) {
     return {
@@ -154,6 +200,9 @@ module.exports = {
   MAX_SUBPARTIDAS_DEFAULT,
   construirValidacionOficialImportacion,
   _private: {
+    normalizarPartida,
+    normalizarMaxSubpartidas,
+    normalizarBoolean,
     dedupeItemsPorPartida,
     pickResumenTributos,
     normalizarTratamiento,

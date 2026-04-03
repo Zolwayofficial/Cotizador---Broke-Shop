@@ -1,224 +1,261 @@
-// server/regimenes.js — Regímenes aduaneros del Perú
-//
-// No todo es "Importación Definitiva". Un importador profesional usa:
-//   - Admisión Temporal (maquinaria, ferias, muestras)
-//   - Drawback (recupera tributos si re-exporta producto manufacturado)
-//   - Reimportación (trae de vuelta lo que exportó)
-//   - Exportación Temporal (envía afuera temporalmente)
-//
-// Base legal: D.L. 1053 (Ley General de Aduanas) + D.S. 010-2009-EF (Reglamento)
+// server/regimenes.js - Regimenes aduaneros del Peru
 
-// ══════════════════════════════════════════
-// CATÁLOGO DE REGÍMENES
-// ══════════════════════════════════════════
 const REGIMENES = {
   '10': {
-    codigo: '10', nombre: 'Importación para el Consumo',
-    descripcion: 'Régimen que permite el ingreso de mercancías al territorio aduanero para su consumo, previo pago de los derechos arancelarios y demás impuestos.',
-    tributos: ['AV', 'ISC', 'IGV', 'IPM', 'Percepción', 'Antidumping'],
+    codigo: '10',
+    nombre: 'Importacion para el Consumo',
+    descripcion: 'Regimen que permite el ingreso de mercancias al territorio aduanero para su consumo, previo pago de derechos e impuestos.',
+    tributos: ['AV', 'ISC', 'IGV', 'IPM', 'Percepcion', 'Antidumping'],
     garantia: false,
     plazo: null,
-    requisitos: ['DAM', 'Factura comercial', 'B/L o AWB', 'Packing list', 'Póliza de seguro'],
-    baseLegal: 'Art. 49° D.L. 1053',
-    uso: 'Compra definitiva de mercancías del exterior',
+    requisitos: ['DAM', 'Factura comercial', 'B/L o AWB', 'Packing list', 'Poliza de seguro'],
+    baseLegal: 'Art. 49 D.L. 1053',
+    uso: 'Compra definitiva de mercancias del exterior',
   },
   '20': {
-    codigo: '20', nombre: 'Admisión Temporal para Reexportación en el Mismo Estado',
+    codigo: '20',
+    nombre: 'Admision Temporal para Reexportacion en el Mismo Estado',
     siglas: 'ARER',
-    descripcion: 'Permite el ingreso de mercancías con suspensión de tributos, con la obligación de reexportarlas en un plazo determinado sin haber sufrido modificación alguna.',
-    tributos: [], // Suspendidos — solo se constituye garantía
+    descripcion: 'Permite el ingreso de mercancias con suspension de tributos y obliga a reexportarlas sin modificacion.',
+    tributos: [],
     garantia: true,
-    garantiaPct: 100, // 100% de los tributos que se pagarían
-    plazoMeses: 18, // Máximo 18 meses, prorrogable a 18 más
-    requisitos: ['DAM', 'Factura o contrato', 'Garantía bancaria o póliza de caución', 'Carta compromiso de reexportación'],
-    baseLegal: 'Art. 53° D.L. 1053',
-    uso: 'Maquinaria para obras, equipos para ferias/eventos, moldes, muestras comerciales, contenedores',
+    garantiaPct: 100,
+    plazoMeses: 18,
+    requisitos: ['DAM', 'Factura o contrato', 'Garantia bancaria o poliza de caucion', 'Carta compromiso de reexportacion'],
+    baseLegal: 'Art. 53 D.L. 1053',
+    uso: 'Maquinaria temporal, ferias, muestras comerciales, contenedores',
     ventajas: [
-      'No paga tributos (solo garantía)',
+      'No paga tributos (solo garantia)',
       'Plazo de 18 meses (prorrogable)',
       'Ideal para proyectos temporales',
     ],
     riesgos: [
-      'Si no reexporta a tiempo → paga tributos + intereses + multa',
-      'La garantía se ejecuta si incumple',
-      'No puede modificar, transformar ni reparar la mercancía',
+      'Si no reexporta a tiempo paga tributos, intereses y multa',
+      'La garantia se ejecuta si incumple',
+      'No puede modificar ni transformar la mercancia',
     ],
   },
   '21': {
-    codigo: '21', nombre: 'Admisión Temporal para Perfeccionamiento Activo',
+    codigo: '21',
+    nombre: 'Admision Temporal para Perfeccionamiento Activo',
     siglas: 'ATPA',
-    descripcion: 'Permite el ingreso de insumos, materias primas y productos intermedios con suspensión de tributos, para ser transformados y luego exportados como producto terminado.',
-    tributos: [], // Suspendidos
+    descripcion: 'Permite importar insumos con suspension de tributos para transformarlos y exportarlos luego.',
+    tributos: [],
     garantia: true,
     garantiaPct: 100,
-    plazoMeses: 24, // 24 meses
-    requisitos: ['DAM', 'Cuadro Insumo-Producto (CIP)', 'Factura comercial', 'Garantía', 'Resolución de SUNAT autorizando'],
-    baseLegal: 'Art. 68° D.L. 1053',
-    uso: 'Importar tela para confeccionar polos y exportarlos, importar chips para ensamblar tablets y exportarlas',
+    plazoMeses: 24,
+    requisitos: ['DAM', 'Cuadro Insumo-Producto (CIP)', 'Factura comercial', 'Garantia', 'Resolucion SUNAT'],
+    baseLegal: 'Art. 68 D.L. 1053',
+    uso: 'Importar insumos para fabricar y exportar producto terminado',
     ventajas: [
-      'No paga tributos sobre los insumos importados',
-      'Permite transformación, elaboración, ensamblaje, montaje',
+      'No paga tributos sobre insumos importados',
+      'Permite transformacion, elaboracion, ensamblaje y montaje',
       '24 meses de plazo',
     ],
     riesgos: [
       'Debe exportar el producto terminado dentro del plazo',
       'Necesita Cuadro Insumo-Producto aprobado por SUNAT',
-      'Si vende localmente → regulariza como importación definitiva + tributos + intereses',
+      'Si vende localmente debe regularizar como importacion definitiva',
     ],
   },
   '32': {
-    codigo: '32', nombre: 'Reimportación en el Mismo Estado',
-    descripcion: 'Permite el ingreso de mercancías exportadas definitivamente, sin el pago de derechos arancelarios ni impuestos, siempre que no hayan sido sometidas a transformación.',
-    tributos: [], // Exonerado
+    codigo: '32',
+    nombre: 'Reimportacion en el Mismo Estado',
+    descripcion: 'Permite el reingreso sin tributos de mercancias exportadas definitivamente que vuelven sin transformacion.',
+    tributos: [],
     garantia: false,
-    plazoMeses: 12, // Dentro de 12 meses desde la exportación
-    requisitos: ['DAM de reimportación', 'DAM de exportación original', 'Documentos que acrediten identidad de la mercancía'],
-    baseLegal: 'Art. 52° D.L. 1053',
-    uso: 'Mercancía rechazada por el comprador, devoluciones, mercancía no vendida en ferias',
+    plazoMeses: 12,
+    requisitos: ['DAM de reimportacion', 'DAM de exportacion original', 'Documentos que acrediten identidad de la mercancia'],
+    baseLegal: 'Art. 52 D.L. 1053',
+    uso: 'Mercancia rechazada, devoluciones, mercancia no vendida en ferias',
     ventajas: [
-      'No paga tributos (regresa lo mismo que salió)',
-      'Recupera el drawback si lo cobró (debe devolverlo)',
+      'No paga tributos',
+      'Si cobro drawback debe devolverlo',
     ],
     riesgos: [
-      'Plazo máximo 12 meses desde la exportación',
-      'La mercancía debe ser la misma (verificación de Aduanas)',
-      'Si cobró drawback, debe devolverlo',
+      'Plazo maximo 12 meses desde la exportacion',
+      'La mercancia debe ser la misma',
+      'Si cobro drawback, debe devolverlo',
     ],
   },
   '41': {
-    codigo: '41', nombre: 'Exportación Temporal para Reimportación en el Mismo Estado',
-    descripcion: 'Permite la salida temporal de mercancías nacionales o nacionalizadas con la obligación de reimportarlas en un plazo determinado, sin haber sufrido modificación.',
-    tributos: [], // No aplica (es salida)
+    codigo: '41',
+    nombre: 'Exportacion Temporal para Reimportacion en el Mismo Estado',
+    descripcion: 'Permite la salida temporal de mercancias para reimportarlas luego sin modificacion.',
+    tributos: [],
     garantia: false,
     plazoMeses: 12,
-    requisitos: ['DAM de exportación temporal', 'Factura o documento que acredite valor'],
-    baseLegal: 'Art. 64° D.L. 1053',
-    uso: 'Enviar maquinaria para exhibición en feria, herramientas para trabajo en el exterior, muestras',
+    requisitos: ['DAM de exportacion temporal', 'Factura o documento que acredite valor'],
+    baseLegal: 'Art. 64 D.L. 1053',
+    uso: 'Ferias, herramientas para trabajo en exterior, muestras',
     ventajas: [
       'Al reimportar no paga tributos',
       'Plazo de 12 meses',
     ],
     riesgos: [
-      'Si no reimporta a tiempo → se considera exportación definitiva',
+      'Si no reimporta a tiempo se considera exportacion definitiva',
     ],
   },
   '42': {
-    codigo: '42', nombre: 'Exportación Temporal para Perfeccionamiento Pasivo',
-    descripcion: 'Permite la salida de mercancías para ser reparadas, transformadas o procesadas en el exterior y luego reimportarlas.',
-    tributos: ['AV_diferencial'], // Solo paga sobre el valor agregado en el exterior
+    codigo: '42',
+    nombre: 'Exportacion Temporal para Perfeccionamiento Pasivo',
+    descripcion: 'Permite enviar mercancias a reparar o transformar y reimportarlas pagando tributos solo sobre el valor agregado.',
+    tributos: ['AV_diferencial'],
     garantia: false,
     plazoMeses: 12,
-    requisitos: ['DAM', 'Factura del servicio en el exterior', 'Documento que acredite la transformación/reparación'],
-    baseLegal: 'Art. 67° D.L. 1053',
-    uso: 'Enviar motor a reparar al exterior, enviar tela a teñir, enviar joya a engarzar',
+    requisitos: ['DAM', 'Factura del servicio en el exterior', 'Documento que acredite la reparacion o transformacion'],
+    baseLegal: 'Art. 67 D.L. 1053',
+    uso: 'Reparacion o mejora en el exterior',
     ventajas: [
-      'Solo paga tributos sobre el valor agregado (reparación/mejora), no sobre el valor total',
-      'Si la reparación fue por garantía → no paga nada',
+      'Solo paga tributos sobre el valor agregado',
+      'Si la reparacion fue por garantia no paga nada',
     ],
     riesgos: [
-      'Debe demostrar que la mercancía es la misma',
+      'Debe demostrar que la mercancia es la misma',
       'Plazo de 12 meses',
     ],
   },
 };
 
-// ══════════════════════════════════════════
-// DRAWBACK (Restitución de derechos arancelarios)
-// D.S. 104-95-EF modificado por D.S. 077-2024-EF
-// ══════════════════════════════════════════
 const DRAWBACK = {
-  tasa: 0.03, // 3% del valor FOB de exportación (vigente 2024-2026)
-  tasaAnterior: 0.04, // Era 4% hasta 2024
-  topeProducto: 0.50, // Insumos importados no pueden superar 50% del valor FOB exportado
-  montoMaximo: 20000000, // Tope $20M por año por empresa (resolución SUNAT)
+  tasa: 0.03,
+  tasaAnterior: 0.04,
+  topeProducto: 0.50,
+  montoMaximo: 20000000,
   requisitos: [
-    'Ser productor-exportador (fabricar el producto que exporta)',
-    'Insumos importados pagaron aranceles (no TLC ni admisión temporal)',
+    'Ser productor-exportador',
+    'Insumos importados pagaron aranceles',
     'Insumos no superan 50% del valor FOB exportado',
-    'Exportación dentro de los 36 meses de la importación del insumo',
-    'Solicitud dentro de los 180 días hábiles desde el embarque',
+    'Exportacion dentro de los 36 meses de la importacion del insumo',
+    'Solicitud dentro de los 180 dias habiles desde el embarque',
   ],
   noAplica: [
-    'Si los insumos ingresaron con preferencia arancelaria (TLC con 0% AV)',
-    'Si los insumos ingresaron por admisión temporal',
-    'Si el producto exportado tiene prohibición de drawback (oro, hidrocarburos)',
+    'Si los insumos ingresaron con preferencia arancelaria',
+    'Si los insumos ingresaron por admision temporal',
+    'Si el producto exportado tiene prohibicion de drawback',
     'Si la empresa tiene deuda tributaria pendiente con SUNAT',
   ],
   baseLegal: 'D.S. 104-95-EF, D.S. 077-2024-EF, Procedimiento DESPA-PG.07',
 };
 
+function parseNumber(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+
+  let normalized = String(value).replace(/\s+/g, '');
+  const hasComma = normalized.includes(',');
+  const hasDot = normalized.includes('.');
+
+  if (hasComma && hasDot) {
+    normalized = normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+      ? normalized.replace(/\./g, '').replace(/,/g, '.')
+      : normalized.replace(/,/g, '');
+  } else if (hasComma) {
+    normalized = /^\d{1,3}(,\d{3})+$/.test(normalized)
+      ? normalized.replace(/,/g, '')
+      : normalized.replace(/\./g, '').replace(/,/g, '.');
+  } else if (hasDot) {
+    normalized = /^\d{1,3}(\.\d{3})+$/.test(normalized)
+      ? normalized.replace(/\./g, '')
+      : normalized;
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parsePositiveNumber(value, fallback = 0) {
+  return Math.max(0, parseNumber(value, fallback));
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Math.floor(parseNumber(value, fallback));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (['true', '1', 'si', 'sí', 'yes'].includes(normalized)) return true;
+  if (['false', '0', 'no', ''].includes(normalized)) return false;
+  return Boolean(value);
+}
+
 function calcularDrawback(fobExportacion, insumosImportados) {
-  if (!fobExportacion || fobExportacion <= 0) return null;
+  const fob = parsePositiveNumber(fobExportacion, 0);
+  if (fob <= 0) return null;
 
-  const insumosPct = insumosImportados / fobExportacion;
+  const insumos = parsePositiveNumber(insumosImportados, 0);
+  const insumosPct = insumos / fob;
   const cumpleTope = insumosPct <= DRAWBACK.topeProducto;
-
-  const montoDrawback = fobExportacion * DRAWBACK.tasa;
+  const montoDrawback = fob * DRAWBACK.tasa;
 
   return {
-    fobExportacion,
-    insumosImportados,
+    fobExportacion: fob,
+    insumosImportados: insumos,
     insumosPctFOB: parseFloat((insumosPct * 100).toFixed(2)),
     cumpleTopeInsumos: cumpleTope,
     tasaDrawback: DRAWBACK.tasa * 100,
     montoRestitucion: cumpleTope ? parseFloat(montoDrawback.toFixed(2)) : 0,
-    montoRestitucionPEN: null, // Se calcula con TC al momento
+    montoRestitucionPEN: null,
     mensaje: cumpleTope
-      ? `✅ Drawback aplicable: ${DRAWBACK.tasa * 100}% × $${fobExportacion.toLocaleString()} = $${montoDrawback.toFixed(2)} de restitución`
-      : `❌ Insumos importados (${(insumosPct * 100).toFixed(1)}%) superan el tope de 50% del FOB exportado`,
+      ? `Drawback aplicable: ${DRAWBACK.tasa * 100}% x $${fob.toLocaleString()} = $${montoDrawback.toFixed(2)} de restitucion`
+      : `Insumos importados (${(insumosPct * 100).toFixed(1)}%) superan el tope de 50% del FOB exportado`,
     requisitos: DRAWBACK.requisitos,
     noAplica: DRAWBACK.noAplica,
     baseLegal: DRAWBACK.baseLegal,
     advertencias: [
       cumpleTope ? null : 'Insumos importados superan el 50% del FOB exportado',
-      'Verificar que insumos NO ingresaron con preferencia arancelaria (TLC con 0% AV)',
-      'Solicitud debe presentarse dentro de 180 días hábiles del embarque de exportación',
+      'Verificar que insumos no ingresaron con preferencia arancelaria',
+      'Solicitud dentro de 180 dias habiles del embarque',
     ].filter(Boolean),
   };
 }
 
-// ══════════════════════════════════════════
-// CALCULADORAS POR RÉGIMEN
-// ══════════════════════════════════════════
-
-// Admisión Temporal: calcula la GARANTÍA que debe constituir
 function calcularAdmisionTemporal(cif, adValorem, isc, igv, ipm, plazoMeses) {
-  const tributosQueSeDeberian = adValorem + isc + igv + ipm;
-  const garantia = tributosQueSeDeberian * 1.0; // 100% de los tributos
-  const plazoDias = (plazoMeses || 18) * 30;
+  const tributosQueSeDeberian =
+    parsePositiveNumber(adValorem) +
+    parsePositiveNumber(isc) +
+    parsePositiveNumber(igv) +
+    parsePositiveNumber(ipm);
+  const garantia = tributosQueSeDeberian;
+  const meses = parsePositiveInteger(plazoMeses, 18);
+  const plazoDias = meses * 30;
+  const costoGarantia = garantia * 0.025 * meses / 12;
 
   return {
-    regimen: 'Admisión Temporal para Reexportación en el Mismo Estado',
+    regimen: 'Admision Temporal para Reexportacion en el Mismo Estado',
     codigo: '20',
     tributosASuspender: parseFloat(tributosQueSeDeberian.toFixed(2)),
     garantiaRequerida: parseFloat(garantia.toFixed(2)),
-    tipoGarantia: 'Carta fianza bancaria, póliza de caución, o depósito en efectivo',
-    plazoMaximo: `${plazoMeses || 18} meses (${plazoDias} días)`,
-    prorrogable: 'Sí, hasta 18 meses adicionales previa solicitud',
-    costoEstimadoGarantia: parseFloat((garantia * 0.025).toFixed(2)), // ~2.5% anual de comisión bancaria
-    nota: 'Al reexportar la mercancía, se devuelve la garantía. Si no reexporta, se ejecuta la garantía y se cobran tributos + intereses.',
+    tipoGarantia: 'Carta fianza bancaria, poliza de caucion, o deposito en efectivo',
+    plazoMaximo: `${meses} meses (${plazoDias} dias)`,
+    prorrogable: 'Si, hasta 18 meses adicionales previa solicitud',
+    costoEstimadoGarantia: parseFloat(costoGarantia.toFixed(2)),
+    nota: 'Al reexportar la mercancia se devuelve la garantia. Si no reexporta, se ejecuta la garantia y se cobran tributos e intereses.',
     comparacion: {
       siImportaDefinitivo: parseFloat(tributosQueSeDeberian.toFixed(2)),
-      siAdmisionTemporal: parseFloat((garantia * 0.025 * (plazoMeses || 18) / 12).toFixed(2)),
-      ahorro: parseFloat((tributosQueSeDeberian - garantia * 0.025 * (plazoMeses || 18) / 12).toFixed(2)),
+      siAdmisionTemporal: parseFloat(costoGarantia.toFixed(2)),
+      ahorro: parseFloat((tributosQueSeDeberian - costoGarantia).toFixed(2)),
     },
   };
 }
 
-// Perfeccionamiento Pasivo: solo tributos sobre valor agregado
 function calcularPerfeccionamientoPasivo(valorOriginal, costoReparacion, adValoremPct) {
-  const valorAgregado = costoReparacion;
-  const adValorem = valorAgregado * (adValoremPct || 0) / 100;
+  const valorBase = parsePositiveNumber(valorOriginal, 0);
+  const valorAgregado = parsePositiveNumber(costoReparacion, 0);
+  const adValoremRate = parsePositiveNumber(adValoremPct, 0);
+  const adValorem = valorAgregado * adValoremRate / 100;
   const baseIGV = valorAgregado + adValorem;
   const igv = baseIGV * 0.16;
   const ipm = baseIGV * 0.02;
   const totalTributos = adValorem + igv + ipm;
 
   return {
-    regimen: 'Exportación Temporal para Perfeccionamiento Pasivo',
+    regimen: 'Exportacion Temporal para Perfeccionamiento Pasivo',
     codigo: '42',
-    valorOriginal,
-    costoReparacion,
+    valorOriginal: valorBase,
+    costoReparacion: valorAgregado,
     valorAgregado,
     tributos: {
       adValorem: parseFloat(adValorem.toFixed(2)),
@@ -227,42 +264,46 @@ function calcularPerfeccionamientoPasivo(valorOriginal, costoReparacion, adValor
       total: parseFloat(totalTributos.toFixed(2)),
     },
     comparacion: {
-      siImportaraNuevo: 'Se pagaría tributos sobre el valor total del bien',
-      conPerfeccionamiento: `Solo paga sobre $${costoReparacion} (el valor agregado en el exterior)`,
-      ahorroEstimado: `~$${((valorOriginal * (adValoremPct || 6) / 100) + (valorOriginal * 0.18)).toFixed(2)} vs $${totalTributos.toFixed(2)}`,
+      siImportaraNuevo: 'Se pagaria tributos sobre el valor total del bien',
+      conPerfeccionamiento: `Solo paga sobre $${valorAgregado} (valor agregado en el exterior)`,
+      ahorroEstimado: `~$${((valorBase * (adValoremRate || 6) / 100) + (valorBase * 0.18)).toFixed(2)} vs $${totalTributos.toFixed(2)}`,
     },
-    nota: costoReparacion === 0
-      ? '✅ Si la reparación fue por GARANTÍA del fabricante → no paga tributos'
-      : 'Tributos solo sobre el valor de la reparación/mejora, no sobre el valor total del bien',
+    nota: valorAgregado === 0
+      ? 'Si la reparacion fue por garantia del fabricante no paga tributos'
+      : 'Tributos solo sobre el valor de la reparacion o mejora',
   };
 }
 
-// Seleccionar régimen recomendado según el caso de uso
-function recomendarRegimen(params) {
-  const { esTemporalMeses, vaATransformar, esDevolucion, esReparacion, fobExport, insumosImport } = params;
+function recomendarRegimen(params = {}) {
+  const meses = parsePositiveInteger(params.esTemporalMeses, 0);
+  const vaATransformar = parseBoolean(params.vaATransformar);
+  const esDevolucion = parseBoolean(params.esDevolucion);
+  const esReparacion = parseBoolean(params.esReparacion);
+  const fob = parsePositiveNumber(params.fobExport, 0);
+  const insumos = parsePositiveNumber(params.insumosImport, 0);
 
   const recomendaciones = [];
 
-  if (esTemporalMeses && esTemporalMeses > 0 && !vaATransformar) {
+  if (meses > 0 && !vaATransformar) {
     recomendaciones.push({
       regimen: REGIMENES['20'],
-      razon: `Ingreso temporal por ${esTemporalMeses} meses sin transformación → Admisión Temporal. No paga tributos, solo garantía.`,
-      ahorro: '100% de tributos (solo costo de la garantía ~2.5%/año)',
+      razon: `Ingreso temporal por ${meses} meses sin transformacion -> Admision Temporal. No paga tributos, solo garantia.`,
+      ahorro: 'Tributos suspendidos mientras cumple el regimen; solo costo de garantia ~2.5% anual',
     });
   }
 
-  if (vaATransformar && fobExport > 0) {
+  if (vaATransformar && fob > 0) {
     recomendaciones.push({
       regimen: REGIMENES['21'],
-      razon: 'Importar insumos para transformar y exportar → Admisión Temporal para Perfeccionamiento Activo. Suspensión total de tributos.',
-      ahorro: '100% de tributos sobre insumos',
+      razon: 'Importar insumos para transformar y exportar -> Admision Temporal para Perfeccionamiento Activo.',
+      ahorro: 'Tributos suspendidos sobre insumos mientras cumple el regimen',
     });
 
-    if (insumosImport && insumosImport / fobExport <= 0.5) {
+    if (insumos > 0 && insumos / fob <= 0.5) {
       recomendaciones.push({
         regimen: { nombre: 'Drawback', codigo: 'DB' },
-        razon: `Alternativa: Importar normal + cobrar Drawback (3% de $${fobExport} = $${(fobExport * 0.03).toFixed(2)})`,
-        ahorro: `$${(fobExport * 0.03).toFixed(2)} de restitución`,
+        razon: `Alternativa: Importar normal + cobrar Drawback (3% de $${fob} = $${(fob * 0.03).toFixed(2)})`,
+        ahorro: `$${(fob * 0.03).toFixed(2)} de restitucion`,
       });
     }
   }
@@ -270,15 +311,15 @@ function recomendarRegimen(params) {
   if (esDevolucion) {
     recomendaciones.push({
       regimen: REGIMENES['32'],
-      razon: 'Mercancía que vuelve al Perú sin modificación → Reimportación en el Mismo Estado. No paga tributos.',
-      ahorro: '100% de tributos',
+      razon: 'Mercancia que vuelve al Peru sin modificacion -> Reimportacion en el Mismo Estado.',
+      ahorro: 'Reingreso sin tributos si mantiene las condiciones del regimen',
     });
   }
 
   if (esReparacion) {
     recomendaciones.push({
       regimen: REGIMENES['42'],
-      razon: 'Enviar a reparar/mejorar al exterior → Exportación Temporal para Perfeccionamiento Pasivo. Solo paga tributos sobre el valor de la reparación.',
+      razon: 'Enviar a reparar o mejorar al exterior -> Exportacion Temporal para Perfeccionamiento Pasivo.',
       ahorro: 'Solo tributos sobre el valor agregado, no sobre el bien completo',
     });
   }
@@ -286,8 +327,8 @@ function recomendarRegimen(params) {
   if (recomendaciones.length === 0) {
     recomendaciones.push({
       regimen: REGIMENES['10'],
-      razon: 'Compra definitiva de mercancías → Importación para el Consumo (régimen estándar).',
-      ahorro: 'N/A — paga todos los tributos',
+      razon: 'Compra definitiva de mercancias -> Importacion para el Consumo.',
+      ahorro: 'N/A - paga todos los tributos',
     });
   }
 
@@ -301,4 +342,10 @@ module.exports = {
   calcularAdmisionTemporal,
   calcularPerfeccionamientoPasivo,
   recomendarRegimen,
+  _private: {
+    parseNumber,
+    parsePositiveNumber,
+    parsePositiveInteger,
+    parseBoolean,
+  },
 };

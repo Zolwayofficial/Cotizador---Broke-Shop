@@ -1,43 +1,43 @@
-// server/agente-conversador.js — Agente 0: El que interactúa con el usuario
+// server/agente-conversador.js - Agente 0: El que interactua con el usuario
 //
-// FUNCIÓN:
-//   - Saber QUÉ preguntar
-//   - Saber en QUÉ ORDEN preguntar
-//   - Saber QUÉ recomendar según respuestas
+// FUNCION:
+//   - Saber QUE preguntar
+//   - Saber en QUE ORDEN preguntar
+//   - Saber QUE recomendar segun respuestas
 //   - Guiar al usuario paso a paso sin abrumar
 //
 // ARQUITECTURA:
-//   Usuario → Agente Conversador → Orquestador → 16 agentes especializados → Resultado
+//   Usuario -> Agente Conversador -> Orquestador -> 16 agentes especializados -> Resultado
 //
 // El conversador es el "traductor" entre el lenguaje natural del usuario y los 16 agentes.
 
 const aiProxy = require('./ai-proxy');
 const flow = require('./agente-conversador-flow');
 
-// ═══════════════════════════════════════════════════════════════
-// SISTEMA EXPERTO: Árbol de decisiones
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
+// SISTEMA EXPERTO: Arbol de decisiones
+// -----------------------------------------------------------------
 
 const QUESTIONS_TREE = {
-  // Nivel 1: Información básica (SIEMPRE se necesita)
+  // Nivel 1: Informacion basica (SIEMPRE se necesita)
   nivel1: [
     {
       key: 'productos',
-      pregunta: '¿Qué productos quieres importar?',
+      pregunta: 'Que productos quieres importar?',
       tipo: 'lista',
       required: true,
-      hint: 'Ej: 500 camisetas de algodón, 100 laptops, etc.'
+      hint: 'Ej: 500 camisetas de algodon, 100 laptops, etc.'
     },
     {
       key: 'pais_origen',
-      pregunta: '¿Desde qué país importarás?',
+      pregunta: 'Desde que pais importaras?',
       tipo: 'texto',
       required: true,
       hint: 'Ej: China, USA, Brasil, etc.'
     },
     {
       key: 'canal',
-      pregunta: '¿Qué canal de importación usarás?',
+      pregunta: 'Que canal de importacion usaras?',
       tipo: 'opciones',
       opciones: ['DEFINITIVA', 'COURIER', 'POSTAL'],
       default: 'DEFINITIVA',
@@ -45,18 +45,18 @@ const QUESTIONS_TREE = {
     }
   ],
 
-  // Nivel 2: Información de precios (necesaria para calcular)
+  // Nivel 2: Informacion de precios (necesaria para calcular)
   nivel2: [
     {
       key: 'precio_unitario',
-      pregunta: '¿Precio unitario en USD?',
+      pregunta: 'Precio unitario en USD?',
       tipo: 'numero',
       required: true,
       hint: 'Ej: 3.50'
     },
     {
       key: 'incoterm',
-      pregunta: '¿Incoterm de la cotización?',
+      pregunta: 'Que incoterm usa el proveedor?',
       tipo: 'opciones',
       opciones: ['FOB', 'CIF', 'CFR', 'EXW', 'FCA', 'CIP', 'DAP', 'DDP'],
       default: 'FOB',
@@ -64,37 +64,37 @@ const QUESTIONS_TREE = {
     },
     {
       key: 'flete',
-      pregunta: '¿Costo de flete (si lo conoces)?',
+      pregunta: 'Costo de flete (si lo conoces)?',
       tipo: 'numero',
       required: false,
-      hint: 'Déjalo en blanco si no lo sabes — lo estimaremos'
+      hint: 'Dejalo en blanco si no lo sabes; lo estimaremos'
     },
     {
       key: 'seguro',
-      pregunta: '¿Costo de seguro (si lo conoces)?',
+      pregunta: 'Costo de seguro (si lo conoces)?',
       tipo: 'numero',
       required: false,
-      hint: 'Déjalo en blanco — usaremos 1.5% del FOB'
+      hint: 'Dejalo en blanco; usaremos 1.5% del FOB'
     }
   ],
 
-  // Nivel 3: Información del importador (para percepciones)
+  // Nivel 3: Informacion del importador (para percepciones)
   nivel3: [
     {
       key: 'tipo_importador',
-      pregunta: '¿Qué tipo de importador eres?',
+      pregunta: 'Cual es tu perfil importador?',
       tipo: 'opciones',
       opciones: [
-        { value: 'general', label: 'General (3.5% percepción)' },
-        { value: 'buen_contribuyente', label: 'Buen Contribuyente (3.5%)' },
-        { value: 'nuevo', label: 'Nuevo Importador (10%)' }
+        { value: 'general', label: 'Empresa importadora recurrente' },
+        { value: 'buen_contribuyente', label: 'Buen Contribuyente SUNAT' },
+        { value: 'nuevo', label: 'Empresa nueva importando' }
       ],
       default: 'general',
       required: true
     },
     {
       key: 'margen_venta',
-      pregunta: '¿Qué margen de utilidad buscas (%)?',
+      pregunta: 'Que margen de utilidad buscas (%)?',
       tipo: 'numero',
       default: 30,
       required: false,
@@ -102,30 +102,30 @@ const QUESTIONS_TREE = {
     }
   ],
 
-  // Nivel 4: Información opcional avanzada
+  // Nivel 4: Informacion opcional avanzada
   nivel4: [
     {
       key: 'peso_total',
-      pregunta: '¿Peso total de la mercancía (kg)?',
+      pregunta: 'Peso total de la mercancia (kg)?',
       tipo: 'numero',
       required: false,
-      hint: 'Opcional — ayuda a estimar flete más preciso'
+      hint: 'Opcional; ayuda a estimar flete mas preciso'
     },
     {
       key: 'tipo_cambio',
-      pregunta: '¿Tipo de cambio a usar (opcional)?',
+      pregunta: 'Tipo de cambio a usar (opcional)?',
       tipo: 'numero',
       required: false,
-      hint: 'Déjalo en blanco — usaremos el TC SUNAT actual'
+      hint: 'Dejalo en blanco; usaremos el TC SUNAT actual'
     }
   ]
 };
 
 const FLOW_CHANNEL_OPTIONS = [
-  { value: 'MARITIMO', label: '🚢 Maritimo (importacion formal)' },
-  { value: 'AEREO', label: '✈️ Aereo (importacion formal)' },
-  { value: 'COURIER', label: '📦 Courier express (DHL, FedEx, UPS u otro)' },
-  { value: 'POSTAL', label: '📮 Postal (Serpost / correo postal)' }
+  { value: 'MARITIMO', label: 'Maritimo (importacion formal)' },
+  { value: 'AEREO', label: 'Aereo (importacion formal)' },
+  { value: 'COURIER', label: 'Courier express (DHL, FedEx, UPS u otro)' },
+  { value: 'POSTAL', label: 'Postal (Serpost / correo postal)' }
 ];
 
 const FLOW_INCOTERM_OPTIONS = [
@@ -168,20 +168,20 @@ const FLOW_MARGIN_OPTIONS = [
   { value: 'OMITIR', label: 'Usar 30% por defecto' }
 ];
 
-// ═══════════════════════════════════════════════════════════════
-// DETECTOR DE INTENCIÓN
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
+// DETECTOR DE INTENCION
+// -----------------------------------------------------------------
 
 function detectarIntencion(mensaje) {
-  const msg = mensaje.toLowerCase();
+  const msg = sanitizarComparacion(mensaje);
   
-  // Si el usuario ya dio información estructurada
+  // Si el usuario ya dio informacion estructurada
   if (mensaje.includes('{') && mensaje.includes('}')) {
     return { tipo: 'datos_estructurados', confianza: 90 };
   }
   
-  // Si el usuario pregunta algo específico
-  if (msg.includes('cuánto') || msg.includes('precio') || msg.includes('costo') || msg.includes('vale')) {
+  // Si el usuario pregunta algo especifico
+  if (msg.includes('cuanto') || msg.includes('precio') || msg.includes('costo') || msg.includes('vale')) {
     return { tipo: 'consulta_costo', confianza: 85 };
   }
   
@@ -189,7 +189,7 @@ function detectarIntencion(mensaje) {
     return { tipo: 'consulta_permisos', confianza: 85 };
   }
   
-  if (msg.includes('tiempo') || msg.includes('día') || msg.includes('demora')) {
+  if (msg.includes('tiempo') || msg.includes('dia') || msg.includes('demora')) {
     return { tipo: 'consulta_tiempo', confianza: 80 };
   }
   
@@ -197,18 +197,18 @@ function detectarIntencion(mensaje) {
     return { tipo: 'consulta_clasificacion', confianza: 85 };
   }
   
-  // Si el usuario está respondiendo una pregunta
+  // Si el usuario esta respondiendo una pregunta
   if (msg.match(/\d+/) || msg.match(/[a-z]{3,}/i)) {
     return { tipo: 'respuesta', confianza: 70 };
   }
   
-  // Default: el usuario quiere iniciar una cotización
+  // Default: el usuario quiere iniciar una cotizacion
   return { tipo: 'iniciar_cotizacion', confianza: 60 };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 // EXTRACTOR DE DATOS DE LENGUAJE NATURAL
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 
 function normalizarTexto(valor) {
   return String(valor || '').trim();
@@ -216,7 +216,9 @@ function normalizarTexto(valor) {
 
 function extraerNumero(texto) {
   const limpio = normalizarTexto(texto)
-    .replace(/usd|dolares|dólares|s\/|soles|pen/gi, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/usd|dolares|s\/|soles|pen/gi, ' ')
     .replace(/,/g, '.');
   const match = limpio.match(/-?\d+(?:\.\d+)?/);
   return match ? parseFloat(match[0]) : null;
@@ -259,7 +261,7 @@ function extraerProductosDesdeTexto(texto) {
 }
 
 function normalizarPais(valor, allowFreeText = false) {
-  const texto = normalizarTexto(valor).toLowerCase();
+  const texto = sanitizarComparacion(valor);
   if (!texto) return null;
 
   const equivalencias = {
@@ -270,17 +272,13 @@ function normalizarPais(valor, allowFreeText = false) {
     brasil: 'BR',
     brasilia: 'BR',
     mexico: 'MX',
-    'méxico': 'MX',
     espana: 'ES',
-    'españa': 'ES',
     alemania: 'DE',
     japon: 'JP',
-    'japón': 'JP',
     corea: 'KR',
     thailandia: 'TH',
     tailandia: 'TH',
     peru: 'PE',
-    'perú': 'PE',
     chile: 'CL',
     colombia: 'CO',
     argentina: 'AR',
@@ -290,12 +288,12 @@ function normalizarPais(valor, allowFreeText = false) {
   const entry = Object.entries(equivalencias).find(([alias]) => texto.includes(alias));
   if (entry) return entry[1];
 
-  const upper = normalizarTexto(valor).toUpperCase();
+  const upper = sanitizarComparacion(valor).toUpperCase();
   if (/^[A-Z]{2}$/.test(upper)) {
     return upper;
   }
 
-  if (allowFreeText && /^[A-ZÁÉÍÓÚÜÑ ]{3,30}$/.test(upper) && upper.split(/\s+/).length <= 3) {
+  if (allowFreeText && /^[A-Z ]{3,30}$/.test(upper) && upper.split(/\s+/).length <= 3) {
     return upper;
   }
 
@@ -303,7 +301,7 @@ function normalizarPais(valor, allowFreeText = false) {
 }
 
 function normalizarCanal(valor) {
-  const texto = normalizarTexto(valor).toLowerCase();
+  const texto = sanitizarComparacion(valor);
   if (!texto) return null;
 
   if (
@@ -330,11 +328,9 @@ function normalizarCanal(valor) {
     || texto.includes('marit')
     || texto.includes('mar ')
     || texto.includes('aere')
-    || texto.includes('aé')
     || texto.includes('formal')
     || texto.includes('barco')
     || texto.includes('avion')
-    || texto.includes('avión')
   ) {
     return 'DEFINITIVA';
   }
@@ -360,13 +356,11 @@ function normalizarTipoImportador(valor) {
 }
 
 function esRespuestaOmitida(valor) {
-  const texto = normalizarTexto(valor).toLowerCase();
+  const texto = sanitizarComparacion(valor);
   return [
     'no se',
-    'no sé',
     'estim',
     'automatic',
-    'automát',
     'omitir',
     'luego',
     'ninguno',
@@ -374,24 +368,23 @@ function esRespuestaOmitida(valor) {
     'no tengo',
     'desconozco',
     'dejalo',
-    'déjalo',
     'en blanco',
   ].some((fragmento) => texto.includes(fragmento));
 }
 
-function esConfirmacionPositiva(valor) {
-  const texto = normalizarTexto(valor).toLowerCase();
-  return ['si', 'sí', 'dale', 'ok', 'claro', 'confirmo', 'calcular', 'continuar'].includes(texto);
+function esRespuestaPositiva(valor) {
+  const texto = sanitizarComparacion(valor);
+  return ['si', 'dale', 'ok', 'claro', 'confirmo', 'calcular', 'continuar'].includes(texto);
 }
 
-function esConfirmacionNegativa(valor) {
-  const texto = normalizarTexto(valor).toLowerCase();
-  return ['no', 'cancelar', 'mantener', 'dejar asi', 'déjalo asi', 'deja asi', 'no cambiar'].includes(texto);
+function esRespuestaNegativa(valor) {
+  const texto = sanitizarComparacion(valor);
+  return ['no', 'cancelar', 'mantener', 'dejar asi', 'deja asi', 'no cambiar'].includes(texto);
 }
 
-const CORRECTION_CONFIRM_OPTIONS = [
-  { value: 'CONFIRMAR_CORRECCION', label: 'Si, corrige' },
-  { value: 'CANCELAR_CORRECCION', label: 'No, mantenlo' }
+const CORRECTION_REVIEW_OPTIONS = [
+  { value: 'APLICAR_CORRECCION', label: 'Si, corrige' },
+  { value: 'MANTENER_CORRECCION', label: 'No, mantenlo' }
 ];
 
 const CORRECTION_FIELD_LABELS = {
@@ -413,15 +406,15 @@ const CORRECTION_FIELD_LABELS = {
 
 const CORRECTION_FIELD_ALIASES = {
   productos: ['producto', 'productos', 'cantidad', 'unidades', 'quiero importar', 'quiero traer', 'quise decir'],
-  pais_origen: ['pais', 'país', 'origen', 'desde'],
-  tipo_sujeto: ['persona natural', 'empresa', 'ruc', 'juridica', 'jurídica'],
-  canal: ['canal', 'courier', 'postal', 'maritimo', 'marítimo', 'aereo', 'aéreo'],
-  objetivo_calculo: ['objetivo', 'precio de venta', 'costo de importacion', 'cotizacion cliente', 'cotización cliente'],
-  precio_unitario: ['precio', 'precio unitario', 'unitario', 'usd', 'dolar', 'dólar'],
+  pais_origen: ['pais', 'origen', 'desde'],
+  tipo_sujeto: ['persona natural', 'empresa', 'ruc', 'juridica'],
+  canal: ['canal', 'courier', 'postal', 'maritimo', 'aereo'],
+  objetivo_calculo: ['objetivo', 'precio de venta', 'costo de importacion', 'cotizacion cliente'],
+  precio_unitario: ['precio', 'precio unitario', 'unitario', 'usd', 'dolar'],
   incoterm: ['incoterm', 'fob', 'cif', 'cfr', 'exw', 'fca', 'cip', 'dap', 'ddp'],
-  tipo_importador: ['importador', 'buen contribuyente', 'primera importacion', 'primera importación'],
+  tipo_importador: ['importador', 'buen contribuyente', 'primera importacion'],
   bien_usado: ['usado', 'nuevo', 'segunda mano', 'reacondicionado'],
-  flete: ['flete', 'envio', 'envío', 'transporte internacional'],
+  flete: ['flete', 'envio', 'transporte internacional'],
   seguro: ['seguro', 'tabla'],
   peso_total: ['peso', 'kg', 'kilos'],
   tipo_cambio: ['tipo de cambio', 'tc', 'sunat', 'banco', 'cambista'],
@@ -637,18 +630,15 @@ function tieneIndicadoresDeCorreccion(valor) {
     'cambia',
     'cambiar',
     'me equivoque',
-    'me equivoqué',
     'quise decir',
     'en realidad',
     'mas bien',
-    'más bien',
     'mejor',
     'actualiza',
     'actualizar',
     'no era',
     'no es',
     'seria',
-    'sería',
   ].some((fragmento) => texto.includes(fragmento));
 }
 
@@ -839,7 +829,7 @@ function tieneSeñalSuficienteDeCorreccion(field, mensaje, correctionHint) {
 }
 
 function detectarCorreccionPendiente(mensaje, contextoBase) {
-  if (!contextoBase.paso_actual || contextoBase.paso_actual === 'productos' || contextoBase.paso_actual === 'confirmar_correccion') {
+  if (!contextoBase.paso_actual || contextoBase.paso_actual === 'productos' || contextoBase.paso_actual === 'revisar_correccion') {
     return null;
   }
 
@@ -906,7 +896,7 @@ function detectarCorreccionPendiente(mensaje, contextoBase) {
   return null;
 }
 
-function invalidarDependenciasPorCorreccion(datosPrevios, field, changes = {}) {
+function limpiarDependenciasPorCorreccion(datosPrevios, field, changes = {}) {
   const actualizados = { ...datosPrevios };
 
   switch (field) {
@@ -935,9 +925,11 @@ function invalidarDependenciasPorCorreccion(datosPrevios, field, changes = {}) {
     delete actualizados.clasificacion_hs;
     delete actualizados.permisos;
     delete actualizados.restricciones;
+    delete actualizados.consulta_oficial;
     delete actualizados.validacion_oficial;
     break;
   case 'pais_origen':
+    delete actualizados.consulta_oficial;
     delete actualizados.validacion_oficial;
     delete actualizados.restricciones;
     delete actualizados.convenio_aplicable;
@@ -949,34 +941,34 @@ function invalidarDependenciasPorCorreccion(datosPrevios, field, changes = {}) {
   return actualizados;
 }
 
-function construirMensajeConfirmacionCorreccion(correccionPendiente) {
-  return `Detecte que quieres corregir ${correccionPendiente.label} de "${formatearValorCampo(correccionPendiente.field, correccionPendiente.from)}" a "${formatearValorCampo(correccionPendiente.field, correccionPendiente.to)}". ¿Lo actualizo?`;
+function construirMensajeRevisionCorreccion(correccionPendiente) {
+  return `Detecte que quieres corregir ${correccionPendiente.label} de "${formatearValorCampo(correccionPendiente.field, correccionPendiente.from)}" a "${formatearValorCampo(correccionPendiente.field, correccionPendiente.to)}". Quieres que lo actualice?`;
 }
 
-function crearRespuestaConfirmacionCorreccion(contextoBase, correccionPendiente) {
+function crearRespuestaRevisionCorreccion(contextoBase, correccionPendiente) {
   return {
     tipo: 'pregunta',
-    mensaje: construirMensajeConfirmacionCorreccion(correccionPendiente),
-    paso: 'confirmar_correccion',
-    opciones: CORRECTION_CONFIRM_OPTIONS,
-    hint: 'Confirma solo si realmente quieres reemplazar ese dato.',
+    mensaje: construirMensajeRevisionCorreccion(correccionPendiente),
+    paso: 'revisar_correccion',
+    opciones: CORRECTION_REVIEW_OPTIONS,
+    hint: 'Revisa si realmente quieres reemplazar ese dato.',
     contexto: {
       ...contextoBase,
-      paso_actual: 'confirmar_correccion',
+      paso_actual: 'revisar_correccion',
       correccion_pendiente: correccionPendiente,
     },
     intencionDetectada: 'correccion_pendiente'
   };
 }
 
-function resolverConfirmacionCorreccion(mensaje, contextoBase) {
+function resolverRevisionCorreccion(mensaje, contextoBase) {
   const pendiente = contextoBase.correccion_pendiente;
   if (!pendiente) {
     return null;
   }
 
-  if (esConfirmacionPositiva(mensaje) || normalizarTexto(mensaje) === 'CONFIRMAR_CORRECCION') {
-    const datosCorregidos = invalidarDependenciasPorCorreccion(
+  if (esRespuestaPositiva(mensaje) || normalizarTexto(mensaje) === 'APLICAR_CORRECCION') {
+    const datosCorregidos = limpiarDependenciasPorCorreccion(
       {
         ...contextoBase.datos_previos,
         ...pendiente.changes,
@@ -997,16 +989,16 @@ function resolverConfirmacionCorreccion(mensaje, contextoBase) {
 
     return {
       tipo: 'pregunta',
-      mensaje: `Listo, actualice ${pendiente.label} a "${formatearValorCampo(pendiente.field, pendiente.to)}". ${siguientePregunta?.pregunta ? `Seguimos con este punto: ${siguientePregunta.pregunta}` : 'Seguimos con la cotizacion.'}`,
+      mensaje: `Actualice ${pendiente.label} a "${formatearValorCampo(pendiente.field, pendiente.to)}". ${siguientePregunta?.pregunta ? `Seguimos con este punto: ${siguientePregunta.pregunta}` : 'Seguimos con la cotizacion.'}`,
       paso: siguientePregunta?.paso || pendiente.return_step,
       opciones: siguientePregunta?.opciones,
       hint: siguientePregunta?.hint,
       contexto: contextoCorregido,
-      intencionDetectada: 'correccion_confirmada'
+      intencionDetectada: 'correccion_aplicada'
     };
   }
 
-  if (esConfirmacionNegativa(mensaje) || normalizarTexto(mensaje) === 'CANCELAR_CORRECCION') {
+  if (esRespuestaNegativa(mensaje) || normalizarTexto(mensaje) === 'MANTENER_CORRECCION') {
     const contextoSinPendiente = {
       ...contextoBase,
     };
@@ -1023,24 +1015,24 @@ function resolverConfirmacionCorreccion(mensaje, contextoBase) {
 
     return {
       tipo: 'pregunta',
-      mensaje: `Perfecto, mantengo ${pendiente.label} como "${formatearValorCampo(pendiente.field, pendiente.from)}". ${preguntaActual?.pregunta ? `Seguimos con este punto: ${preguntaActual.pregunta}` : 'Seguimos con la cotizacion.'}`,
+      mensaje: `Mantengo ${pendiente.label} como "${formatearValorCampo(pendiente.field, pendiente.from)}". ${preguntaActual?.pregunta ? `Seguimos con este punto: ${preguntaActual.pregunta}` : 'Seguimos con la cotizacion.'}`,
       paso: preguntaActual?.paso || pendiente.return_step,
       opciones: preguntaActual?.opciones,
       hint: preguntaActual?.hint,
       contexto: contextoSinPendiente,
-      intencionDetectada: 'correccion_rechazada'
+      intencionDetectada: 'correccion_mantenida'
     };
   }
 
   return {
     tipo: 'pregunta',
-    mensaje: `${construirMensajeConfirmacionCorreccion(pendiente)}\n\nConfirma o cancela antes de seguir.`,
-    paso: 'confirmar_correccion',
-    opciones: CORRECTION_CONFIRM_OPTIONS,
-    hint: 'Puedes confirmar o mantener el valor actual.',
+    mensaje: `${construirMensajeRevisionCorreccion(pendiente)}\n\nRevisa o cancela antes de seguir.`,
+    paso: 'revisar_correccion',
+    opciones: CORRECTION_REVIEW_OPTIONS,
+    hint: 'Puedes revisarlo o mantener el valor actual.',
     contexto: {
       ...contextoBase,
-      paso_actual: 'confirmar_correccion'
+      paso_actual: 'revisar_correccion'
     },
     intencionDetectada: 'correccion_pendiente'
   };
@@ -1174,7 +1166,7 @@ function extraerDeLenguajeNatural(mensaje) {
     datos.incoterm = incoterm;
   }
 
-  if (/(precio|unitario|usd|dolar|dólar|\$|cuesta|vale)/i.test(msg)) {
+  if (/(precio|unitario|usd|dolar|\$|cuesta|vale)/i.test(sanitizarComparacion(msg))) {
     const precio = extraerNumero(msg);
     if (precio !== null) {
       datos.precio_unitario = precio;
@@ -1184,25 +1176,25 @@ function extraerDeLenguajeNatural(mensaje) {
   return datos;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 // GENERADOR DE PREGUNTAS CONTEXTUALES
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 
 function generarPregunta(contexto) {
   const { datos_previos } = contexto;
   
   if (!datos_previos.productos) {
     return {
-      pregunta: '¡Hola! 👋 Soy tu asistente de importaciones. ¿Qué productos quieres importar?',
+      pregunta: 'Hola. Soy tu asistente de importaciones. Que productos quieres importar?',
       paso: 'productos',
       tipo: 'lista',
-      hint: 'Ej: 500 camisetas de algodón, 100 laptops, etc.'
+      hint: 'Ej: 500 camisetas de algodon, 100 laptops, etc.'
     };
   }
   
   if (!datos_previos.pais_origen) {
     return {
-      pregunta: `Perfecto, ${datos_previos.productos.length} producto(s). ¿Desde qué país importarás?`,
+      pregunta: `Perfecto, ${datos_previos.productos.length} producto(s). Desde que pais importaras?`,
       paso: 'pais_origen',
       tipo: 'texto',
       hint: 'Ej: China, USA, Brasil, etc.'
@@ -1211,11 +1203,11 @@ function generarPregunta(contexto) {
   
   if (!datos_previos.canal) {
     return {
-      pregunta: `¿Importarás desde ${datos_previos.pais_origen} por mar, aire, courier o postal?`,
+      pregunta: `Importaras desde ${datos_previos.pais_origen} por mar, aire, courier o postal?`,
       opciones: [
-        { value: 'DEFINITIVA', label: '🚢 Marítimo/Aéreo (importación formal)' },
-        { value: 'COURIER', label: '📦 Courier express (DHL, FedEx, UPS u otro)' },
-        { value: 'POSTAL', label: '📮 Postal (Serpost / correo postal)' }
+        { value: 'DEFINITIVA', label: 'Maritimo/Aereo (importacion formal)' },
+        { value: 'COURIER', label: 'Courier express (DHL, FedEx, UPS u otro)' },
+        { value: 'POSTAL', label: 'Postal (Serpost / correo postal)' }
       ],
       paso: 'canal',
       tipo: 'opciones'
@@ -1224,7 +1216,7 @@ function generarPregunta(contexto) {
   
   if (datos_previos.precio_unitario === undefined) {
     return {
-      pregunta: '¿Cuál es el precio unitario en USD?',
+      pregunta: 'Cual es el precio unitario en USD?',
       paso: 'precio_unitario',
       tipo: 'numero',
       hint: 'Ej: 3.50'
@@ -1233,11 +1225,11 @@ function generarPregunta(contexto) {
   
   if (!datos_previos.incoterm) {
     return {
-      pregunta: '¿Qué Incoterm usó el proveedor?',
+      pregunta: 'Que incoterm usa el proveedor?',
       opciones: [
-        { value: 'FOB', label: 'FOB (Free on Board) — El más común' },
+        { value: 'FOB', label: 'FOB (Free on Board) - El mas comun' },
         { value: 'CIF', label: 'CIF (Cost, Insurance & Freight)' },
-        { value: 'EXW', label: 'EXW (Ex Works) — En fábrica' },
+        { value: 'EXW', label: 'EXW (Ex Works) - En fabrica' },
         { value: 'OTRO', label: 'Otro (CFR, FCA, DAP, DDP)' }
       ],
       paso: 'incoterm',
@@ -1247,10 +1239,10 @@ function generarPregunta(contexto) {
   
   if (!datos_previos.tipo_importador) {
     return {
-      pregunta: '¿Qué tipo de importador eres?',
+      pregunta: 'Cual es el perfil de la empresa importadora?',
       opciones: [
-        { value: 'general', label: 'General — Ya he importado antes' },
-        { value: 'nuevo', label: 'Nuevo — Es mi primera importación' },
+        { value: 'general', label: 'Empresa importadora recurrente' },
+        { value: 'nuevo', label: 'Empresa nueva importando' },
         { value: 'buen_contribuyente', label: 'Buen Contribuyente SUNAT' }
       ],
       paso: 'tipo_importador',
@@ -1260,15 +1252,15 @@ function generarPregunta(contexto) {
   
   // Si ya tenemos todo, indicar que podemos calcular
   return {
-    pregunta: '¡Perfecto! 🎉 Ya tengo toda la información. ¿Calculamos el costo total de importación?',
+    pregunta: 'Ya tengo toda la informacion. Calculamos el costo total de importacion?',
     paso: 'calcular',
-    tipo: 'confirmacion'
+    tipo: 'datos_suficientes_para_calculo'
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 // RECOMENDADOR INTELIGENTE
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 
 function generarRecomendaciones(datos, resultado) {
   const recomendaciones = [];
@@ -1279,7 +1271,7 @@ function generarRecomendaciones(datos, resultado) {
     recomendaciones.push({
       tipo: 'tlc',
       nivel: 'alto',
-      icono: '🤝',
+      icono: 'trade',
       titulo: 'TLC Disponible',
       mensaje: `Tienes un tratado de libre comercio con ${datos.pais_origen}. Puedes ahorrar ${tlc.ahorroTLC}% de Ad Valorem.`,
       accion: 'Solicita Certificado de Origen a tu proveedor'
@@ -1291,7 +1283,7 @@ function generarRecomendaciones(datos, resultado) {
     recomendaciones.push({
       tipo: 'permisos',
       nivel: 'critico',
-      icono: '⚠️',
+      icono: 'warning',
       titulo: 'Permisos Requeridos',
       mensaje: `Necesitas ${resultado.permisos.length} permiso(s) antes de importar.`,
       accion: 'Tramita en VUCE antes del embarque'
@@ -1303,10 +1295,10 @@ function generarRecomendaciones(datos, resultado) {
     recomendaciones.push({
       tipo: 'flete',
       nivel: 'medio',
-      icono: '🚢',
+      icono: 'freight',
       titulo: 'Flete Estimado',
       mensaje: `El flete de $${resultado.totales?.flete} es referencial.`,
-      accion: 'Solicita cotización formal a un freight forwarder'
+      accion: 'Solicita cotizacion formal a un freight forwarder'
     });
   }
   
@@ -1316,10 +1308,10 @@ function generarRecomendaciones(datos, resultado) {
     recomendaciones.push({
       tipo: 'duda_razonable',
       nivel: 'alto',
-      icono: '⚖️',
+      icono: 'review',
       titulo: 'Riesgo SUNAT',
       mensaje: alerta.mensaje,
-      accion: 'Prepara documentación que justifique el precio'
+      accion: 'Prepara documentacion que justifique el precio'
     });
   }
   
@@ -1330,7 +1322,7 @@ function generarRecomendaciones(datos, resultado) {
       recomendaciones.push({
         tipo: 'margen_bajo',
         nivel: 'medio',
-        icono: '📉',
+        icono: 'margin_down',
         titulo: 'Margen Bajo',
         mensaje: `Con ${margen}% de margen, tu utilidad es limitada.`,
         accion: 'Considera negociar mejor precio con el proveedor'
@@ -1339,7 +1331,7 @@ function generarRecomendaciones(datos, resultado) {
       recomendaciones.push({
         tipo: 'margen_alto',
         nivel: 'info',
-        icono: '📈',
+        icono: 'margin_up',
         titulo: 'Margen Alto',
         mensaje: `Con ${margen}% de margen, tu utilidad es excelente.`,
         accion: 'Verifica que el precio de venta sea competitivo en el mercado'
@@ -1350,9 +1342,9 @@ function generarRecomendaciones(datos, resultado) {
   return recomendaciones;
 }
 
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 // AGENTE CONVERSADOR PRINCIPAL
-// ═══════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------
 
 async function agenteConversador(mensaje, contexto = {}) {
   const startTime = Date.now();
@@ -1362,10 +1354,10 @@ async function agenteConversador(mensaje, contexto = {}) {
     paso_actual: contexto.paso_actual || null,
   };
 
-  if (contextoBase.paso_actual === 'calcular' && esConfirmacionPositiva(mensaje)) {
+  if (contextoBase.paso_actual === 'calcular' && esRespuestaPositiva(mensaje)) {
     return {
-      tipo: 'listo_para_calcular',
-      mensaje: 'Perfecto. Ya puedes calcular la cotización con los datos capturados.',
+      tipo: 'datos_suficientes_para_calculo',
+      mensaje: 'Ya tengo los datos necesarios para pasar al calculo.',
       paso: 'calcular',
       contexto: {
         ...contextoBase,
@@ -1376,15 +1368,15 @@ async function agenteConversador(mensaje, contexto = {}) {
     };
   }
 
-  const confirmacionCorreccion = resolverConfirmacionCorreccion(mensaje, contextoBase);
-  if (confirmacionCorreccion) {
-    confirmacionCorreccion.tiempoMs = Date.now() - startTime;
-    return confirmacionCorreccion;
+  const revisionCorreccion = resolverRevisionCorreccion(mensaje, contextoBase);
+  if (revisionCorreccion) {
+    revisionCorreccion.tiempoMs = Date.now() - startTime;
+    return revisionCorreccion;
   }
 
   const correccionPendiente = detectarCorreccionPendiente(mensaje, contextoBase);
   if (correccionPendiente) {
-    const respuestaCorreccion = crearRespuestaConfirmacionCorreccion(contextoBase, correccionPendiente);
+    const respuestaCorreccion = crearRespuestaRevisionCorreccion(contextoBase, correccionPendiente);
     respuestaCorreccion.tiempoMs = Date.now() - startTime;
     return respuestaCorreccion;
   }
@@ -1395,7 +1387,7 @@ async function agenteConversador(mensaje, contexto = {}) {
     return aclaracion;
   }
 
-  // 1. Detectar intención del usuario
+  // 1. Detectar intencion del usuario
   let intencion = detectarIntencion(mensaje);
   if (contextoBase.paso_actual && contextoBase.paso_actual !== 'calcular') {
     intencion = { tipo: 'respuesta', confianza: 95 };
@@ -1408,7 +1400,7 @@ async function agenteConversador(mensaje, contexto = {}) {
     ...datosPorPaso,
   };
 
-  // 3. Actualizar contexto con datos extraídos
+  // 3. Actualizar contexto con datos extraidos
   const contextoActualizado = {
     ...contextoBase,
     datos_previos: {
@@ -1417,7 +1409,7 @@ async function agenteConversador(mensaje, contexto = {}) {
     }
   };
   
-  // 4. Generar respuesta según intención
+  // 4. Generar respuesta segun intencion
   let respuesta;
 
   if (intencion.tipo === 'iniciar_cotizacion' || intencion.tipo === 'respuesta') {
@@ -1425,7 +1417,7 @@ async function agenteConversador(mensaje, contexto = {}) {
       const preguntaActual = flow.generarPregunta(contextoActualizado);
       const guidance = preguntaActual?.tipo === 'opciones'
         ? 'No pude relacionar tu respuesta con las alternativas. Elige una de estas opciones:'
-        : `No logré interpretar bien tu respuesta. ${preguntaActual?.pregunta || '¿Puedes intentarlo otra vez?'}`;
+        : `No logre interpretar bien tu respuesta. ${preguntaActual?.pregunta || 'Puedes intentarlo otra vez?'}`;
 
       respuesta = {
         tipo: 'pregunta',
@@ -1455,24 +1447,24 @@ async function agenteConversador(mensaje, contexto = {}) {
       };
     }
   } else if (intencion.tipo === 'datos_estructurados') {
-    // Usuario envió JSON directo
+    // Usuario envio JSON directo
     try {
       const datos = JSON.parse(mensaje.match(/\{[\s\S]*\}/)[0]);
       respuesta = {
         tipo: 'datos_recibidos',
-        mensaje: '✅ Datos recibidos. Procesando...',
+        mensaje: 'Datos recibidos. Voy a revisarlos antes del calculo.',
         datos: datos,
         contexto: { ...contextoActualizado, datos_previos: datos, paso_actual: 'calcular' }
       };
     } catch {
       respuesta = {
         tipo: 'error',
-        mensaje: 'No entendí los datos. ¿Puedes reformular?',
+        mensaje: 'No entendi los datos. Puedes reformularlos?',
         contexto: contextoActualizado
       };
     }
   } else if (intencion.tipo === 'consulta_costo' || intencion.tipo === 'consulta_permisos' || intencion.tipo === 'consulta_clasificacion') {
-    // Consulta específica — usar IA para responder
+    // Consulta especifica - usar IA para responder
     try {
       const systemPrompt = 'Eres un experto en comercio exterior peruano. Responde de forma clara y concisa.';
       const messages = [
@@ -1490,7 +1482,7 @@ async function agenteConversador(mensaje, contexto = {}) {
     } catch (e) {
       respuesta = {
         tipo: 'error',
-        mensaje: 'Tuve un error. ¿Puedes reformular la pregunta?',
+        mensaje: 'Tuve un error. Puedes reformular la pregunta?',
         error: e.message,
         contexto: contextoActualizado
       };
@@ -1499,7 +1491,7 @@ async function agenteConversador(mensaje, contexto = {}) {
     // Default
     respuesta = {
       tipo: 'pregunta',
-      mensaje: '¿Quieres importar algo? Cuéntame qué productos y desde dónde.',
+      mensaje: 'Quieres importar algo? Cuentame que productos y desde donde.',
       contexto: contextoActualizado
     };
   }

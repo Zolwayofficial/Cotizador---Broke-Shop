@@ -1,8 +1,8 @@
 // server/agentes-navegacion/AgenteNavegadorMINAM.js
-// 
+//
 // AGENTE ESPECIALISTA EN MINAM (Ministerio del Ambiente)
-// 
-// Características:
+//
+// Caracteristicas:
 // - Navega en gob.pe/minam
 // - Busca permisos ambientales
 // - Detecta productos peligrosos
@@ -10,6 +10,27 @@
 // - Detecta sustancias controladas
 
 const { MemoriaAgente } = require('./MemoriaAgente');
+
+function cloneSerializable(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return value;
+  }
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function contieneTermino(texto, termino) {
+  const pattern = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(termino)}(?:$|[^a-z0-9])`, 'i');
+  return pattern.test(texto);
+}
 
 class AgenteNavegadorMINAM {
   constructor() {
@@ -22,41 +43,32 @@ class AgenteNavegadorMINAM {
     this.memoria = new MemoriaAgente(this.nombreAgente);
   }
 
-  // ═══════════════════════════════════════════════════
-  // CONSULTAR PERMISO AMBIENTAL
-  // ═══════════════════════════════════════════════════
   async consultarPermisoAmbiental(producto) {
-    const cacheKey = `minam_${producto}`;
+    const productoNormalizado = this._normalizarClave(producto);
+    const cacheKey = `minam_${productoNormalizado}`;
+    const aprendizajeKey = `permiso_ambiental_${productoNormalizado}`;
 
-    // Verificar cache
     const cached = this._obtenerDeCache(cacheKey);
     if (cached) {
-      console.log(`💾 MINAM: Permiso de cache para ${producto}`);
+      console.log(`MINAM: Permiso de cache para ${producto}`);
       return cached;
     }
 
-    // Verificar aprendizaje previo
-    const aprendizaje = this.memoria.obtenerAprendizaje(`permiso_ambiental_${producto}`);
+    const aprendizaje = this.memoria?.obtenerAprendizaje(aprendizajeKey);
     if (aprendizaje) {
-      console.log('🧠 MINAM: Usando aprendizaje previo');
-      return aprendizaje.valor;
+      console.log('MINAM: Usando aprendizaje previo');
+      return cloneSerializable(aprendizaje.valor);
     }
 
-    // Consultar (en producción sería scraping real)
     const resultado = await this._consultarPermisoLocal(producto);
 
-    // Guardar
     this._guardarEnCache(cacheKey, resultado, 86400000);
-    this.memoria.guardarAprendizaje(`permiso_ambiental_${producto}`, resultado, 0.9);
+    this.memoria?.guardarAprendizaje(aprendizajeKey, cloneSerializable(resultado), 0.9);
 
-    return resultado;
+    return cloneSerializable(resultado);
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR SI REQUIERE PERMISO AMBIENTAL
-  // ═══════════════════════════════════════════════════
   async detectarSiRequierePermiso(producto, categoria) {
-    // Productos que PUEDEN requerir permiso ambiental MINAM
     const productosRequierenPermiso = [
       'quimico', 'sustancia', 'compuesto',
       'residuo', 'desecho', 'basura',
@@ -64,14 +76,14 @@ class AgenteNavegadorMINAM {
       'radiactivo', 'nuclear',
       'ozono', 'clorofluorocarbono', 'cfc',
       'mercurio', 'plomo', 'cadmio',
-      'aceite', 'petroleo', 'combustible'
+      'aceite', 'petroleo', 'combustible',
     ];
 
-    const productoLower = producto.toLowerCase();
-    const categoriaLower = categoria.toLowerCase();
+    const productoNormalizado = this._normalizarClave(producto);
+    const categoriaNormalizada = this._normalizarClave(categoria);
 
-    const requiere = productosRequierenPermiso.some(p =>
-      productoLower.includes(p) || categoriaLower.includes(p)
+    const requiere = productosRequierenPermiso.some((termino) =>
+      contieneTermino(productoNormalizado, termino) || contieneTermino(categoriaNormalizada, termino)
     );
 
     const resultado = {
@@ -80,74 +92,80 @@ class AgenteNavegadorMINAM {
       requierePermisoAmbiental: requiere,
       entidad: 'MINAM',
       tramite: requiere ? 'Permiso Ambiental' : 'No requiere',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
 
-    // Guardar aprendizaje
-    this.memoria.guardarAprendizaje(`requiere_permiso_ambiental_${producto}`, resultado, 0.95);
+    this.memoria?.guardarAprendizaje(
+      `requiere_permiso_ambiental_${productoNormalizado}`,
+      resultado,
+      0.95
+    );
 
     return resultado;
   }
 
-  // ═══════════════════════════════════════════════════
-  // DETECTAR SUSTANCIAS AGOTADORAS DE CAPA DE OZONO
-  // ═══════════════════════════════════════════════════
   async detectarSustanciasOzono(producto) {
     const sustanciasOzono = [
       'cfc', 'clorofluorocarbono',
       'hcfc', 'hidroclorofluorocarbono',
       'halon', 'bromuro de metilo',
-      'tetracloruro de carbono', 'metilcloroformo'
+      'tetracloruro de carbono', 'metilcloroformo',
     ];
 
-    const productoLower = producto.toLowerCase();
-
-    const esSustanciaOzono = sustanciasOzono.some(s => productoLower.includes(s));
+    const productoNormalizado = this._normalizarClave(producto);
+    const esSustanciaOzono = sustanciasOzono.some((termino) => contieneTermino(productoNormalizado, termino));
 
     return {
       producto,
       esSustanciaAgotadoraOzono: esSustanciaOzono,
       requiereAutorizacion: esSustanciaOzono,
       entidad: 'MINAM-PRODUCE',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
   }
 
-  // ═══════════════════════════════════════════════════
-  // PRIVADOS
-  // ═══════════════════════════════════════════════════
   async _consultarPermisoLocal(producto) {
-    // Simular consulta (en producción sería scraping real)
     return {
       producto,
       requierePermiso: false,
       tipoPermiso: null,
       estado: 'pendiente_verificacion',
       fuente: 'MINAM',
-      actualizado: new Date().toISOString()
+      actualizado: new Date().toISOString(),
     };
   }
 
   _guardarEnCache(clave, valor, ttlMs) {
     this.cache.set(clave, {
-      valor,
-      expira: Date.now() + ttlMs
+      valor: cloneSerializable(valor),
+      expira: Date.now() + ttlMs,
     });
   }
 
   _obtenerDeCache(clave) {
     const cached = this.cache.get(clave);
     if (cached && Date.now() < cached.expira) {
-      return cached.valor;
+      return cloneSerializable(cached.valor);
     }
     this.cache.delete(clave);
     return null;
   }
 
-  // ═══════════════════════════════════════════════════
-  // ESTADÍSTICAS
-  // ═══════════════════════════════════════════════════
+  _normalizarClave(valor) {
+    return String(valor ?? '')
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   obtenerEstadisticas() {
+    if (!this.memoria) {
+      return {};
+    }
     return this.memoria.obtenerEstadisticas();
   }
 }

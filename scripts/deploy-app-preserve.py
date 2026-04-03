@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import argparse
+import os
 import shutil
 import tarfile
 import tempfile
@@ -12,7 +14,6 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_PATH = "/var/www/importaiagent"
 HOST = "107.175.95.172"
 USER = "root"
-PASSWORD = "PpnXibJ0jV94750oMH"
 EXCLUDES = {
     ".git",
     "node_modules",
@@ -22,7 +23,13 @@ EXCLUDES = {
     "coverage",
     "backups",
     "restored-backups",
+    "output",
+    "tmp",
+    "secure",
+    ".venv-official-fx",
     "LOCAL_SECRETS.md",
+    "local-start.err.log",
+    "local-start.out.log",
 }
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -44,7 +51,7 @@ cd "$APP_PATH"
 for item in * .[!.]* ..?*; do
   [ -e "$item" ] || continue
   case "$item" in
-    data|.env|.env.production|$ARCHIVE_NAME|deploy-app-only.sh)
+    data|secure|.venv-official-fx|.env|.env.production|$ARCHIVE_NAME|deploy-app-only.sh)
       continue
       ;;
   esac
@@ -54,8 +61,26 @@ done
 tar -xzf "$ARCHIVE_NAME"
 rm -f "$ARCHIVE_NAME"
 
-if [ -f ".env.production" ]; then
+if [ ! -f ".env.production" ]; then
+  echo ".env.production no existe en el VPS y no se desplegara desde local" >&2
+  exit 1
+fi
+
+if [ ! -f ".env" ]; then
   cp .env.production .env
+fi
+
+APP_PORT="$(grep '^PORT=' .env.production | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
+WS_PORT="$(grep '^WS_PORT=' .env.production | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
+
+if [ -z "$APP_PORT" ]; then
+  echo "PORT falta en .env.production" >&2
+  exit 2
+fi
+
+if [ -z "$WS_PORT" ]; then
+  echo "WS_PORT falta en .env.production" >&2
+  exit 3
 fi
 
 mkdir -p data data/logs
@@ -72,7 +97,7 @@ find "$APP_PATH" -path "$APP_PATH/data/*" -prune -o -type f -exec chmod 644 {} +
 [ -f "$APP_PATH/.env" ] && chmod 600 "$APP_PATH/.env"
 [ -f "$APP_PATH/.env.production" ] && chmod 600 "$APP_PATH/.env.production"
 
-HEALTH_URL="http://127.0.0.1:3000/api/monitor/health"
+HEALTH_URL="http://127.0.0.1:$APP_PORT/api/monitor/health"
 health_ok=0
 
 for attempt in $(seq 1 20); do
@@ -85,7 +110,7 @@ for attempt in $(seq 1 20); do
 done
 
 if [ "$health_ok" -ne 1 ]; then
-  echo "No se pudo confirmar el health check local tras varios intentos." >&2
+  echo "No se pudo comprobar el health check local tras varios intentos." >&2
   pm2 logs cotizador --lines 60 --nostream || true
   exit 7
 fi
@@ -94,7 +119,28 @@ pm2 status cotizador --no-color
 """
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Despliegue conservador al VPS preservando datos y secretos remotos.")
+    parser.add_argument("--host", default=HOST)
+    parser.add_argument("--user", default=USER)
+    parser.add_argument("--path", default=APP_PATH)
+    parser.add_argument("--password-env", default="VPS_PASSWORD")
+    parser.add_argument("--password")
+    return parser.parse_args()
+
+
+def resolve_password(args):
+    password = args.password or os.environ.get(args.password_env)
+    if not password:
+        raise SystemExit(
+            f"No se encontro la contrasena del VPS. Define {args.password_env} o usa --password."
+        )
+    return password
+
+
 def main():
+    args = parse_args()
+    password = resolve_password(args)
     stage_dir = Path(tempfile.mkdtemp(prefix="cotizador-vps-stage-"))
     archive_path = Path(tempfile.gettempdir()) / "importaiagent-app-only.tgz"
     if archive_path.exists():
@@ -126,9 +172,9 @@ def main():
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(
-            hostname=HOST,
-            username=USER,
-            password=PASSWORD,
+            hostname=args.host,
+            username=args.user,
+            password=password,
             timeout=30,
             auth_timeout=30,
             banner_timeout=30,
@@ -139,14 +185,14 @@ def main():
         try:
             sftp = client.open_sftp()
             try:
-                sftp.put(str(archive_path), f"{APP_PATH}/importaiagent-app-only.tgz")
-                with sftp.open(f"{APP_PATH}/deploy-app-only.sh", "w") as remote_file:
+                sftp.put(str(archive_path), f"{args.path}/importaiagent-app-only.tgz")
+                with sftp.open(f"{args.path}/deploy-app-only.sh", "w") as remote_file:
                     remote_file.write(REMOTE_SCRIPT)
-                sftp.chmod(f"{APP_PATH}/deploy-app-only.sh", 0o755)
+                sftp.chmod(f"{args.path}/deploy-app-only.sh", 0o755)
             finally:
                 sftp.close()
 
-            command = f"bash {APP_PATH}/deploy-app-only.sh {APP_PATH} importaiagent-app-only.tgz"
+            command = f"bash {args.path}/deploy-app-only.sh {args.path} importaiagent-app-only.tgz"
             stdin, stdout, stderr = client.exec_command(command, get_pty=True)
             exit_status = stdout.channel.recv_exit_status()
             output = stdout.read().decode("utf-8", "replace")

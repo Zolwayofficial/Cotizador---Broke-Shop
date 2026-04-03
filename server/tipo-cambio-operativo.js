@@ -83,7 +83,7 @@ function construirAlertaTipoCambio(tipoCambio) {
     return {
       tipo: 'tipo_cambio',
       nivel: 'info',
-      mensaje: `Tipo de cambio operativo validado en vivo: SBS/SUNAT ${tipoCambio.tasa.toFixed(4)} PEN/USD.`,
+      mensaje: `Tipo de cambio operativo consultado en vivo: SBS/SUNAT ${tipoCambio.tasa.toFixed(4)} PEN/USD.`,
     };
   }
 
@@ -99,7 +99,7 @@ function construirAlertaTipoCambio(tipoCambio) {
     return {
       tipo: 'tipo_cambio',
       nivel: 'medio',
-      mensaje: 'No se pudo validar la fuente oficial SBS/SUNAT en vivo para esta corrida. ' +
+      mensaje: 'No se pudo consultar la fuente oficial SBS/SUNAT en vivo para esta corrida. ' +
         `Se uso una referencia automatica externa: ${tipoCambio.tasa.toFixed(4)} PEN/USD.`,
     };
   }
@@ -108,7 +108,7 @@ function construirAlertaTipoCambio(tipoCambio) {
     return {
       tipo: 'tipo_cambio',
       nivel: 'medio',
-      mensaje: 'No se pudo validar SUNAT en vivo para esta corrida. ' +
+      mensaje: 'No se pudo consultar SUNAT en vivo para esta corrida. ' +
         `Se uso un tipo de cambio de respaldo: ${tipoCambio.tasa.toFixed(4)} PEN/USD.`,
     };
   }
@@ -122,7 +122,7 @@ function buildReferenceMessage(referenciaSunat) {
   }
 
   if (referenciaSunat.estado === 'oficial_en_vivo') {
-    return `Se uso SBS/SUNAT en vivo ${referenciaSunat.venta.toFixed(4)} como TC operativo.`;
+    return `Se consulto SBS/SUNAT en vivo ${referenciaSunat.venta.toFixed(4)} como TC operativo.`;
   }
 
   if (referenciaSunat.estado === 'cache_oficial') {

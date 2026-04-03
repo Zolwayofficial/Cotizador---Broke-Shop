@@ -15,15 +15,17 @@ respuestas de pasos distintos ni perder datos ya capturados.
 2. `pais_origen`
 3. `tipo_sujeto`
 4. `canal`
-5. `precio_unitario`
-6. `incoterm`
-7. `tipo_importador`
-8. `flete` (opcional, excepto `POSTAL`)
-9. `seguro` (opcional, excepto `POSTAL`)
-10. `peso_total` (opcional, excepto `POSTAL`)
-11. `tipo_cambio` (opcional)
-12. `margen_venta` (opcional)
-13. `calcular`
+5. `objetivo_calculo`
+6. `precio_unitario`
+7. `incoterm`
+8. `tipo_importador`
+9. `bien_usado`
+10. `flete` (opcional, excepto `POSTAL` y `POSTAL_FRANQUICIA`)
+11. `seguro` (opcional, excepto `POSTAL` y `POSTAL_FRANQUICIA`)
+12. `peso_total` (opcional, excepto `POSTAL` y `POSTAL_FRANQUICIA`)
+13. `tipo_cambio` (opcional)
+14. `margen_venta` (opcional)
+15. `calcular`
 
 ## Ramas Principales
 
@@ -45,10 +47,11 @@ respuestas de pasos distintos ni perder datos ya capturados.
 - `AEREO`
 - `COURIER`
 - `POSTAL`
+- `POSTAL_FRANQUICIA`
 
 Regla especial:
 
-- `POSTAL` omite `flete`, `seguro` y `peso_total`
+- `POSTAL` y `POSTAL_FRANQUICIA` omiten `flete`, `seguro` y `peso_total`
 
 ## Incoterms Explicitos
 
@@ -71,10 +74,11 @@ Estos escenarios deben mantenerse cubiertos por tests:
 2. `empresa + courier + courier distinto a ejemplos`
 3. `empresa + maritimo + estimaciones opcionales`
 4. `persona_natural + postal`
-5. `persona_natural + courier`
-6. `incoterm distinto de FOB/CIF`
-7. `respuesta invalida` que repita la misma pregunta sin romper contexto
-8. `confirmacion final` sin perder datos previos
+5. `persona_natural + postal_franquicia`
+6. `persona_natural + courier`
+7. `incoterm distinto de FOB/CIF`
+8. `respuesta fuera de opcion` que repita la misma pregunta sin romper contexto
+9. `revision final` sin perder datos previos
 
 ## Reglas De Calidad Del Flujo
 
@@ -83,7 +87,7 @@ Estos escenarios deben mantenerse cubiertos por tests:
 - Cada paso debe aceptar texto libre y botones cuando aplique.
 - Si el usuario no tiene un dato opcional, el sistema debe dejarlo en modo
   estimado o default sin romper el flujo.
-- El resultado final debe poder marcar que componentes fueron exactos,
+- El resultado final debe poder marcar que componentes quedaron con respaldo,
   estimados o referenciales.
 
 ## Lo Que Sigue Si Queremos Mas Cobertura
@@ -124,7 +128,7 @@ Cuando el usuario quiera precio de venta o cotizacion, conviene identificar:
 - `empresa manufacturera`
 
 Para el cotizador actual, la rama mas util por ahora es `empresa comercial`,
-porque el flujo hoy trabaja sobre producto importado listo para revender. La
+porque el flujo hoy trabaja sobre producto importado para revender. La
 rama `manufacturera` podria activarse luego si el usuario quiere incorporar
 transformacion local o costos de produccion.
 
@@ -212,7 +216,7 @@ Esto es clave porque el PDF usa:
 
 ### Rama De Seguro Y CIF Derivado
 
-El material confirma que no siempre basta con pedir "seguro conocido / seguro
+El material muestra que no siempre basta con pedir "seguro conocido / seguro
 estimado". En terminos CIF puede hacer falta una subrama mas precisa:
 
 - `seguro ya conocido`
@@ -231,7 +235,7 @@ Y contemplar dos lecturas posibles:
 
 ### Rama De Costos Avanzados
 
-Para costeo de precio y benchmark academico, este PDF refuerza una rama opcional
+Para costeo de precio y comparativa academica, este PDF refuerza una rama opcional
 de costos adicionales:
 
 - `gastos portuarios`
@@ -307,7 +311,7 @@ temporales, drawback, courier e Importa Facil.
 
 #### 1. Diferenciar Mejor Los Canales Especiales
 
-El PDF confirma que no conviene tratar igual:
+El PDF muestra que no conviene tratar igual:
 
 - `COURIER` (envios de entrega rapida)
 - `POSTAL / SERPOST`
@@ -347,7 +351,7 @@ Para exportacion definitiva, menciona que:
 - ciertos sujetos no obligados a RUC pueden operar con `DNI`, `CE` o
   `Pasaporte`
 
-Para nuestro arbol, esto confirma que `tipo_sujeto` debe seguir muy arriba y
+Para nuestro arbol, esto refuerza que `tipo_sujeto` debe seguir muy arriba y
 deberia luego disparar recomendaciones documentarias, no solo percepcion.
 
 #### 4. Documentacion Exigible Debe Aparecer Como Checklist
@@ -414,10 +418,10 @@ Y en percepcion resalta casos especiales como:
 - no RUC o RUC no consignado
 - no habido / suspension / baja
 
-Esto confirma dos cosas:
+Esto deja claras dos cosas:
 
 - estuvo bien agregar `bien_usado`
-- faltaria en el futuro una capa de validacion mas fina sobre situacion
+- faltaria en el futuro una capa de revision mas fina sobre situacion
   tributaria real del importador, si alguna vez se conecta con fuentes
   oficiales o padroneo mas detallado
 
@@ -444,7 +448,7 @@ El PDF compila:
 - exportacion temporal para perfeccionamiento pasivo
 - drawback
 
-Esto confirma que el sistema no deberia meter estas preguntas dentro del flujo
+Esto refuerza que el sistema no deberia meter estas preguntas dentro del flujo
 base de importacion. Si se implementan, deberian vivir en:
 
 - `modo exportacion`
@@ -453,7 +457,7 @@ base de importacion. Si se implementan, deberian vivir en:
 
 ### Conclusion Operativa
 
-Este PDF no obliga a ensuciar el flujo base. Lo que hace es validar varias
+Este PDF no obliga a ensuciar el flujo base. Lo que hace es respaldar varias
 decisiones que ya estaban bien encaminadas y agregar subramas claras para una
 fase posterior:
 
@@ -479,7 +483,7 @@ mejor detalle sobre:
 
 #### 1. Reafirma La Formula Tributaria Base
 
-El PDF confirma con ejercicios practicos la estructura academica que el motor
+El PDF respalda con ejercicios practicos la estructura academica que el motor
 ya usa:
 
 - `VA = FOB + Flete + Seguro`
@@ -499,7 +503,7 @@ Y menciona expresamente la `franja de precios` para ciertos productos
 agropecuarios, lo que sirve como recordatorio de una futura rama especializada
 si el sistema quiere cubrir esos casos con mas precision.
 
-#### 2. Valida La Logica De Percepcion Que Ya Se Venia Afinando
+#### 2. Refuerza La Logica De Percepcion Que Ya Se Venia Afinando
 
 El material deja explicito:
 
@@ -512,7 +516,7 @@ Esto encaja muy bien con la estructura actual de:
 - `tipo_importador`
 - `bien_usado`
 
-Y confirma que la pregunta sobre mercancia usada no era un detalle menor, sino
+Y refuerza que la pregunta sobre mercancia usada no era un detalle menor, sino
 una rama tributaria real.
 
 #### 3. Introduce Un Caso Fuerte Para Seguro De Tabla
@@ -523,7 +527,7 @@ poliza y aplica `seguro de tabla`.
 Eso sugiere una mejora futura concreta:
 
 - en la rama de `seguro`, no solo ofrecer:
-  - `seguro exacto`
+  - `seguro real`
   - `estimar automaticamente`
 - sino tambien:
   - `usar seguro de tabla`
@@ -568,14 +572,14 @@ Este PDF desarrolla con mas detalle:
 - `Admision Temporal para Reexportacion en el Mismo Estado`
 - `Reimportacion en el Mismo Estado`
 
-Y confirma que esos casos tienen:
+Y muestra que esos casos tienen:
 
 - plazos propios
 - garantia
 - canal rojo obligatorio o control especial
 - requisitos de RUC y condicion tributaria
 
-Eso valida aun mas la idea de no mezclar estos regimenes con el flujo base de
+Eso refuerza aun mas la idea de no mezclar estos regimenes con el flujo base de
 importacion para consumo.
 
 #### 7. Delitos Aduaneros Y Fraude Deben Traducirse A Alertas
@@ -603,8 +607,8 @@ justifica alertas mas serias cuando se detecten patrones de riesgo como:
 
 Este PDF no pide inflar el arbol con mas pasos obligatorios. Lo que hace es:
 
-- confirmar que la base tributaria del motor va bien encaminada
-- validar `bien_usado` y `tipo_importador`
+- reforzar que la base tributaria del motor va bien encaminada
+- reforzar `bien_usado` y `tipo_importador`
 - sugerir una futura opcion de `seguro de tabla`
 - reforzar que temporales y regimens especiales deben vivir aparte
 - justificar una capa mas fuerte de `alertas de fraude, subvaluacion y riesgo`

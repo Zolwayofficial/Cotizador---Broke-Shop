@@ -2,7 +2,7 @@
 
 Referencia interna construida a partir de:
 
-- [AN20_SEM6_Nomenclatura y clasificacion arancelaria.pdf](C:/Users/Billy/Downloads/AN20_SEM6_Nomenclatura%20y%20clasificacion%20arancelaria.pdf)
+- apuntes internos del curso `AN20_SEM6_Nomenclatura y clasificacion arancelaria` usados como material de referencia local no versionado
 
 ## Ideas base que el clasificador debe respetar
 

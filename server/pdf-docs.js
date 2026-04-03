@@ -1,16 +1,26 @@
-// server/pdf-docs.js — Generador de documentos profesionales de comercio exterior
-// Genera HTML profesional que se convierte a PDF con puppeteer o se imprime desde el browser
-// Si puppeteer no está disponible, devuelve HTML listo para imprimir como PDF
+// server/pdf-docs.js - Generador de documentos profesionales de comercio exterior
+// Genera HTML preparado para imprimir o convertir a PDF.
 
-// XSS Protection: escape all user-provided strings before inserting into HTML
 function esc(str) {
-  if (str == null) return '—';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  if (str == null) return '-';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-// ══════════════════════════════════════════
-// PLANTILLAS
-// ══════════════════════════════════════════
+function toNumber(value) {
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 const CSS = `
 <style>
@@ -36,41 +46,50 @@ const CSS = `
   .stamp { border: 2px solid #d32f2f; color: #d32f2f; padding: 4px 12px; display: inline-block; font-weight: bold; transform: rotate(-5deg); font-size: 14px; }
   .warning { background: #fff3e0; border-left: 3px solid #ff9800; padding: 6px 10px; font-size: 10px; margin: 8px 0; }
   .green { color: #2e7d32; }
-  .red { color: #d32f2f; }
   @media print { .page { padding:0; width:100%; } .no-print { display:none; } }
 </style>`;
 
-function formatMoney(n, currency='USD') { 
-  return `${currency} ${(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-}
-function formatDate(d) { 
-  const dt = d ? new Date(d) : new Date();
-  return dt.toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit',year:'numeric'});
+function formatMoney(n, currency = 'USD') {
+  return `${currency} ${toNumber(n).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-// ══════════════════════════════════════════
-// 1. COTIZACIÓN PROFESIONAL
-// ══════════════════════════════════════════
+function formatDate(d) {
+  const candidate = d ? new Date(d) : new Date();
+  const dt = Number.isNaN(candidate.getTime()) ? new Date() : candidate;
+  return dt.toLocaleDateString('es-PE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function buildFooter(message) {
+  return `<div class="footer">${esc(message)}</div>`;
+}
+
 function generarCotizacion(data) {
-  const { items, canal, incoterm, pais, tc, totales, importador, proveedor, notas, id } = data;
-  const itemRows = (items||[]).map((it,i) => `
+  const { items, canal, incoterm, pais, tc, totales, importador, proveedor, notas, id } = data || {};
+  const itemRows = (items || []).map((it, i) => `
     <tr>
-      <td>${i+1}</td>
+      <td>${i + 1}</td>
       <td>${esc(it.hs)}</td>
       <td>${esc(it.desc)}</td>
-      <td class="right">${it.qty||1}</td>
+      <td class="right">${it.qty || 1}</td>
       <td class="right">${formatMoney(it.unit)}</td>
-      <td class="right">${formatMoney((it.qty||1)*(it.unit||0))}</td>
-      <td class="right">${it.adv||0}%</td>
+      <td class="right">${formatMoney((it.qty || 1) * (it.unit || 0))}</td>
+      <td class="right">${it.adv || 0}%</td>
       <td class="right">${formatMoney(it.tributos)}</td>
     </tr>`).join('');
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${CSS}</head><body>
 <div class="page">
   <div class="header">
-    <div><h1>COTIZACIÓN DE IMPORTACIÓN</h1><div>Régimen: Importación para el Consumo</div></div>
+    <div><h1>COTIZACION DE IMPORTACION</h1><div>Regimen: Importacion para el consumo</div></div>
     <div class="doc-info">
-      <div class="bold">N° ${id || 'COT-'+Date.now()}</div>
+      <div class="bold">N. ${id || `COT-${Date.now()}`}</div>
       <div>Fecha: ${formatDate()}</div>
       <div>Canal: ${esc(canal)}</div>
       <div>TC: ${esc(tc)} PEN/USD</div>
@@ -80,22 +99,22 @@ function generarCotizacion(data) {
   <div class="grid">
     <div class="section">
       <div class="section-title">IMPORTADOR</div>
-      <div class="field"><label>Razón Social</label><value>${esc(importador?.nombre)}</value></div>
+      <div class="field"><label>Razon social</label><value>${esc(importador?.nombre)}</value></div>
       <div class="field"><label>RUC</label><value>${esc(importador?.ruc)}</value></div>
-      <div class="field"><label>Dirección</label><value>${esc(importador?.direccion)}</value></div>
+      <div class="field"><label>Direccion</label><value>${esc(importador?.direccion)}</value></div>
     </div>
     <div class="section">
       <div class="section-title">PROVEEDOR</div>
       <div class="field"><label>Empresa</label><value>${esc(proveedor?.nombre)}</value></div>
-      <div class="field"><label>País</label><value>${esc(pais)}</value></div>
-      <div class="field"><label>Incoterm</label><value>${esc(incoterm||'FOB')}</value></div>
+      <div class="field"><label>Pais</label><value>${esc(pais)}</value></div>
+      <div class="field"><label>Incoterm</label><value>${esc(incoterm || 'FOB')}</value></div>
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title">DETALLE DE MERCANCÍAS</div>
+    <div class="section-title">DETALLE DE MERCANCIAS</div>
     <table>
-      <tr><th>#</th><th>Partida</th><th>Descripción</th><th class="right">Cant.</th><th class="right">Unitario</th><th class="right">FOB</th><th class="right">AV%</th><th class="right">Tributos</th></tr>
+      <tr><th>#</th><th>Partida</th><th>Descripcion</th><th class="right">Cant.</th><th class="right">Unitario</th><th class="right">FOB</th><th class="right">AV%</th><th class="right">Tributos</th></tr>
       ${itemRows}
     </table>
   </div>
@@ -104,127 +123,121 @@ function generarCotizacion(data) {
     <div class="section">
       <div class="section-title">RESUMEN TRIBUTARIO</div>
       <table>
-        <tr><td>FOB Total</td><td class="right bold">${formatMoney(totales?.fob)}</td></tr>
+        <tr><td>FOB total</td><td class="right bold">${formatMoney(totales?.fob)}</td></tr>
         <tr><td>Flete</td><td class="right">${formatMoney(totales?.flete)}</td></tr>
         <tr><td>Seguro</td><td class="right">${formatMoney(totales?.seguro)}</td></tr>
         <tr><td class="bold">CIF</td><td class="right bold">${formatMoney(totales?.cif)}</td></tr>
-        <tr><td>Ad Valorem</td><td class="right">${formatMoney(totales?.advalorem)}</td></tr>
+        <tr><td>Ad valorem</td><td class="right">${formatMoney(totales?.advalorem)}</td></tr>
         <tr><td>ISC</td><td class="right">${formatMoney(totales?.isc)}</td></tr>
         <tr><td>IGV (16%)</td><td class="right">${formatMoney(totales?.igv)}</td></tr>
         <tr><td>IPM (2%)</td><td class="right">${formatMoney(totales?.ipm)}</td></tr>
-        <tr><td>Percepción</td><td class="right">${formatMoney(totales?.percepcion)}</td></tr>
+        <tr><td>Percepcion</td><td class="right">${formatMoney(totales?.percepcion)}</td></tr>
         <tr><td>Antidumping</td><td class="right">${formatMoney(totales?.antidumping)}</td></tr>
         <tr class="total-row"><td>TOTAL A PAGAR</td><td class="right">${formatMoney(totales?.total)}</td></tr>
-        <tr class="total-row"><td>TOTAL EN SOLES</td><td class="right">${formatMoney(totales?.totalPEN,'PEN')}</td></tr>
+        <tr class="total-row"><td>TOTAL EN SOLES</td><td class="right">${formatMoney(totales?.totalPEN, 'PEN')}</td></tr>
       </table>
     </div>
     <div class="section">
       <div class="section-title">COSTOS OPERATIVOS</div>
       <table>
-        <tr><td>Agente de Aduanas (est.)</td><td class="right">$150-300</td></tr>
+        <tr><td>Agente de aduanas (est.)</td><td class="right">$150-300</td></tr>
         <tr><td>Almacenaje (est.)</td><td class="right">$50-200</td></tr>
         <tr><td>Transporte local (est.)</td><td class="right">$80-250</td></tr>
-        <tr><td>Comisión banco (est.)</td><td class="right">$30-50</td></tr>
+        <tr><td>Comision banco (est.)</td><td class="right">$30-50</td></tr>
       </table>
       ${notas ? `<div class="warning">${esc(notas)}</div>` : ''}
     </div>
   </div>
 
-  <div class="footer">
-    Documento generado por Cotizador de Importación Perú v2.0 — Valores referenciales sujetos a verificación por SUNAT
-  </div>
+  ${buildFooter('Documento generado por ImportAIAgent Cotizador - valores sujetos a verificacion operativa y aduanera.')}
 </div></body></html>`;
 }
 
-// ══════════════════════════════════════════
-// 2. PACKING LIST
-// ══════════════════════════════════════════
 function generarPackingList(data) {
-  const { items, importador, proveedor, pais, referencia, embarque } = data;
-  const rows = (items||[]).map((it,i) => `
+  const { items, importador, proveedor, pais, referencia, embarque } = data || {};
+  const safeReferencia = referencia || `PL-${Date.now()}`;
+  const rows = (items || []).map((it, i) => `
     <tr>
-      <td>${i+1}</td>
+      <td>${i + 1}</td>
       <td>${esc(it.desc)}</td>
       <td>${esc(it.hs)}</td>
-      <td class="right">${it.qty||1}</td>
-      <td class="right">${it.pesoNetoKg||'—'}</td>
-      <td class="right">${it.pesoBrutoKg||'—'}</td>
-      <td class="right">${it.bultos||1}</td>
+      <td class="right">${it.qty || 1}</td>
+      <td class="right">${it.pesoNetoKg || '-'}</td>
+      <td class="right">${it.pesoBrutoKg || '-'}</td>
+      <td class="right">${it.bultos || 1}</td>
       <td>${esc(it.marcas)}</td>
     </tr>`).join('');
 
-  const totalNeto = (items||[]).reduce((s,it) => s + (it.pesoNetoKg||0) * (it.qty||1), 0);
-  const totalBruto = (items||[]).reduce((s,it) => s + (it.pesoBrutoKg||0) * (it.qty||1), 0);
-  const totalBultos = (items||[]).reduce((s,it) => s + (it.bultos||1), 0);
+  const totalNeto = (items || []).reduce((s, it) => s + (it.pesoNetoKg || 0) * (it.qty || 1), 0);
+  const totalBruto = (items || []).reduce((s, it) => s + (it.pesoBrutoKg || 0) * (it.qty || 1), 0);
+  const totalBultos = (items || []).reduce((s, it) => s + (it.bultos || 1), 0);
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${CSS}</head><body>
 <div class="page">
   <div class="header">
-    <div><h1>PACKING LIST</h1><div>Lista de Empaque / Lista de Embalaje</div></div>
+    <div><h1>PACKING LIST</h1><div>Lista de empaque</div></div>
     <div class="doc-info">
-      <div class="bold">Ref: ${esc(referencia)||'PL-'+Date.now()}</div>
+      <div class="bold">Ref: ${esc(safeReferencia)}</div>
       <div>Fecha: ${formatDate()}</div>
     </div>
   </div>
   <div class="grid">
     <div class="section">
-      <div class="section-title">EXPORTADOR (SHIPPER)</div>
+      <div class="section-title">EXPORTADOR</div>
       <div class="field"><label>Empresa</label><value>${esc(proveedor?.nombre)}</value></div>
-      <div class="field"><label>País</label><value>${esc(pais)}</value></div>
-      <div class="field"><label>Dirección</label><value>${esc(proveedor?.direccion)}</value></div>
+      <div class="field"><label>Pais</label><value>${esc(pais)}</value></div>
+      <div class="field"><label>Direccion</label><value>${esc(proveedor?.direccion)}</value></div>
     </div>
     <div class="section">
-      <div class="section-title">CONSIGNATARIO (CONSIGNEE)</div>
+      <div class="section-title">CONSIGNATARIO</div>
       <div class="field"><label>Empresa</label><value>${esc(importador?.nombre)}</value></div>
       <div class="field"><label>RUC</label><value>${esc(importador?.ruc)}</value></div>
-      <div class="field"><label>Dirección</label><value>${esc(importador?.direccion||'Lima, Perú')}</value></div>
+      <div class="field"><label>Direccion</label><value>${esc(importador?.direccion || 'Lima, Peru')}</value></div>
     </div>
   </div>
   <div class="section">
     <div class="section-title">DATOS DE EMBARQUE</div>
     <div class="grid">
-      <div><div class="field"><label>Puerto de Embarque</label><value>${esc(embarque?.puertoOrigen)}</value></div></div>
-      <div><div class="field"><label>Puerto de Destino</label><value>${esc(embarque?.puertoDestino||'Callao, Perú')}</value></div></div>
+      <div><div class="field"><label>Puerto de embarque</label><value>${esc(embarque?.puertoOrigen)}</value></div></div>
+      <div><div class="field"><label>Puerto de destino</label><value>${esc(embarque?.puertoDestino || 'Callao, Peru')}</value></div></div>
     </div>
   </div>
   <div class="section">
     <div class="section-title">DETALLE DE BULTOS</div>
     <table>
-      <tr><th>#</th><th>Descripción</th><th>Partida</th><th class="right">Cant.</th><th class="right">Peso Neto</th><th class="right">Peso Bruto</th><th class="right">Bultos</th><th>Marcas</th></tr>
+      <tr><th>#</th><th>Descripcion</th><th>Partida</th><th class="right">Cant.</th><th class="right">Peso neto</th><th class="right">Peso bruto</th><th class="right">Bultos</th><th>Marcas</th></tr>
       ${rows}
       <tr class="total-row"><td colspan="3">TOTALES</td><td></td><td class="right">${totalNeto.toFixed(2)} kg</td><td class="right">${totalBruto.toFixed(2)} kg</td><td class="right">${totalBultos}</td><td></td></tr>
     </table>
   </div>
-  <div class="footer">Packing List generado por Cotizador de Importación Perú v2.0</div>
+  ${buildFooter('Packing list generado por ImportAIAgent Cotizador.')}
 </div></body></html>`;
 }
 
-// ══════════════════════════════════════════
-// 3. COMMERCIAL INVOICE (Factura Comercial)
-// ══════════════════════════════════════════
 function generarInvoice(data) {
-  const { items, importador, proveedor, pais, incoterm, moneda, referencia } = data;
+  const { items, importador, proveedor, pais, incoterm, moneda, referencia } = data || {};
   const cur = moneda || 'USD';
-  const rows = (items||[]).map((it,i) => `
+  const safeReferencia = referencia || `INV-${Date.now()}`;
+  const rows = (items || []).map((it, i) => `
     <tr>
-      <td>${i+1}</td>
+      <td>${i + 1}</td>
       <td>${esc(it.desc)}</td>
       <td>${esc(it.hs)}</td>
-      <td class="right">${it.qty||1}</td>
-      <td class="right">${it.unidad||'PCS'}</td>
-      <td class="right">${formatMoney(it.unit,cur)}</td>
-      <td class="right">${formatMoney((it.qty||1)*(it.unit||0),cur)}</td>
+      <td class="right">${it.qty || 1}</td>
+      <td class="right">${it.unidad || 'PCS'}</td>
+      <td class="right">${formatMoney(it.unit, cur)}</td>
+      <td class="right">${formatMoney((it.qty || 1) * (it.unit || 0), cur)}</td>
     </tr>`).join('');
-  const totalFOB = (items||[]).reduce((s,it) => s + (it.qty||1)*(it.unit||0), 0);
+  const totalFOB = (items || []).reduce((s, it) => s + (it.qty || 1) * (it.unit || 0), 0);
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${CSS}</head><body>
 <div class="page">
   <div class="header">
-    <div><h1>COMMERCIAL INVOICE</h1><div>Factura Comercial / Proforma</div></div>
+    <div><h1>COMMERCIAL INVOICE</h1><div>Factura comercial / proforma</div></div>
     <div class="doc-info">
-      <div class="bold">Invoice: ${esc(referencia)||'INV-'+Date.now()}</div>
+      <div class="bold">Invoice: ${esc(safeReferencia)}</div>
       <div>Date: ${formatDate()}</div>
-      <div>Terms: ${esc(incoterm||'FOB')}</div>
+      <div>Terms: ${esc(incoterm || 'FOB')}</div>
     </div>
   </div>
   <div class="grid">
@@ -238,7 +251,7 @@ function generarInvoice(data) {
       <div class="section-title">BUYER / IMPORTER</div>
       <div class="field"><label>Company</label><value>${esc(importador?.nombre)}</value></div>
       <div class="field"><label>Tax ID (RUC)</label><value>${esc(importador?.ruc)}</value></div>
-      <div class="field"><label>Address</label><value>${esc(importador?.direccion||'Lima, Peru')}</value></div>
+      <div class="field"><label>Address</label><value>${esc(importador?.direccion || 'Lima, Peru')}</value></div>
     </div>
   </div>
   <div class="section">
@@ -246,64 +259,61 @@ function generarInvoice(data) {
     <table>
       <tr><th>#</th><th>Description</th><th>HS Code</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Unit Price</th><th class="right">Amount</th></tr>
       ${rows}
-      <tr class="total-row"><td colspan="6">TOTAL ${esc(incoterm||'FOB')}</td><td class="right">${formatMoney(totalFOB,cur)}</td></tr>
+      <tr class="total-row"><td colspan="6">TOTAL ${esc(incoterm || 'FOB')}</td><td class="right">${formatMoney(totalFOB, cur)}</td></tr>
     </table>
   </div>
   <div class="section">
     <div class="section-title">DECLARATIONS</div>
     <p style="font-size:10px;padding:6px;">We certify that the information contained in this invoice is true and correct and that the contents of this shipment are as stated above. Country of Origin: ${esc(pais)}. Country of Destination: Peru.</p>
     <div style="margin-top:30px; display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-      <div style="border-top:1px solid #333; padding-top:4px; text-align:center; font-size:10px;">Authorized Signature & Stamp (Seller)</div>
+      <div style="border-top:1px solid #333; padding-top:4px; text-align:center; font-size:10px;">Authorized signature and stamp</div>
       <div style="border-top:1px solid #333; padding-top:4px; text-align:center; font-size:10px;">Date</div>
     </div>
   </div>
-  <div class="footer">Generated by Cotizador de Importación Perú v2.0 — Reference document only</div>
+  ${buildFooter('Generated by ImportAIAgent Cotizador - reference commercial document.')}
 </div></body></html>`;
 }
 
-// ══════════════════════════════════════════
-// 4. RESUMEN DE PERMISOS
-// ══════════════════════════════════════════
 function generarResumenPermisos(data) {
-  const { permisos } = data;
-  const permRows = (permisos||[]).map(p => `
+  const { permisos } = data || {};
+  const permRows = (permisos || []).map((p) => `
     <tr>
-      <td>${p.icon||'📋'} ${esc(p.entidad)}</td>
+      <td>${esc(p.icon || '[]')} ${esc(p.entidad)}</td>
       <td>${esc(p.nombre)}</td>
       <td>${esc(p.tramite)}</td>
-      <td>${p.vuce ? '✅ VUCE' : 'Presencial'}</td>
+      <td>${p.vuce ? 'VUCE' : 'Presencial'}</td>
       <td>${esc(p.web)}</td>
     </tr>`).join('');
-  const pasosHtml = (permisos||[]).map(p => `
+  const pasosHtml = (permisos || []).map((p) => `
     <div class="section">
-      <div class="section-title">${p.icon||'📋'} ${esc(p.entidad)} — ${esc(p.nombre)}</div>
+      <div class="section-title">${esc(p.icon || '[]')} ${esc(p.entidad)} - ${esc(p.nombre)}</div>
       <div style="padding:6px;">
         <div class="bold">${esc(p.tramite)}</div>
         <ol style="margin:6px 0 6px 20px;font-size:10px;">
-          ${(p.pasos||[]).map(paso => `<li style="margin:3px 0;">${paso}</li>`).join('')}
+          ${(p.pasos || []).map((paso) => `<li style="margin:3px 0;">${esc(paso)}</li>`).join('')}
         </ol>
-        <div style="font-size:9px;color:#666;">Web: ${esc(p.web)} | Tel: ${esc(p.telefono)} | ${p.vuce?'Tramita por VUCE':'Trámite presencial'}</div>
+        <div style="font-size:9px;color:#666;">Web: ${esc(p.web)} | Tel: ${esc(p.telefono)} | ${p.vuce ? 'Tramita por VUCE' : 'Tramite presencial'}</div>
       </div>
     </div>`).join('');
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">${CSS}</head><body>
 <div class="page">
   <div class="header">
-    <div><h1>RESUMEN DE PERMISOS</h1><div>Autorizaciones requeridas para importación</div></div>
+    <div><h1>RESUMEN DE PERMISOS</h1><div>Autorizaciones requeridas para importacion</div></div>
     <div class="doc-info"><div>Fecha: ${formatDate()}</div></div>
   </div>
   ${permisos?.length > 0 ? `
-    <div class="warning">⚠ Esta importación requiere ${permisos.length} autorización(es). Tramitar ANTES del embarque para evitar demoras y sobrecostos de almacenaje.</div>
+    <div class="warning">Esta importacion requiere ${permisos.length} autorizacion(es). Tramitar antes del embarque ayuda a evitar demoras y sobrecostos.</div>
     <div class="section">
       <div class="section-title">ENTIDADES REGULADORAS</div>
       <table>
-        <tr><th>Entidad</th><th>Nombre Completo</th><th>Trámite</th><th>Vía</th><th>Web</th></tr>
+        <tr><th>Entidad</th><th>Nombre completo</th><th>Tramite</th><th>Via</th><th>Web</th></tr>
         ${permRows}
       </table>
     </div>
     ${pasosHtml}
-  ` : '<div style="text-align:center;padding:40px;"><div class="stamp green" style="border-color:#2e7d32;">✅ SIN RESTRICCIONES</div><p style="margin-top:12px;">Esta mercancía no requiere permisos especiales para su importación al Perú.</p></div>'}
-  <div class="footer">Generado por Cotizador de Importación Perú v2.0 — Verificar vigencia de requisitos en VUCE y entidades correspondientes</div>
+  ` : '<div style="text-align:center;padding:40px;"><div class="stamp green" style="border-color:#2e7d32;">SIN RESTRICCIONES DETECTADAS</div><p style="margin-top:12px;">No se detectaron permisos especiales para este caso con la informacion disponible.</p></div>'}
+  ${buildFooter('Resumen generado por ImportAIAgent Cotizador. Verifica vigencia de requisitos en VUCE y entidades sectoriales.')}
 </div></body></html>`;
 }
 

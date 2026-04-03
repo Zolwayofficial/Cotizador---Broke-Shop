@@ -1,183 +1,135 @@
-// test-agente-sunat.js — Prueba completa del Agente Navegador SUNAT
-
-console.log("🔍 INICIANDO PRUEBA DEL AGENTE NAVEGADOR SUNAT...\n");
-console.log("═".repeat(60));
+// test-agente-sunat.js - Smoke test manual del agente navegador SUNAT
 
 const agentesNavegacion = require('./server/agentes-navegacion');
 
-async function ejecutarPruebas() {
-  let exitosas = 0;
-  let fallidas = 0;
+function printDivider() {
+  console.log('='.repeat(60));
+}
 
-  // ═══════════════════════════════════════════════════
-  // INICIALIZAR AGENTES
-  // ═══════════════════════════════════════════════════
-  console.log("\n📊 PRUEBA 0: Inicialización de agentes");
-  try {
-    await agentesNavegacion.init();
-    console.log("✅ Agentes inicializados correctamente");
-    exitosas++;
-  } catch (e) {
-    console.log("❌ Error en inicialización:", e.message);
-    fallidas++;
-    console.log("\n⚠️  No se puede continuar sin inicialización");
-    return;
+function displayValue(value, fallback = 'N/A') {
+  return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+async function runCase(index, testCase) {
+  console.log(`\nPRUEBA ${index + 1}: ${testCase.title}`);
+  if (testCase.note) {
+    console.log(`   ${testCase.note}`);
   }
 
-  // ═══════════════════════════════════════════════════
-  // PRUEBA 1: CONSULTAR TIPO DE CAMBIO
-  // ═══════════════════════════════════════════════════
-  console.log("\n🏛️  PRUEBA 1: Tipo de Cambio SUNAT");
-  console.log("   Navegando en e-consultaruc.sunat.gob.pe...");
+  const startTime = Date.now();
 
-  const startTime1 = Date.now();
   try {
-    const tc = await agentesNavegacion.SUNAT.consultarTipoCambio();
-    const tiempo1 = Date.now() - startTime1;
-
-    if (tc.exito || tc.compra || tc.venta) {
-      console.log("✅ EXITOSA");
-      console.log(`   Compra: S/ ${tc.compra || 'N/A'}`);
-      console.log(`   Venta:  S/ ${tc.venta || 'N/A'}`);
-      console.log(`   Fuente: ${tc.fuente || 'N/A'}`);
-      console.log(`   Tiempo: ${tiempo1}ms`);
-      exitosas++;
-    } else {
-      console.log("⚠️  PARCIAL (usó fallback)");
-      console.log(`   Compra: S/ ${tc.compra}`);
-      console.log(`   Venta:  S/ ${tc.venta}`);
-      console.log(`   Fuente: ${tc.fuente}`);
-      exitosas++;
-    }
-  } catch (e) {
-    console.log("❌ FALLIDA:", e.message);
-    fallidas++;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // PRUEBA 2: CONSULTA DE ARANCEL (Laptop)
-  // ═══════════════════════════════════════════════════
-  console.log("\n🏛️  PRUEBA 2: Arancel de Laptops (8471.30.00.00)");
-  console.log("   Navegando en aduanet.gob.pe/itarancel...");
-
-  const startTime2 = Date.now();
-  try {
-    const arancel = await agentesNavegacion.SUNAT.consultarArancel('8471300000');
-    const tiempo2 = Date.now() - startTime2;
-
-    if (arancel.exito || arancel.partida) {
-      console.log("✅ EXITOSA");
-      console.log(`   Partida: ${arancel.partida || 'N/A'}`);
-      console.log(`   Ad Valorem: ${arancel.adValorem || 0}%`);
-      console.log(`   IGV: ${arancel.igv || 16}%`);
-      console.log(`   ISC: ${arancel.isc || 0}%`);
-      console.log(`   Fuente: ${arancel.fuente || 'N/A'}`);
-      console.log(`   Tiempo: ${tiempo2}ms`);
-      exitosas++;
-    } else {
-      console.log("⚠️  PARCIAL");
-      console.log(`   Error: ${arancel.error || 'Desconocido'}`);
-      exitosas++;
-    }
-  } catch (e) {
-    console.log("❌ FALLIDA:", e.message);
-    fallidas++;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // PRUEBA 3: CONSULTA DE ARANCEL (Camisetas)
-  // ═══════════════════════════════════════════════════
-  console.log("\n🏛️  PRUEBA 3: Arancel de Camisetas (6109.10.00.10)");
-  console.log("   Navegando en aduanet.gob.pe/itarancel...");
-
-  const startTime3 = Date.now();
-  try {
-    const arancel = await agentesNavegacion.SUNAT.consultarArancel('6109100010');
-    const tiempo3 = Date.now() - startTime3;
-
-    if (arancel.exito || arancel.partida) {
-      console.log("✅ EXITOSA");
-      console.log(`   Partida: ${arancel.partida || 'N/A'}`);
-      console.log(`   Ad Valorem: ${arancel.adValorem || 0}%`);
-      console.log(`   IGV: ${arancel.igv || 16}%`);
-      console.log(`   Tiempo: ${tiempo3}ms`);
-      exitosas++;
-    } else {
-      console.log("⚠️  PARCIAL");
-      console.log(`   Error: ${arancel.error || 'Desconocido'}`);
-      exitosas++;
-    }
-  } catch (e) {
-    console.log("❌ FALLIDA:", e.message);
-    fallidas++;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // PRUEBA 4: ESTADÍSTICAS DEL AGENTE
-  // ═══════════════════════════════════════════════════
-  console.log("\n📊 PRUEBA 4: Estadísticas del Agente SUNAT");
-  try {
-    const stats = agentesNavegacion.SUNAT.obtenerEstadisticas();
-    console.log("✅ EXITOSA");
-    console.log(`   Total navegaciones: ${stats.total_navegaciones || 0}`);
-    console.log(`   Exitosas: ${stats.exitosas || 0}`);
-    console.log(`   Fallidas: ${stats.fallidas || 0}`);
-    console.log(`   Tasa de éxito: ${stats.tasa_exito || 0}%`);
-    console.log(`   Tiempo promedio: ${stats.tiempo_promedio_ms || 0}ms`);
-    console.log(`   Fallos última hora: ${stats.fallos_ultima_hora || 0}`);
-    console.log(`   Timeout configurado: ${stats.configuracion?.timeout_ms || 0}ms`);
-
-    if (stats.patrones && stats.patrones.length > 0) {
-      console.log(`   Patrones detectados: ${stats.patrones.length}`);
-      stats.patrones.forEach((p, i) => {
-        console.log(`     ${i + 1}. ${p.patron}: ${p.descripcion}`);
-      });
-    }
-    exitosas++;
-  } catch (e) {
-    console.log("❌ FALLIDA:", e.message);
-    fallidas++;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // PRUEBA 5: ESTADÍSTICAS GENERALES
-  // ═══════════════════════════════════════════════════
-  console.log("\n📊 PRUEBA 5: Estadísticas Generales de Agentes");
-  try {
-    const general = agentesNavegacion.obtenerEstadisticasGenerales();
-    console.log("✅ EXITOSA");
-    console.log(`   Agentes activos: ${general.agentes_activos?.join(', ') || 'Ninguno'}`);
-    console.log(`   Memoria: ${general.memoria || 'No inicializada'}`);
-    exitosas++;
-  } catch (e) {
-    console.log("❌ FALLIDA:", e.message);
-    fallidas++;
-  }
-
-  // ═══════════════════════════════════════════════════
-  // RESULTADOS FINALES
-  // ═══════════════════════════════════════════════════
-  console.log("\n" + "═".repeat(60));
-  console.log("\n📊 RESULTADOS FINALES:");
-  console.log(`   ✅ Exitosas: ${exitosas}/${exitosas + fallidas}`);
-  console.log(`   ❌ Fallidas: ${fallidas}/${exitosas + fallidas}`);
-  console.log(`   📈 Éxito: ${((exitosas / (exitosas + fallidas)) * 100).toFixed(1)}%`);
-
-  console.log("\n" + "═".repeat(60));
-
-  if (exitosas >= 4) {
-    console.log("\n🎉 ¡AGENTE SUNAT FUNCIONA CORRECTAMENTE!\n");
-    console.log("🚀 LISTO PARA IMPLEMENTAR LOS DEMÁS AGENTES\n");
-    process.exit(0);
-  } else {
-    console.log(`\n⚠️  Solo ${exitosas} pruebas exitosas. Revisar errores.\n`);
-    process.exit(1);
+    const result = await testCase.run();
+    const elapsedMs = Date.now() - startTime;
+    console.log('RESPONDIO');
+    testCase.print(result, elapsedMs);
+    return true;
+  } catch (error) {
+    console.log(`FAIL FALLIDA: ${error.message}`);
+    return false;
   }
 }
 
-// Ejecutar pruebas
-ejecutarPruebas().catch(e => {
-  console.error("\n❌ ERROR FATAL:", e.message);
-  console.error(e.stack);
+const TEST_CASES = [
+  {
+    title: 'Inicializacion de agentes',
+    run: async () => {
+      await agentesNavegacion.init();
+      return agentesNavegacion.obtenerEstadisticasGenerales();
+    },
+    print: (stats) => {
+      console.log(`   Agentes activos: ${displayValue(stats.agentes_activos?.length, 0)}`);
+    },
+  },
+  {
+    title: 'Tipo de cambio SUNAT',
+    note: 'Navegando en la fuente oficial configurada...',
+    run: () => agentesNavegacion.SUNAT.consultarTipoCambio(),
+    print: (tc, elapsedMs) => {
+      console.log(`   Compra: S/ ${displayValue(tc.compra)}`);
+      console.log(`   Venta:  S/ ${displayValue(tc.venta)}`);
+      console.log(`   Fuente: ${displayValue(tc.fuente)}`);
+      console.log(`   Tiempo: ${elapsedMs}ms`);
+    },
+  },
+  {
+    title: 'Arancel laptops 8471300000',
+    note: 'Consultando tratamiento arancelario...',
+    run: () => agentesNavegacion.SUNAT.consultarArancel('8471300000'),
+    print: (arancel, elapsedMs) => {
+      console.log(`   Partida: ${displayValue(arancel.partida)}`);
+      console.log(`   Ad Valorem: ${displayValue(arancel.adValorem, 0)}%`);
+      console.log(`   IGV: ${displayValue(arancel.igv, 16)}%`);
+      console.log(`   ISC: ${displayValue(arancel.isc, 0)}%`);
+      console.log(`   Tiempo: ${elapsedMs}ms`);
+    },
+  },
+  {
+    title: 'Arancel camisetas 6109100010',
+    note: 'Consultando otra partida para contraste...',
+    run: () => agentesNavegacion.SUNAT.consultarArancel('6109100010'),
+    print: (arancel, elapsedMs) => {
+      console.log(`   Partida: ${displayValue(arancel.partida)}`);
+      console.log(`   Ad Valorem: ${displayValue(arancel.adValorem, 0)}%`);
+      console.log(`   IGV: ${displayValue(arancel.igv, 16)}%`);
+      console.log(`   Tiempo: ${elapsedMs}ms`);
+    },
+  },
+  {
+    title: 'Estadisticas del agente SUNAT',
+    run: () => agentesNavegacion.SUNAT.obtenerEstadisticas(),
+    print: (stats) => {
+      console.log(`   Total navegaciones: ${displayValue(stats.total_navegaciones, 0)}`);
+      console.log(`   Marcadas favorables por el agente: ${displayValue(stats.exitosas, 0)}`);
+      console.log(`   Fallidas: ${displayValue(stats.fallidas, 0)}`);
+      console.log(`   Tasa interna marcada por el agente: ${displayValue(stats.tasa_exito, 0)}%`);
+      console.log(`   Tiempo promedio: ${displayValue(stats.tiempo_promedio_ms, 0)}ms`);
+    },
+  },
+  {
+    title: 'Estadisticas generales de agentes',
+    run: () => agentesNavegacion.obtenerEstadisticasGenerales(),
+    print: (stats) => {
+      console.log(`   Agentes activos: ${displayValue(stats.agentes_activos?.join(', '), 'Ninguno')}`);
+      console.log(`   Memoria: ${displayValue(stats.memoria)}`);
+      console.log(`   Total agentes: ${displayValue(stats.total_agentes, 0)}`);
+    },
+  },
+];
+
+async function ejecutarPruebas() {
+  console.log('INICIANDO PRUEBA DEL AGENTE NAVEGADOR SUNAT...\n');
+  printDivider();
+
+  let respondieron = 0;
+
+  for (const [index, testCase] of TEST_CASES.entries()) {
+    if (await runCase(index, testCase)) {
+      respondieron += 1;
+    }
+  }
+
+  const total = TEST_CASES.length;
+  const fallidas = total - respondieron;
+
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('\nRESULTADOS FINALES:');
+  console.log(`   Respondieron: ${respondieron}/${total}`);
+  console.log(`   FAIL Fallidas: ${fallidas}/${total}`);
+  console.log(`   Respuesta visible: ${((respondieron / total) * 100).toFixed(1)}%`);
+
+  if (fallidas === 0) {
+    console.log('\nSMOKE MANUAL DE SUNAT COMPLETADO\n');
+    console.log('La bateria manual respondio sin errores visibles, pero eso no sustituye una revision funcional total de la fuente.\n');
+    process.exit(0);
+  }
+
+  console.log(`\n${fallidas} prueba(s) fallida(s). Revisar salida anterior.\n`);
+  process.exit(1);
+}
+
+ejecutarPruebas().catch((error) => {
+  console.error('\nERROR FATAL:', error.message);
+  console.error(error.stack);
   process.exit(1);
 });

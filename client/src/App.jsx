@@ -1,9 +1,76 @@
 import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
+import appPayloadHelpers from './app-payload-helpers.cjs'
+import appViewHelpers from './app-view-helpers.cjs'
+import adminStateHelpers from './admin-state-helpers.cjs'
+import workspaceInteractionHelpers from './workspace-interaction-helpers.cjs'
+import workspaceStateHelpers from './workspace-state-helpers.cjs'
+import workspaceViewHelpers from './workspace-view-helpers.cjs'
+import workspaceSummaryHelpers from './workspace-summary-helpers.cjs'
+import resultViewHelpers from './result-view-helpers.cjs'
+import dashboardViewHelpers from './dashboard-view-helpers.cjs'
 
-const API_URL =
+const {
+  buildCalculationPayload,
+  buildDocumentCalculationPayload,
+  buildDocumentDraftForm,
+  toNumber,
+  truncateText
+} = appPayloadHelpers
+
+const {
+  buildAdminUsersView,
+  normalizeAdminFormPayload,
+  normalizeAdminUsers,
+  upsertAdminUser,
+  isStaleAdminResponse
+} = adminStateHelpers
+
+const {
+  isStaleWorkspaceResponse,
+  isWorkspaceBusy
+} = workspaceInteractionHelpers
+
+const {
+  buildDocumentUploadSuccessState,
+  buildDocumentFieldChangeState,
+  buildInitializationPatch,
+  emptyConversationContext
+} = workspaceStateHelpers
+
+const { buildDocumentDraftView } = workspaceViewHelpers
+const { buildWorkspaceSummaryRows } = workspaceSummaryHelpers
+const {
+  buildOfficialConsultationView,
+  buildResultAmountSummary,
+  buildResultOperationSummary,
+  buildPrecisionView,
+  buildRegimenView
+} = resultViewHelpers
+const {
+  buildDashboardAnalysisView,
+  buildDashboardAttentionView,
+  buildDashboardMetricDisplay,
+  buildDonutChartSummary,
+  buildLineChartLatestDisplay,
+  normalizeCategoricalChartItems,
+  normalizeLineChartItems
+} = dashboardViewHelpers
+
+const {
+  buildAssistantMessageText,
+  buildHealthStatusView,
+  buildDashboardRefreshPatch,
+  buildLoggedOutSessionState,
+  isStaleDashboardResponse,
+  normalizeLoginPayload
+} = appViewHelpers
+
+const API_URL = (
   import.meta.env.VITE_API_URL ||
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')
+  import.meta.env.VITE_API_PROXY_TARGET ||
+  (typeof window !== 'undefined' ? window.location.origin : '')
+).replace(/\/$/, '')
 
 const AUTH_STORAGE_KEY = 'broke-shop-session-token'
 
@@ -11,7 +78,8 @@ const CHANNEL_LABELS = {
   MARITIMO: 'Maritimo formal',
   AEREO: 'Aereo formal',
   COURIER: 'Courier express',
-  POSTAL: 'Postal'
+  POSTAL: 'Postal',
+  POSTAL_FRANQUICIA: 'Postal con franquicia'
 }
 
 const SUBJECT_LABELS = {
@@ -71,14 +139,14 @@ const ROLE_LABELS = {
 }
 
 const PRECISION_LABELS = {
-  exacta: 'Exacta',
+  consistente: 'Consistente',
   alta: 'Alta',
   referencial: 'Referencial',
   requiere_revision: 'Requiere revision'
 }
 
 const COMPONENT_STATUS_LABELS = {
-  exacto: 'Exacto',
+  con_respaldo: 'Con respaldo',
   alta: 'Alta',
   referencial: 'Referencial',
   revisar: 'Revisar',
@@ -102,40 +170,40 @@ const EMPTY_ADMIN_FORM = {
   role: 'user'
 }
 
-const ADMIN_CONFIRM_COPY = {
+const ADMIN_REVIEW_COPY = {
   revoke_approval: {
     title: 'Revocar aprobacion',
-    confirmLabel: 'Si, revocar',
+    actionLabel: 'Si, revocar',
     tone: 'danger'
   },
   approve: {
     title: 'Aprobar miembro',
-    confirmLabel: 'Si, aprobar',
+    actionLabel: 'Si, aprobar',
     tone: 'info'
   },
   suspend: {
     title: 'Suspender acceso',
-    confirmLabel: 'Si, suspender',
+    actionLabel: 'Si, suspender',
     tone: 'danger'
   },
   reactivate: {
     title: 'Reactivar acceso',
-    confirmLabel: 'Si, reactivar',
+    actionLabel: 'Si, reactivar',
     tone: 'info'
   },
   make_admin: {
     title: 'Conceder rol admin',
-    confirmLabel: 'Si, hacerlo admin',
+    actionLabel: 'Si, hacerlo admin',
     tone: 'warn'
   },
   remove_admin: {
     title: 'Quitar rol admin',
-    confirmLabel: 'Si, quitar admin',
+    actionLabel: 'Si, quitar admin',
     tone: 'danger'
   },
   reset_password: {
     title: 'Resetear contrasena',
-    confirmLabel: 'Guardar nueva clave',
+    actionLabel: 'Guardar nueva clave',
     tone: 'warn'
   }
 }
@@ -176,11 +244,6 @@ const DASHBOARD_SERIES_MARKERS = [
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function toNumber(value) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function formatMoney(value, currency = 'USD') {
@@ -234,22 +297,6 @@ function formatPercent(value) {
   return `${toNumber(value).toFixed(0)}%`
 }
 
-function formatMetricDelta(metric, mode = 'percent') {
-  if (!metric || metric.variacion === undefined || metric.variacion === null) {
-    return 'Sin variacion';
-  }
-
-  const variation = toNumber(metric.variacion)
-  if (variation === 0) return 'Sin variacion'
-
-  const prefix = variation > 0 ? '+' : ''
-  if (mode === 'count') {
-    return `${prefix}${variation} vs periodo anterior`
-  }
-
-  return `${prefix}${variation}% vs periodo anterior`
-}
-
 function DashboardScopeToggle({ scope, isAdmin, onChange }) {
   if (isAdmin) {
     return (
@@ -276,25 +323,25 @@ function DashboardScopeToggle({ scope, isAdmin, onChange }) {
 }
 
 function DashboardLineChart({ title, data }) {
-  const items = Array.isArray(data) ? data : []
+  const items = normalizeLineChartItems(data, { toNumber })
   const width = 540
   const height = 220
   const padding = 24
-  const maxValue = Math.max(1, ...items.map((item) => toNumber(item.cotizaciones)))
+  const maxValue = Math.max(1, ...items.map((item) => item.cotizaciones))
   const innerWidth = width - padding * 2
   const innerHeight = height - padding * 2
 
   const points = items.map((item, index) => {
     const x = padding + (items.length <= 1 ? innerWidth / 2 : (index / (items.length - 1)) * innerWidth)
-    const y = padding + innerHeight - (toNumber(item.cotizaciones) / maxValue) * innerHeight
-    return { x, y, label: item.mes, value: toNumber(item.cotizaciones), dolares: toNumber(item.dolares) }
+    const y = padding + innerHeight - (item.cotizaciones / maxValue) * innerHeight
+    return { x, y, label: item.mes, value: item.cotizaciones, dolares: item.dolares }
   })
 
   const linePoints = points.map((point) => `${point.x},${point.y}`).join(' ')
   const areaPoints = points.length
     ? `${padding},${height - padding} ${linePoints} ${points[points.length - 1].x},${height - padding}`
     : ''
-  const latest = points[points.length - 1]
+  const latestDisplay = buildLineChartLatestDisplay(points, { toNumber })
 
   return (
     <article className="chart-card chart-card-wide">
@@ -304,8 +351,8 @@ function DashboardLineChart({ title, data }) {
           <h3>{title}</h3>
         </div>
         <div className="chart-chip chart-chip-primary">
-          <strong>{latest ? latest.value : 0}</strong>
-          <span>ultimo mes</span>
+          <strong>{latestDisplay.value}</strong>
+          <span>{latestDisplay.caption}</span>
         </div>
       </div>
 
@@ -359,7 +406,7 @@ function DashboardLineChart({ title, data }) {
           {points.map((point) => (
             <div key={`${point.label}-usd`} className="line-chart-dollar-chip">
               <span>{point.label}</span>
-              <strong>{formatMoney(point.dolares)}</strong>
+              <strong>{point.dolares === null ? 'N/D' : formatMoney(point.dolares)}</strong>
             </div>
           ))}
         </div>
@@ -369,11 +416,12 @@ function DashboardLineChart({ title, data }) {
 }
 
 function DashboardDonutChart({ title, data, valueKey, labelKey }) {
-  const items = Array.isArray(data) ? data : []
-  const total = items.reduce((sum, item) => sum + toNumber(item[valueKey]), 0)
+  const items = normalizeCategoricalChartItems(data, labelKey, valueKey, { toNumber })
+  const summary = buildDonutChartSummary(items, valueKey, { toNumber })
+  const total = typeof summary.total === 'number' ? summary.total : 0
   let accumulator = 0
   const segments = items.map((item, index) => {
-    const value = toNumber(item[valueKey])
+    const value = item[valueKey]
     const start = total > 0 ? (accumulator / total) * 100 : 0
     accumulator += value
     const end = total > 0 ? (accumulator / total) * 100 : 0
@@ -388,8 +436,8 @@ function DashboardDonutChart({ title, data, valueKey, labelKey }) {
           <h3>{title}</h3>
         </div>
         <div className="chart-chip">
-          <strong>{total}</strong>
-          <span>registros</span>
+          <strong>{summary.total}</strong>
+          <span>{summary.total === 'N/D' ? 'Sin datos' : 'registros'}</span>
         </div>
       </div>
 
@@ -403,14 +451,14 @@ function DashboardDonutChart({ title, data, valueKey, labelKey }) {
           }}
         >
           <div className="donut-chart-center">
-            <strong>{items.length}</strong>
-            <span>series</span>
+            <strong>{summary.series}</strong>
+            <span>{summary.series === 'N/D' ? 'Sin datos' : 'series'}</span>
           </div>
         </div>
 
         <div className="chart-legend">
           {items.map((item, index) => {
-            const value = toNumber(item[valueKey])
+            const value = item[valueKey]
             const percent = total > 0 ? (value / total) * 100 : 0
             const marker = chartSeriesMarker(index)
             return (
@@ -421,8 +469,8 @@ function DashboardDonutChart({ title, data, valueKey, labelKey }) {
                   style={{ '--series-color': chartColor(index) }}
                 />
                 <div className="legend-copy">
-                  <strong>{item[labelKey]}</strong>
-                  <span className="legend-value">{value} · {formatPercent(percent)}</span>
+                  <strong title={String(item[labelKey] || '')}>{truncateText(item[labelKey], 42)}</strong>
+                  <span className="legend-value">{value} / {formatPercent(percent)}</span>
                 </div>
               </div>
             )
@@ -434,8 +482,8 @@ function DashboardDonutChart({ title, data, valueKey, labelKey }) {
 }
 
 function DashboardBarChart({ title, data, valueKey, labelKey }) {
-  const items = Array.isArray(data) ? data : []
-  const maxValue = Math.max(1, ...items.map((item) => toNumber(item[valueKey])))
+  const items = normalizeCategoricalChartItems(data, labelKey, valueKey, { toNumber })
+  const maxValue = Math.max(1, ...items.map((item) => item[valueKey]))
 
   return (
     <article className="chart-card">
@@ -448,7 +496,7 @@ function DashboardBarChart({ title, data, valueKey, labelKey }) {
 
       <div className="bar-chart">
         {items.map((item, index) => {
-          const value = toNumber(item[valueKey])
+          const value = item[valueKey]
           const width = `${(value / maxValue) * 100}%`
           const marker = chartSeriesMarker(index)
           return (
@@ -461,7 +509,7 @@ function DashboardBarChart({ title, data, valueKey, labelKey }) {
                   >
                     {chartSeriesBadge(index)}
                   </span>
-                  <strong>{item[labelKey]}</strong>
+                  <strong title={String(item[labelKey] || '')}>{truncateText(item[labelKey], 44)}</strong>
                 </div>
                 <span>{value}</span>
               </div>
@@ -483,11 +531,11 @@ function assistantMessage(payload) {
   return {
     id: createId('assistant'),
     role: 'assistant',
-    text: payload.pregunta || payload.mensaje || '',
+    text: buildAssistantMessageText(payload),
     step: payload.paso || payload.contexto?.paso_actual || null,
     hint: payload.hint || null,
     options: Array.isArray(payload.opciones) ? payload.opciones.map(normalizeOption) : [],
-    showCalculate: payload.paso === 'calcular' || payload.tipo === 'listo_para_calcular'
+    showCalculate: payload.paso === 'calcular' || payload.tipo === 'datos_suficientes_para_calculo'
   }
 }
 
@@ -542,142 +590,6 @@ function buildStartMessages(inicio) {
   return messages
 }
 
-function buildCalculationPayload(contexto) {
-  const datos = contexto?.datos_previos || {}
-  const productos = Array.isArray(datos.productos) ? datos.productos : []
-  const bienUsado = Boolean(datos.bien_usado)
-  const objetivoCalculo = datos.objetivo_calculo || 'precio_sugerido'
-  const seguroModo = datos.seguro_modo || (toNumber(datos.seguro) > 0 ? 'REAL' : 'ESTIMADO')
-
-  return {
-    items: productos.map((producto, index) => ({
-      desc: producto.descripcion || producto.producto || `Producto ${index + 1}`,
-      qty: toNumber(producto.cantidad || producto.qty || 1),
-      unit: toNumber(datos.precio_unitario),
-      bienUsado
-    })),
-    pais: datos.pais_origen || '',
-    canal: datos.canal || 'MARITIMO',
-    incoterm: datos.incoterm || 'FOB',
-    flete: toNumber(datos.flete),
-    seguro: seguroModo === 'REAL' ? toNumber(datos.seguro) : 0,
-    tc: toNumber(datos.tipo_cambio),
-    proveedor: datos.proveedor || '',
-    moneda: 'USD',
-    tipoSujeto: datos.tipo_sujeto || 'empresa',
-    tipoImportador: datos.tipo_importador || 'general',
-    objetivoCalculo,
-    seguroModo,
-    margenVenta: objetivoCalculo === 'costo_importacion' ? 0 : toNumber(datos.margen_venta || 30)
-  }
-}
-
-function buildSummaryRows(contexto) {
-  const datos = contexto?.datos_previos || {}
-  const productos = Array.isArray(datos.productos) ? datos.productos : []
-
-  return [
-    {
-      label: 'Productos',
-      value: productos.length
-        ? productos.map((producto) => `${toNumber(producto.cantidad || 1)} x ${producto.descripcion || producto.producto}`).join(', ')
-        : 'Aun no definidos'
-    },
-    {
-      label: 'Pais de origen',
-      value: datos.pais_origen || 'Pendiente'
-    },
-    {
-      label: 'Canal',
-      value: CHANNEL_LABELS[datos.canal] || 'Pendiente'
-    },
-    {
-      label: 'Objetivo',
-      value: OBJECTIVE_LABELS[datos.objetivo_calculo] || 'Pendiente'
-    },
-    {
-      label: 'Tipo de sujeto',
-      value: SUBJECT_LABELS[datos.tipo_sujeto] || 'Pendiente'
-    },
-    {
-      label: 'Precio unitario',
-      value: datos.precio_unitario !== undefined ? formatMoney(datos.precio_unitario) : 'Pendiente'
-    },
-    {
-      label: 'Incoterm',
-      value: datos.incoterm || 'Pendiente'
-    },
-    {
-      label: 'Seguro',
-      value: INSURANCE_MODE_LABELS[datos.seguro_modo] || 'Pendiente'
-    },
-    {
-      label: 'Tipo de importador',
-      value: IMPORTER_LABELS[datos.tipo_importador] || 'Pendiente'
-    },
-    {
-      label: 'Condicion del producto',
-      value: datos.bien_usado === undefined
-        ? 'Pendiente'
-        : (datos.bien_usado ? PRODUCT_CONDITION_LABELS.usado : PRODUCT_CONDITION_LABELS.nuevo)
-    },
-    {
-      label: 'Margen objetivo',
-      value: datos.objetivo_calculo === 'costo_importacion'
-        ? 'No aplica en este modo'
-        : (datos.margen_venta !== undefined ? `${toNumber(datos.margen_venta)}%` : 'Pendiente')
-    }
-  ]
-}
-
-function buildDocumentDraftForm(extraction) {
-  const review = extraction?.paraRevisar || {}
-
-  return {
-    proveedor: review.proveedor || '',
-    pais: review.pais || '',
-    moneda: review.moneda || 'USD',
-    incoterm: review.incoterm || 'FOB',
-    canal: 'MARITIMO',
-    flete: review.flete ?? '',
-    seguro: review.seguro ?? '',
-    seguroModo: review.seguro ? 'REAL' : 'ESTIMADO',
-    tc: '',
-    tipoSujeto: 'empresa',
-    tipoImportador: 'general',
-    objetivoCalculo: 'precio_sugerido',
-    condicionProducto: Array.isArray(review.items) && review.items.some((item) => item.bienUsado) ? 'usado' : 'nuevo',
-    margenVenta: 30
-  }
-}
-
-function buildDocumentCalculationPayload(extraction, form) {
-  const review = extraction?.paraRevisar || {}
-
-  return {
-    items: (review.items || []).map((item) => ({
-      desc: item.desc || 'Producto',
-      qty: toNumber(item.qty || 1),
-      unit: toNumber(item.unit || 0),
-      pesoKg: item.pesoKg != null ? toNumber(item.pesoKg) : undefined,
-      bienUsado: form.condicionProducto === 'usado'
-    })),
-    pais: form.pais || review.pais || '',
-    canal: form.canal || 'MARITIMO',
-    incoterm: form.incoterm || review.incoterm || 'FOB',
-    flete: toNumber(form.flete),
-    seguro: form.seguroModo === 'REAL' ? toNumber(form.seguro) : 0,
-    tc: toNumber(form.tc),
-    proveedor: form.proveedor || review.proveedor || '',
-    moneda: form.moneda || review.moneda || 'USD',
-    tipoSujeto: form.tipoSujeto || 'empresa',
-    tipoImportador: form.tipoImportador || 'general',
-    objetivoCalculo: form.objetivoCalculo || 'precio_sugerido',
-    seguroModo: form.seguroModo || (toNumber(form.seguro) > 0 ? 'REAL' : 'ESTIMADO'),
-    margenVenta: form.objetivoCalculo === 'costo_importacion' ? 0 : toNumber(form.margenVenta || 30)
-  }
-}
-
 function precisionTone(precision) {
   if (!precision) return 'info'
   if (precision.requiereRevision) return 'critico'
@@ -690,11 +602,6 @@ function componentTone(component) {
   if (component.estado === 'revisar' || component.estado === 'pendiente') return 'critico'
   if (component.estado === 'referencial') return 'medio'
   return 'info'
-}
-
-function healthLabel(status) {
-  if (!status) return 'Sin datos'
-  return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 function setAuthToken(token) {
@@ -732,9 +639,10 @@ function App() {
   const [salud, setSalud] = useState(null)
   const [dashboard, setDashboard] = useState(null)
   const [dashboardAnalysis, setDashboardAnalysis] = useState(null)
+  const [dashboardError, setDashboardError] = useState(null)
   const [dashboardScope, setDashboardScope] = useState('mine')
   const [messages, setMessages] = useState([])
-  const [contexto, setContexto] = useState({ datos_previos: {}, paso_actual: null })
+  const [contexto, setContexto] = useState(emptyConversationContext())
   const [input, setInput] = useState('')
   const [resultado, setResultado] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -748,22 +656,36 @@ function App() {
   const [membership, setMembership] = useState(null)
   const [adminUsers, setAdminUsers] = useState([])
   const [adminLoading, setAdminLoading] = useState(false)
+  const [adminListLoading, setAdminListLoading] = useState(false)
   const [adminError, setAdminError] = useState(null)
   const [adminNotice, setAdminNotice] = useState(null)
   const [adminForm, setAdminForm] = useState({ ...EMPTY_ADMIN_FORM })
-  const [adminConfirm, setAdminConfirm] = useState(null)
+  const [adminReview, setAdminReview] = useState(null)
   const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [uploadingDocument, setUploadingDocument] = useState(false)
   const [documentDraft, setDocumentDraft] = useState(null)
   const [documentForm, setDocumentForm] = useState(buildDocumentDraftForm(null))
+  const dashboardRequestRef = useRef(0)
+  const initRequestRef = useRef(0)
+  const adminRequestRef = useRef(0)
+  const adminMutationRef = useRef(0)
+  const workspaceVersionRef = useRef(0)
+  const chatRequestRef = useRef(0)
+  const uploadRequestRef = useRef(0)
+  const calculationRequestRef = useRef(0)
+  const sendingRef = useRef(false)
+  const calculatingRef = useRef(false)
+  const uploadingDocumentRef = useRef(false)
+  const contextoRef = useRef(contexto)
   const messagesEndRef = useRef(null)
-  const documentInputRef = useRef(null)
   const isAdmin = currentUser?.role === 'admin'
+  const workspaceBusy = isWorkspaceBusy({ loading, sending, calculating, uploadingDocument })
+  const documentDraftView = buildDocumentDraftView(documentDraft)
   const heroContent = isAdmin
     ? {
-        title: 'Cotiza con precision, valida requisitos y toma decisiones de importacion con mas claridad.',
+        title: 'Cotiza con precision, revisa requisitos y toma decisiones de importacion con mas claridad.',
         text:
-          'Tu workspace reune cotizacion guiada, historial real y un panel claro para seguir la actividad de tu comunidad sin perder el foco operativo.',
+          'Tu espacio privado reune cotizacion guiada, historial real y un panel claro para seguir la actividad de tu comunidad sin perder el foco operativo.',
         railA: {
           label: 'Operacion coordinada',
           title: 'Control sin friccion',
@@ -781,9 +703,9 @@ function App() {
         }
       }
     : {
-        title: 'Cotiza con precision, valida requisitos y toma decisiones de importacion con mas claridad.',
+        title: 'Cotiza con precision, revisa requisitos y toma decisiones de importacion con mas claridad.',
         text:
-          'Tu workspace reune chat, calculo, permisos y trazabilidad en una sola experiencia para que avances mas rapido y con menos duda.',
+          'Tu espacio privado reune chat, calculo, permisos y trazabilidad en una sola experiencia para que avances mas rapido y con menos duda.',
         railA: {
           label: 'Tu experiencia',
           title: 'Cotizacion guiada',
@@ -792,14 +714,54 @@ function App() {
         railB: {
           label: 'Tu ventaja',
           title: 'Precision visible',
-          text: 'Cada cotizacion te muestra que dato es exacto, cual es estimado y que permisos debes revisar.'
-        },
-        status: {
-          label: 'Tu cuenta',
-          title: 'Miembro activo',
-          text: 'Tu acceso ya esta habilitado para cotizar, revisar historial y operar dentro de la comunidad.'
+          text: 'Cada cotizacion te muestra que dato tiene respaldo real, cual es estimado y que permisos debes revisar.'
+          },
+          status: {
+            label: 'Tu cuenta',
+            title: 'Acceso disponible',
+            text: 'Tu cuenta puede cotizar, revisar historial y operar dentro de la comunidad.'
+          }
         }
-      }
+
+  const resultOperationSummary = buildResultOperationSummary(resultado, {
+    objectiveLabels: OBJECTIVE_LABELS,
+    insuranceModeLabels: INSURANCE_MODE_LABELS,
+    subjectLabels: SUBJECT_LABELS,
+    importerLabels: IMPORTER_LABELS
+  })
+  const resultAmountSummary = buildResultAmountSummary(resultado, formatMoney)
+  const precisionView = buildPrecisionView(resultado?.precision, { precisionLabels: PRECISION_LABELS })
+  const officialConsultation = resultado?.perfilImportacion?.validacionOficial || null
+  const officialConsultationView = buildOfficialConsultationView(officialConsultation)
+  const officialConsultationSummary = officialConsultationView.summary
+  const regimenView = buildRegimenView(resultado?.perfilImportacion)
+  const dashboardUnavailable = Boolean(dashboardError && !dashboard)
+  const totalCotizacionesMetric = buildDashboardMetricDisplay({
+    metric: dashboard?.kpis?.totalCotizaciones,
+    unavailable: dashboardUnavailable,
+    toNumber
+  })
+  const totalDolaresMetric = buildDashboardMetricDisplay({
+    metric: dashboard?.kpis?.totalDolares,
+    unavailable: dashboardUnavailable,
+    formatter: (value) => formatMoney(value),
+    toNumber
+  })
+  const ticketPromedioMetric = buildDashboardMetricDisplay({
+    metric: dashboard?.kpis?.ticketPromedio,
+    unavailable: dashboardUnavailable,
+    formatter: (value) => formatMoney(value),
+    toNumber
+  })
+  const paisesActivosMetric = buildDashboardMetricDisplay({
+    metric: dashboard?.kpis?.paisesActivos,
+    unavailable: dashboardUnavailable,
+    mode: 'count',
+    toNumber
+  })
+  const dashboardAnalysisView = buildDashboardAnalysisView(dashboardAnalysis)
+  const dashboardAttentionView = buildDashboardAttentionView(dashboard)
+  const adminUsersView = buildAdminUsersView({ users: adminUsers, isLoading: adminListLoading, error: adminError })
 
   const isCurrentAdminTarget = (user) => {
     if (!currentUser?.id || !user?.id) return false
@@ -813,6 +775,10 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, resultado])
+
+  useEffect(() => {
+    contextoRef.current = contexto
+  }, [contexto])
 
   useEffect(() => {
     if (isAdmin && view === 'admin') {
@@ -835,46 +801,98 @@ function App() {
 
   useEffect(() => {
     if (!currentUser?.id || view !== 'dashboard') return
-    void cargarDashboard(dashboardScope)
+    void refrescarDashboardSinBloquear(dashboardScope)
   }, [currentUser?.id, view, dashboardScope])
 
   const cargarDashboard = async (scopeOverride) => {
     const resolvedScope = scopeOverride || dashboardScope || defaultDashboardScopeFor(currentUser?.role)
+    const requestId = dashboardRequestRef.current + 1
+    dashboardRequestRef.current = requestId
     const [dashboardRes, analysisRes] = await Promise.allSettled([
       axios.get(`${API_URL}/api/dashboard`, { params: { scope: resolvedScope } }),
       axios.get(`${API_URL}/api/dashboard/analisis`, { params: { scope: resolvedScope } })
     ])
 
-    if (dashboardRes.status === 'fulfilled') {
-      setDashboard(dashboardRes.value.data)
-    } else {
-      throw dashboardRes.reason
+    if (isStaleDashboardResponse(requestId, dashboardRequestRef.current)) {
+      return false
     }
 
-    if (analysisRes.status === 'fulfilled') {
-      setDashboardAnalysis(analysisRes.value.data.analisis || null)
-    } else {
-      setDashboardAnalysis(null)
+    const nextState = buildDashboardRefreshPatch({
+      dashboardResult: dashboardRes,
+      analysisResult: analysisRes
+    })
+
+    setDashboard(nextState.dashboard)
+    setDashboardAnalysis(nextState.dashboardAnalysis)
+    setDashboardError(nextState.dashboardError)
+
+    if (nextState.error) {
+      throw nextState.error
+    }
+
+    return true
+  }
+
+  const refrescarDashboardSinBloquear = async (scopeOverride) => {
+    try {
+      await cargarDashboard(scopeOverride)
+    } catch {
+      // El estado visible ya queda normalizado dentro de cargarDashboard.
     }
   }
 
   const loadAdminUsers = async () => {
     if (!isAdmin) return
 
-    setAdminLoading(true)
+    const requestId = adminRequestRef.current + 1
+    const mutationVersion = adminMutationRef.current
+    adminRequestRef.current = requestId
+    setAdminListLoading(true)
     setAdminError(null)
 
     try {
       const response = await axios.get(`${API_URL}/api/admin/users`)
-      setAdminUsers(response.data.users || [])
+      if (
+        isStaleAdminResponse({
+          requestId,
+          latestRequestId: adminRequestRef.current,
+          mutationVersion,
+          latestMutationVersion: adminMutationRef.current
+        })
+      ) {
+        return
+      }
+
+      setAdminUsers(normalizeAdminUsers(response.data?.users))
     } catch (requestError) {
-      setAdminError(requestError.response?.data?.error || requestError.message)
+      if (
+        !isStaleAdminResponse({
+          requestId,
+          latestRequestId: adminRequestRef.current,
+          mutationVersion,
+          latestMutationVersion: adminMutationRef.current
+        })
+      ) {
+        setAdminError(requestError.response?.data?.error || requestError.message)
+      }
     } finally {
-      setAdminLoading(false)
+      if (
+        !isStaleAdminResponse({
+          requestId,
+          latestRequestId: adminRequestRef.current,
+          mutationVersion,
+          latestMutationVersion: adminMutationRef.current
+        })
+      ) {
+        setAdminListLoading(false)
+      }
     }
   }
 
   const inicializar = async (scopeOverride = defaultDashboardScopeFor(currentUser?.role)) => {
+    const requestId = initRequestRef.current + 1
+    const workspaceVersion = workspaceVersionRef.current
+    initRequestRef.current = requestId
     setLoading(true)
     setError(null)
 
@@ -886,25 +904,88 @@ function App() {
       axios.post(`${API_URL}/api/agente-0/iniciar`)
     ])
 
-    if (healthRes.status === 'fulfilled') {
-      setSalud(healthRes.value.data)
+    const nextState = buildInitializationPatch({
+      healthResult: healthRes,
+      dashboardResult: dashboardRes,
+      startResult: inicioRes,
+      buildStartMessages
+    })
+
+    if (
+      isStaleWorkspaceResponse({
+        requestId,
+        latestRequestId: initRequestRef.current,
+        workspaceVersion,
+        latestWorkspaceVersion: workspaceVersionRef.current
+      })
+    ) {
+      return false
     }
 
-    if (dashboardRes.status === 'fulfilled') {
-      setDashboard(dashboardRes.value.data)
-    }
+    setSalud(nextState.salud)
+    setDashboard(nextState.dashboard)
+    setDashboardAnalysis(nextState.dashboardAnalysis)
+    setDashboardError(nextState.dashboardError)
+    setMessages(nextState.messages)
+    setContexto(nextState.contexto)
 
-    if (inicioRes.status === 'fulfilled') {
-      setMessages(buildStartMessages(inicioRes.value.data))
-      setContexto(inicioRes.value.data.contexto || { datos_previos: {}, paso_actual: null })
-    } else {
-      setError('No pude iniciar el cotizador conversacional.')
+    if (nextState.error) {
+      setError(nextState.error)
     }
 
     setLoading(false)
+    return true
+  }
+
+  const applyLoggedOutSessionState = (notice = null) => {
+    const nextState = buildLoggedOutSessionState({
+      emptyAdminForm: EMPTY_ADMIN_FORM
+    })
+
+    workspaceVersionRef.current += 1
+    initRequestRef.current += 1
+    dashboardRequestRef.current += 1
+    adminRequestRef.current += 1
+    adminMutationRef.current += 1
+    chatRequestRef.current += 1
+    uploadRequestRef.current += 1
+    calculationRequestRef.current += 1
+    sendingRef.current = false
+    calculatingRef.current = false
+    uploadingDocumentRef.current = false
+    setView(nextState.view)
+    setLoading(nextState.loading)
+    setSending(nextState.sending)
+    setCalculating(nextState.calculating)
+    setUploadingDocument(nextState.uploadingDocument)
+    setCurrentUser(nextState.currentUser)
+    setMembership(nextState.membership)
+    setAdminUsers(nextState.adminUsers)
+    setAdminLoading(nextState.adminLoading)
+    setAdminListLoading(nextState.adminListLoading)
+    setAdminError(nextState.adminError)
+    setAdminNotice(nextState.adminNotice)
+    setAdminForm(nextState.adminForm)
+        setAdminReview(nextState.adminReview)
+    setMessages(nextState.messages)
+    setDashboard(nextState.dashboard)
+    setDashboardAnalysis(nextState.dashboardAnalysis)
+    setDashboardError(nextState.dashboardError)
+    setDashboardScope(nextState.dashboardScope)
+    setSalud(nextState.salud)
+    setResultado(nextState.resultado)
+    setDocumentDraft(nextState.documentDraft)
+    setDocumentForm(nextState.documentForm)
+    setContexto(nextState.contexto)
+    setInput(nextState.input)
+    setError(nextState.error)
+    setAuthError(nextState.authError)
+    setLoginForm(nextState.loginForm)
+    setAuthNotice(notice)
   }
 
   const hydrateAuthenticatedSession = async (token) => {
+    workspaceVersionRef.current += 1
     setAuthToken(token)
 
     const [meRes, membershipRes] = await Promise.allSettled([
@@ -914,7 +995,7 @@ function App() {
 
     if (meRes.status !== 'fulfilled') {
       clearAuthToken()
-      throw new Error('La sesion ya no es valida.')
+      throw new Error('La sesion ya no esta activa.')
     }
 
     const sessionUser = meRes.value.data
@@ -939,9 +1020,8 @@ function App() {
     try {
       await hydrateAuthenticatedSession(token)
     } catch (sessionError) {
-      setAuthNotice('Tu sesion anterior ya no estaba disponible. Ingresa otra vez.')
-      setCurrentUser(null)
-      setMembership(null)
+      clearAuthToken()
+      applyLoggedOutSessionState('Tu sesion anterior ya no estaba disponible. Ingresa otra vez.')
     } finally {
       setAuthLoading(false)
     }
@@ -963,25 +1043,60 @@ function App() {
 
   const enviarMensaje = async (rawText, displayText = rawText) => {
     const message = String(rawText || '').trim()
-    if (!message) return
+    if (!message || sendingRef.current || calculatingRef.current) return
+
+    const requestId = chatRequestRef.current + 1
+    const workspaceVersion = workspaceVersionRef.current
+    chatRequestRef.current = requestId
 
     pushUserMessage(displayText)
     setInput('')
+    sendingRef.current = true
     setSending(true)
     setError(null)
 
     try {
       const response = await axios.post(`${API_URL}/api/agente-0/chat`, {
         mensaje: message,
-        contexto
+        contexto: contextoRef.current
       })
 
-      setContexto(response.data.contexto || contexto)
+      if (
+        isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: chatRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        return
+      }
+
+      setContexto(response.data.contexto || contextoRef.current)
       setMessages((current) => [...current, assistantMessage(response.data)])
     } catch (requestError) {
-      setError(requestError.response?.data?.error || requestError.message)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: chatRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        setError(requestError.response?.data?.error || requestError.message)
+      }
     } finally {
-      setSending(false)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: chatRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        sendingRef.current = false
+        setSending(false)
+      }
     }
   }
 
@@ -996,26 +1111,46 @@ function App() {
   }
 
   const reiniciar = async () => {
+    workspaceVersionRef.current += 1
+    chatRequestRef.current += 1
+    uploadRequestRef.current += 1
+    calculationRequestRef.current += 1
+    sendingRef.current = false
+    calculatingRef.current = false
+    uploadingDocumentRef.current = false
+    setSending(false)
+    setCalculating(false)
+    setUploadingDocument(false)
     setResultado(null)
     setDocumentDraft(null)
     setDocumentForm(buildDocumentDraftForm(null))
     await inicializar(dashboardScope)
   }
 
-  const abrirSelectorDocumento = () => {
-    documentInputRef.current?.click()
-  }
-
   const handleDocumentFieldChange = (field, value) => {
-    setDocumentForm((current) => ({ ...current, [field]: value }))
+    setDocumentForm((current) => buildDocumentFieldChangeState({
+      currentForm: current,
+      field,
+      value
+    }).documentForm)
+    setResultado(null)
   }
 
   const handleSupplierDocumentUpload = async (event) => {
     const file = event.target.files?.[0]
-    if (!file) return
+    if (!file || uploadingDocumentRef.current || calculatingRef.current) return
 
+    const requestId = uploadRequestRef.current + 1
+    const workspaceVersion = workspaceVersionRef.current + 1
+    uploadRequestRef.current = requestId
+    workspaceVersionRef.current = workspaceVersion
+
+    uploadingDocumentRef.current = true
     setUploadingDocument(true)
     setError(null)
+    setResultado(null)
+    setDocumentDraft(null)
+    setDocumentForm(buildDocumentDraftForm(null))
 
     try {
       const formData = new FormData()
@@ -1029,60 +1164,134 @@ function App() {
         throw new Error(response.data?.error || 'No pude extraer la cotizacion del proveedor.')
       }
 
-      setDocumentDraft({
-        fileName: file.name,
-        ...response.data
-      })
-      setDocumentForm(buildDocumentDraftForm(response.data))
+      if (
+        isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: uploadRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        return
+      }
+
+      const uploadState = buildDocumentUploadSuccessState(file.name, response.data)
+      const detectedItems = buildDocumentDraftView(uploadState.documentDraft).itemCount
+      setDocumentDraft(uploadState.documentDraft)
+      setDocumentForm(uploadState.documentForm)
+      setResultado(uploadState.resultado)
 
       setMessages((current) => [
         ...current,
         {
           id: createId('assistant'),
           role: 'assistant',
-          text: `Analice ${file.name} y detecte ${response.data.paraRevisar?.items?.length || 0} item(s). Puedes revisar el borrador y calcular directo desde el documento.`,
+          text: `Analice ${file.name} y detecte ${detectedItems} item(s). Puedes revisar el borrador y calcular directo desde el documento.`,
           options: [],
           hint: response.data.mensaje || null,
           showCalculate: false
         }
       ])
     } catch (requestError) {
-      setError(requestError.response?.data?.error || requestError.message)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: uploadRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        setError(requestError.response?.data?.error || requestError.message)
+      }
     } finally {
-      setUploadingDocument(false)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: uploadRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        uploadingDocumentRef.current = false
+        setUploadingDocument(false)
+      }
       event.target.value = ''
     }
   }
 
   const calcularDesdeDocumento = async () => {
-    if (!documentDraft?.paraRevisar?.items?.length) {
-      setError('Todavia no hay un borrador de documento listo para calcular.')
+    if (calculatingRef.current || uploadingDocumentRef.current || sendingRef.current) {
       return
     }
 
-    const payload = buildDocumentCalculationPayload(documentDraft, documentForm)
+      const payload = buildDocumentCalculationPayload(documentDraft, documentForm)
+
+      if (!payload.items.length) {
+        setError('Todavia no hay un borrador de documento con datos suficientes para calcular.')
+        return
+      }
 
     if (!payload.items.every((item) => item.unit > 0)) {
-      setError('Revisa el documento: todos los items deben tener precio unitario valido.')
+      setError('Revisa el documento: todos los items deben tener precio unitario numerico positivo.')
       return
     }
 
+    const requestId = calculationRequestRef.current + 1
+    const workspaceVersion = workspaceVersionRef.current
+    calculationRequestRef.current = requestId
+
+    calculatingRef.current = true
     setCalculating(true)
     setError(null)
 
     try {
       const response = await axios.post(`${API_URL}/api/auto-cotizar/calcular`, payload)
+
+      if (
+        isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        return
+      }
+
       setResultado(response.data)
-      await cargarDashboard()
+      await refrescarDashboardSinBloquear()
     } catch (requestError) {
-      setError(requestError.response?.data?.error || requestError.message)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        setError(requestError.response?.data?.error || requestError.message)
+      }
     } finally {
-      setCalculating(false)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        calculatingRef.current = false
+        setCalculating(false)
+      }
     }
   }
 
   const calcularCotizacion = async () => {
-    const payload = buildCalculationPayload(contexto)
+    if (calculatingRef.current || sendingRef.current || uploadingDocumentRef.current) {
+      return
+    }
+
+    const payload = buildCalculationPayload(contextoRef.current)
 
     if (!payload.items.length) {
       setError('Todavia no hay productos capturados para calcular.')
@@ -1090,22 +1299,58 @@ function App() {
     }
 
     if (!payload.items.every((item) => item.unit > 0)) {
-      setError('Falta capturar un precio unitario valido.')
+      setError('Falta capturar un precio unitario numerico positivo.')
       return
     }
 
+    const requestId = calculationRequestRef.current + 1
+    const workspaceVersion = workspaceVersionRef.current
+    calculationRequestRef.current = requestId
+
+    calculatingRef.current = true
     setCalculating(true)
     setError(null)
 
     try {
       const response = await axios.post(`${API_URL}/api/agente/calcular`, payload)
+
+      if (
+        isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        return
+      }
+
       setResultado(response.data)
       setView('cotizador')
-      await cargarDashboard()
+      await refrescarDashboardSinBloquear()
     } catch (requestError) {
-      setError(requestError.response?.data?.error || requestError.message)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        setError(requestError.response?.data?.error || requestError.message)
+      }
     } finally {
-      setCalculating(false)
+      if (
+        !isStaleWorkspaceResponse({
+          requestId,
+          latestRequestId: calculationRequestRef.current,
+          workspaceVersion,
+          latestWorkspaceVersion: workspaceVersionRef.current
+        })
+      ) {
+        calculatingRef.current = false
+        setCalculating(false)
+      }
     }
   }
 
@@ -1116,11 +1361,13 @@ function App() {
     setAuthLoading(true)
 
     try {
-      const response = await axios.post(`${API_URL}/api/auth/login`, loginForm)
-      await hydrateAuthenticatedSession(response.data.token)
-      setAuthNotice('Acceso verificado. Ya estas dentro de la comunidad.')
-    } catch (requestError) {
-      setAuthError(requestError.response?.data?.error || requestError.message)
+        const response = await axios.post(`${API_URL}/api/auth/login`, normalizeLoginPayload(loginForm))
+        await hydrateAuthenticatedSession(response.data.token)
+        setLoginForm({ email: '', password: '' })
+        setAuthNotice('Sesion iniciada. Ya puedes usar la comunidad.')
+      } catch (requestError) {
+        setLoginForm((current) => ({ ...current, password: '' }))
+        setAuthError(requestError.response?.data?.error || requestError.message)
     } finally {
       setAuthLoading(false)
     }
@@ -1133,8 +1380,9 @@ function App() {
     setAdminLoading(true)
 
     try {
-      const response = await axios.post(`${API_URL}/api/admin/users`, adminForm)
-      setAdminUsers((current) => [response.data.user, ...current])
+      const response = await axios.post(`${API_URL}/api/admin/users`, normalizeAdminFormPayload(adminForm))
+      adminMutationRef.current += 1
+      setAdminUsers((current) => upsertAdminUser(current, response.data.user))
       setAdminForm({ ...EMPTY_ADMIN_FORM })
       setAdminNotice(`Cuenta creada para ${response.data.user.email}.`)
     } catch (requestError) {
@@ -1152,7 +1400,8 @@ function App() {
     try {
       const response = await axios.patch(`${API_URL}/api/admin/users/${userId}`, patch)
       const updatedUser = response.data.user
-      setAdminUsers((current) => current.map((user) => (user.id === updatedUser.id ? updatedUser : user)))
+      adminMutationRef.current += 1
+      setAdminUsers((current) => upsertAdminUser(current, updatedUser))
 
       if (String(currentUser?.id || '') === String(updatedUser.id || '')) {
         setCurrentUser(updatedUser)
@@ -1166,15 +1415,15 @@ function App() {
     }
   }
 
-  const openAdminConfirm = (config) => {
+  const openAdminReview = (config) => {
     setAdminError(null)
     setAdminNotice(null)
-    setAdminConfirm(config)
+    setAdminReview(config)
   }
 
-  const closeAdminConfirm = () => {
+  const closeAdminReview = () => {
     if (adminLoading) return
-    setAdminConfirm(null)
+    setAdminReview(null)
   }
 
   const handleAdminToggleActive = async (user) => {
@@ -1183,16 +1432,16 @@ function App() {
       return
     }
 
-    openAdminConfirm({
+    openAdminReview({
       type: user.active ? 'suspend' : 'reactivate',
       user,
       patch: { active: !user.active },
       successMessage: user.active
         ? `Acceso suspendido para ${user.email}.`
-        : `Acceso reactivado para ${user.email}.`,
+        : `Acceso actualizado para ${user.email}.`,
       message: user.active
         ? `Vas a suspender el acceso de ${user.email}. No podra entrar hasta que lo reactives.`
-        : `Vas a reactivar el acceso de ${user.email}. Recuperara el ingreso segun su rol actual.`
+        : `Vas a reactivar el acceso de ${user.email}. Podra volver a ingresar segun su rol actual.`
     })
   }
 
@@ -1202,7 +1451,7 @@ function App() {
       return
     }
 
-    openAdminConfirm({
+    openAdminReview({
       type: user.approved ? 'revoke_approval' : 'approve',
       user,
       patch: { approved: !user.approved },
@@ -1211,7 +1460,7 @@ function App() {
         : `Aprobacion concedida para ${user.email}.`,
       message: user.approved
         ? `Vas a revocar la aprobacion de ${user.email}. La cuenta seguira existiendo, pero ya no podra operar hasta volver a aprobarla.`
-        : `Vas a aprobar a ${user.email}. La cuenta quedara habilitada para operar si tambien esta activa.`
+        : `Vas a aprobar a ${user.email}. La cuenta podra operar si tambien esta activa.`
     })
   }
 
@@ -1222,7 +1471,7 @@ function App() {
     }
 
     const nextRole = user.role === 'admin' ? 'user' : 'admin'
-    openAdminConfirm({
+    openAdminReview({
       type: nextRole === 'admin' ? 'make_admin' : 'remove_admin',
       user,
       patch: { role: nextRole },
@@ -1236,7 +1485,7 @@ function App() {
   }
 
   const handleAdminPasswordReset = async (user) => {
-    openAdminConfirm({
+    openAdminReview({
       type: 'reset_password',
       user,
       password: '',
@@ -1244,10 +1493,10 @@ function App() {
     })
   }
 
-  const handleAdminConfirmAction = async () => {
-    if (!adminConfirm) return
+  const handleAdminReviewAction = async () => {
+    if (!adminReview) return
 
-    const action = adminConfirm
+    const action = adminReview
 
     if (action.type === 'reset_password') {
       const password = String(action.password || '').trim()
@@ -1263,7 +1512,7 @@ function App() {
       try {
         await axios.post(`${API_URL}/api/admin/users/${action.user.id}/reset-password`, { password })
         setAdminNotice(`Contrasena actualizada para ${action.user.email}.`)
-        setAdminConfirm(null)
+        setAdminReview(null)
       } catch (requestError) {
         setAdminError(requestError.response?.data?.error || requestError.message)
       } finally {
@@ -1273,30 +1522,13 @@ function App() {
       return
     }
 
-    setAdminConfirm(null)
+    setAdminReview(null)
     await patchAdminUser(action.user.id, action.patch, action.successMessage)
   }
 
   const handleLogout = () => {
     clearAuthToken()
-    setView('cotizador')
-    setCurrentUser(null)
-    setMembership(null)
-    setAdminUsers([])
-    setAdminError(null)
-    setAdminNotice(null)
-    setAdminForm({ ...EMPTY_ADMIN_FORM })
-    setAdminConfirm(null)
-    setMessages([])
-    setDashboard(null)
-    setDashboardAnalysis(null)
-    setDashboardScope('mine')
-    setSalud(null)
-    setResultado(null)
-    setDocumentDraft(null)
-    setDocumentForm(buildDocumentDraftForm(null))
-    setError(null)
-    setAuthNotice('Sesion cerrada. El acceso sigue siendo privado.')
+    applyLoggedOutSessionState('Sesion cerrada. El acceso sigue siendo privado.')
   }
 
   if (authLoading && !currentUser) {
@@ -1321,9 +1553,9 @@ function App() {
 
             <div className="brand-stage-copy">
               <p className="eyebrow amber">Plataforma privada de importacion</p>
-              <h1>Cotiza con precision, valida requisitos y toma decisiones de importacion con mas claridad.</h1>
+              <h1>Cotiza con precision, revisa requisitos y toma decisiones de importacion con mas claridad.</h1>
               <p className="hero-text">
-                Una plataforma privada para miembros de Broke Shop que concentra cotizacion, validacion y trazabilidad
+                Una plataforma privada para miembros de Broke Shop que concentra cotizacion, revision y trazabilidad
                 en una sola experiencia.
               </p>
             </div>
@@ -1362,7 +1594,7 @@ function App() {
           <section className="access-panel">
             <div className="access-panel-head">
               <p className="eyebrow">Ingreso privado</p>
-              <h2>Entra a tu workspace de comunidad</h2>
+              <h2>Entra a tu espacio de comunidad</h2>
               <p>
                 Ingreso exclusivo para miembros autorizados por Broke Shop. Si aun no tienes cuenta, contacta al
                 administrador.
@@ -1411,8 +1643,10 @@ function App() {
   }
 
   if (loading) {
-    return <div className="page-state page-state-brand">Preparando tu workspace privado...</div>
+    return <div className="page-state page-state-brand">Preparando tu espacio privado...</div>
   }
+
+  const healthStatusView = buildHealthStatusView(salud)
 
   return (
     <div className="app-shell">
@@ -1426,7 +1660,7 @@ function App() {
             <div className="member-chip">
               <span className="member-chip-label">Miembro</span>
               <strong>{currentUser?.name || currentUser?.email}</strong>
-              <small>{ROLE_LABELS[currentUser?.role] || 'Miembro'} · {MEMBERSHIP_LABELS[membership?.nivel] || 'Acceso privado'}</small>
+              <small>{ROLE_LABELS[currentUser?.role] || 'Miembro'} / {MEMBERSHIP_LABELS[membership?.nivel] || 'Acceso privado'}</small>
             </div>
 
             <button type="button" className="ghost-button" onClick={handleLogout}>
@@ -1456,9 +1690,9 @@ function App() {
           </div>
 
           <div className="hero-status">
-            <div className={`status-pill ${salud?.status || 'neutral'}`}>
+            <div className={`status-pill ${healthStatusView.statusClass}`}>
               <span className="status-dot" />
-              {healthLabel(salud?.status)}
+              {healthStatusView.label}
             </div>
 
             <div className="hero-actions">
@@ -1467,7 +1701,7 @@ function App() {
                 className={`tab-button ${view === 'cotizador' ? 'active' : ''}`}
                 onClick={() => setView('cotizador')}
               >
-                Workspace
+                Espacio
               </button>
               <button
                 type="button"
@@ -1504,28 +1738,26 @@ function App() {
                 <div>
                   <p className="panel-kicker">Agente 0</p>
                   <h2>Chat de cotizacion</h2>
-                  <p>Responde lo minimo. El sistema construye tu operacion y te dice que tan exacto es cada dato.</p>
+                  <p>Responde lo minimo. El sistema construye tu operacion y te dice que tan confiable es cada dato.</p>
                 </div>
-                <button type="button" className="ghost-button" onClick={reiniciar}>
+                <button type="button" className="ghost-button" onClick={reiniciar} disabled={workspaceBusy}>
                   Reiniciar flujo
                 </button>
               </div>
 
               <div className="quick-prompts">
                 {QUICK_PROMPTS.map((prompt) => (
-                  <button key={prompt} type="button" className="prompt-chip" onClick={() => enviarMensaje(prompt)}>
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="prompt-chip"
+                    onClick={() => enviarMensaje(prompt)}
+                    disabled={workspaceBusy}
+                  >
                     {prompt}
                   </button>
                 ))}
               </div>
-
-              <input
-                ref={documentInputRef}
-                type="file"
-                accept={SUPPLIER_FILE_ACCEPT}
-                className="hidden-file-input"
-                onChange={handleSupplierDocumentUpload}
-              />
 
               <section className="document-intake-card">
                 <div className="document-intake-head">
@@ -1535,22 +1767,24 @@ function App() {
                     <p>PDF, DOCX, XLSX, CSV o imagen. Si tienes valores reales, puedes corregirlos antes de calcular.</p>
                   </div>
 
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={abrirSelectorDocumento}
-                    disabled={uploadingDocument}
-                  >
-                    {uploadingDocument ? 'Procesando...' : 'Subir archivo'}
-                  </button>
+                  <label className={`ghost-button file-picker-button ${workspaceBusy ? 'is-disabled' : ''}`}>
+                    <input
+                      type="file"
+                      accept={SUPPLIER_FILE_ACCEPT}
+                      className="hidden-file-input"
+                      onChange={handleSupplierDocumentUpload}
+                      disabled={workspaceBusy}
+                    />
+                    <span>{uploadingDocument ? 'Procesando...' : (workspaceBusy ? 'Espera...' : 'Subir archivo')}</span>
+                  </label>
                 </div>
 
                 {documentDraft ? (
                   <div className="document-draft">
                     <div className="document-draft-meta">
                       <span>Archivo: <strong>{documentDraft.fileName}</strong></span>
-                      <span>Confianza: <strong>{documentDraft.confianza || 0}%</strong></span>
-                      <span>Items: <strong>{documentDraft.paraRevisar?.items?.length || 0}</strong></span>
+                      <span>Confianza: <strong>{documentDraftView.confidence === null ? 'N/D' : `${documentDraftView.confidence}%`}</strong></span>
+                      <span>Items: <strong>{documentDraftView.itemCount}</strong></span>
                     </div>
 
                     <div className="document-form-grid">
@@ -1560,6 +1794,7 @@ function App() {
                           value={documentForm.proveedor}
                           onChange={(event) => handleDocumentFieldChange('proveedor', event.target.value)}
                           placeholder="Proveedor detectado"
+                          disabled={uploadingDocument || calculating}
                         />
                       </label>
 
@@ -1569,6 +1804,7 @@ function App() {
                           value={documentForm.pais}
                           onChange={(event) => handleDocumentFieldChange('pais', event.target.value)}
                           placeholder="CN, US, China..."
+                          disabled={uploadingDocument || calculating}
                         />
                       </label>
 
@@ -1578,6 +1814,7 @@ function App() {
                           value={documentForm.incoterm}
                           onChange={(event) => handleDocumentFieldChange('incoterm', event.target.value.toUpperCase())}
                           placeholder="FOB"
+                          disabled={uploadingDocument || calculating}
                         />
                       </label>
 
@@ -1586,11 +1823,13 @@ function App() {
                         <select
                           value={documentForm.canal}
                           onChange={(event) => handleDocumentFieldChange('canal', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           <option value="MARITIMO">Maritimo</option>
                           <option value="AEREO">Aereo</option>
                           <option value="COURIER">Courier</option>
                           <option value="POSTAL">Postal</option>
+                          <option value="POSTAL_FRANQUICIA">Postal con franquicia</option>
                         </select>
                       </label>
 
@@ -1599,6 +1838,7 @@ function App() {
                         <select
                           value={documentForm.tipoSujeto}
                           onChange={(event) => handleDocumentFieldChange('tipoSujeto', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           {SUBJECT_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -1611,6 +1851,7 @@ function App() {
                         <select
                           value={documentForm.objetivoCalculo}
                           onChange={(event) => handleDocumentFieldChange('objetivoCalculo', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           {OBJECTIVE_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -1627,6 +1868,7 @@ function App() {
                           value={documentForm.flete}
                           onChange={(event) => handleDocumentFieldChange('flete', event.target.value)}
                           placeholder="Si ya te lo cotizaron"
+                          disabled={uploadingDocument || calculating}
                         />
                       </label>
 
@@ -1635,6 +1877,7 @@ function App() {
                         <select
                           value={documentForm.seguroModo}
                           onChange={(event) => handleDocumentFieldChange('seguroModo', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           {INSURANCE_MODE_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>{option.label}</option>
@@ -1651,7 +1894,7 @@ function App() {
                           value={documentForm.seguro}
                           onChange={(event) => handleDocumentFieldChange('seguro', event.target.value)}
                           placeholder="Si ya lo tienes"
-                          disabled={documentForm.seguroModo !== 'REAL'}
+                          disabled={uploadingDocument || calculating || documentForm.seguroModo !== 'REAL'}
                         />
                       </label>
 
@@ -1664,6 +1907,7 @@ function App() {
                           value={documentForm.tc}
                           onChange={(event) => handleDocumentFieldChange('tc', event.target.value)}
                           placeholder="Opcional: en blanco usa SUNAT venta"
+                          disabled={uploadingDocument || calculating}
                         />
                       </label>
 
@@ -1672,6 +1916,7 @@ function App() {
                         <select
                           value={documentForm.tipoImportador}
                           onChange={(event) => handleDocumentFieldChange('tipoImportador', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           <option value="general">General</option>
                           <option value="nuevo">Nuevo</option>
@@ -1684,6 +1929,7 @@ function App() {
                         <select
                           value={documentForm.condicionProducto}
                           onChange={(event) => handleDocumentFieldChange('condicionProducto', event.target.value)}
+                          disabled={uploadingDocument || calculating}
                         >
                           <option value="nuevo">Producto nuevo</option>
                           <option value="usado">Producto usado / segunda mano</option>
@@ -1699,7 +1945,7 @@ function App() {
                           value={documentForm.margenVenta}
                           onChange={(event) => handleDocumentFieldChange('margenVenta', event.target.value)}
                           placeholder="30"
-                          disabled={documentForm.objetivoCalculo === 'costo_importacion'}
+                          disabled={uploadingDocument || calculating || documentForm.objetivoCalculo === 'costo_importacion'}
                         />
                       </label>
                     </div>
@@ -1715,10 +1961,10 @@ function App() {
                     ) : null}
 
                     <div className="document-items-preview">
-                      {(documentDraft.paraRevisar?.items || []).slice(0, 4).map((item) => (
+                      {documentDraftView.items.slice(0, 4).map((item) => (
                         <div key={`${item.index}-${item.desc}`} className="document-item-chip">
-                          <strong>{item.qty} x {item.desc}</strong>
-                          <span>{formatMoney(item.unit || 0)}</span>
+                          <strong title={`${item.qty} x ${item.desc}`}>{truncateText(`${item.qty} x ${item.desc}`, 64)}</strong>
+                          <span>{item.unit === null ? 'Pendiente' : formatMoney(item.unit)}</span>
                         </div>
                       ))}
                     </div>
@@ -1727,9 +1973,9 @@ function App() {
                       type="button"
                       className="primary-button full-width"
                       onClick={calcularDesdeDocumento}
-                      disabled={calculating}
+                      disabled={sending || calculating || uploadingDocument}
                     >
-                      {calculating ? 'Calculando...' : 'Calcular desde documento'}
+                      {uploadingDocument ? 'Procesando documento...' : (calculating ? 'Calculando...' : 'Calcular desde documento')}
                     </button>
                   </div>
                 ) : (
@@ -1749,13 +1995,13 @@ function App() {
                       {message.options?.length ? (
                         <div className="message-options">
                           {message.options.map((option) => (
-                            <button
-                              key={`${message.id}-${option.value}`}
-                              type="button"
-                              className="option-button"
-                              onClick={() => handleOptionClick(option)}
-                              disabled={sending || calculating}
-                            >
+                          <button
+                            key={`${message.id}-${option.value}`}
+                            type="button"
+                            className="option-button"
+                            onClick={() => handleOptionClick(option)}
+                            disabled={workspaceBusy}
+                          >
                               {option.label}
                             </button>
                           ))}
@@ -1767,7 +2013,7 @@ function App() {
                           type="button"
                           className="primary-button inline-action"
                           onClick={calcularCotizacion}
-                          disabled={calculating}
+                          disabled={workspaceBusy}
                         >
                           {calculating ? 'Calculando...' : 'Calcular cotizacion'}
                         </button>
@@ -1790,9 +2036,9 @@ function App() {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   placeholder="Escribe tu respuesta o describe lo que quieres importar..."
-                  disabled={sending || calculating}
+                  disabled={sending || calculating || uploadingDocument}
                 />
-                <button type="submit" className="primary-button" disabled={sending || calculating || !input.trim()}>
+                <button type="submit" className="primary-button" disabled={sending || calculating || uploadingDocument || !input.trim()}>
                   Enviar
                 </button>
               </form>
@@ -1802,22 +2048,31 @@ function App() {
               <section className="panel summary-panel">
                 <div className="panel-head compact">
                   <div>
-                    <p className="panel-kicker">Captura activa</p>
+                    <p className="panel-kicker">Contexto actual</p>
                     <h2>Resumen detectado</h2>
                     <p>Lo que el chat ya entiende de tu operacion.</p>
                   </div>
                 </div>
 
                 <div className="summary-list">
-                  {buildSummaryRows(contexto).map((row) => (
+                  {buildWorkspaceSummaryRows(contexto, {
+                    toNumber,
+                    formatMoney,
+                    channelLabels: CHANNEL_LABELS,
+                    objectiveLabels: OBJECTIVE_LABELS,
+                    subjectLabels: SUBJECT_LABELS,
+                    insuranceModeLabels: INSURANCE_MODE_LABELS,
+                    importerLabels: IMPORTER_LABELS,
+                    productConditionLabels: PRODUCT_CONDITION_LABELS,
+                  }).map((row) => (
                     <div key={row.label} className="summary-row">
                       <span>{row.label}</span>
-                      <strong>{row.value}</strong>
+                      <strong title={String(row.value ?? '')}>{truncateText(row.value, row.label === 'Productos' ? 96 : 68)}</strong>
                     </div>
                   ))}
                 </div>
 
-                <button type="button" className="primary-button full-width" onClick={calcularCotizacion} disabled={calculating}>
+                <button type="button" className="primary-button full-width" onClick={calcularCotizacion} disabled={workspaceBusy}>
                   {calculating ? 'Calculando...' : 'Calcular ahora'}
                 </button>
               </section>
@@ -1855,30 +2110,30 @@ function App() {
                   <div>
                     <p className="panel-kicker">Salida</p>
                     <h2>Resultado</h2>
-                    <p>Tu cotizacion aparece aqui con exactitud por componente.</p>
+                    <p>Tu cotizacion aparece aqui con confiabilidad por componente.</p>
                   </div>
                 </div>
 
-                {resultado?.exito ? (
+                {resultado?.procesado ? (
                   <div className="result-content">
                     <div className="result-highlight">
                       <span>Total landed</span>
-                      <strong>{formatMoney(resultado.totales?.totalReal)}</strong>
+                      <strong>{resultAmountSummary.totalLanded}</strong>
                     </div>
 
-                    {resultado.precision ? (
+                    {precisionView.shouldRender ? (
                       <div className={`precision-card ${precisionTone(resultado.precision)}`}>
                         <div className="precision-head">
                           <span>Precision global</span>
                           <strong>
-                            {PRECISION_LABELS[resultado.precision.nivel] || resultado.precision.nivel} ({resultado.precision.puntaje}%)
+                            {precisionView.levelLabel} ({precisionView.scoreDisplay})
                           </strong>
                         </div>
-                        <p>{resultado.precision.resumen}</p>
+                        <p>{precisionView.summary}</p>
 
-                        {Array.isArray(resultado.precision.motivos) && resultado.precision.motivos.length ? (
+                        {precisionView.motivos.length ? (
                           <div className="precision-reasons">
-                            {resultado.precision.motivos.slice(0, 3).map((motivo, index) => (
+                            {precisionView.motivos.slice(0, 3).map((motivo, index) => (
                               <div key={`${motivo.codigo}-${index}`} className="precision-reason">
                                 {motivo.mensaje}
                               </div>
@@ -1886,9 +2141,9 @@ function App() {
                           </div>
                         ) : null}
 
-                        {resultado.precision.componentes ? (
+                        {precisionView.componentes.length ? (
                           <div className="precision-components">
-                            {Object.values(resultado.precision.componentes).map((component) => (
+                            {precisionView.componentes.map((component) => (
                               <div key={component.clave} className={`precision-component ${componentTone(component)}`}>
                                 <div className="precision-component-head">
                                   <span>{component.etiqueta}</span>
@@ -1905,19 +2160,19 @@ function App() {
                     <div className="result-grid">
                       <div>
                         <span>FOB</span>
-                        <strong>{formatMoney(resultado.totales?.fob)}</strong>
+                        <strong>{resultAmountSummary.fob}</strong>
                       </div>
                       <div>
                         <span>Flete</span>
-                        <strong>{formatMoney(resultado.totales?.flete)}</strong>
+                        <strong>{resultAmountSummary.flete}</strong>
                       </div>
                       <div>
                         <span>Seguro</span>
-                        <strong>{formatMoney(resultado.totales?.seguro)}</strong>
+                        <strong>{resultAmountSummary.seguro}</strong>
                       </div>
                       <div>
                         <span>Tributos</span>
-                        <strong>{formatMoney(resultado.totales?.totalTributos)}</strong>
+                        <strong>{resultAmountSummary.tributos}</strong>
                       </div>
                     </div>
 
@@ -1931,15 +2186,15 @@ function App() {
                         <div className="simple-list">
                           <article className="list-card result-card">
                             <strong>Objetivo del calculo</strong>
-                            <p>{OBJECTIVE_LABELS[resultado.metadata.objetivoCalculo] || OBJECTIVE_LABELS.precio_sugerido}</p>
+                            <p>{resultOperationSummary.objetivoCalculo}</p>
                           </article>
                           <article className="list-card result-card">
                             <strong>Seguro</strong>
-                            <p>{resultado.perfilImportacion?.seguro?.etiqueta || INSURANCE_MODE_LABELS[resultado.metadata.seguroModo] || INSURANCE_MODE_LABELS.ESTIMADO}</p>
+                            <p>{resultOperationSummary.seguro}</p>
                           </article>
                           <article className="list-card result-card">
                             <strong>Perfil</strong>
-                            <p>{SUBJECT_LABELS[resultado.metadata.tipoSujeto] || 'Empresa'} / {IMPORTER_LABELS[resultado.metadata.tipoImportador] || 'Importador general'}</p>
+                            <p>{resultOperationSummary.perfil}</p>
                           </article>
                         </div>
                       </div>
@@ -1950,15 +2205,15 @@ function App() {
                         <div className="result-subsection">
                           <div className="result-subsection-head">
                             <h3>Escenario aduanero</h3>
-                            <span>{resultado.perfilImportacion.regimen?.titulo || 'Importacion'}</span>
+                            <span>{regimenView.title}</span>
                           </div>
 
                           <div className="simple-list">
                             <article className="list-card result-card">
-                              <strong>{resultado.perfilImportacion.regimen?.titulo}</strong>
-                              <p>{resultado.perfilImportacion.regimen?.detalle}</p>
-                              {resultado.perfilImportacion.regimen?.umbral ? (
-                                <p className="muted-line">Tramo: {resultado.perfilImportacion.regimen.umbral}</p>
+                              <strong>{regimenView.title}</strong>
+                              <p>{regimenView.detail}</p>
+                              {regimenView.umbral ? (
+                                <p className="muted-line">Tramo: {regimenView.umbral}</p>
                               ) : null}
                             </article>
 
@@ -2009,12 +2264,12 @@ function App() {
                           </div>
                         ) : null}
 
-                        {Array.isArray(resultado.perfilImportacion.validacionOficial?.subpartidas) && resultado.perfilImportacion.validacionOficial.subpartidas.length ? (
+              {officialConsultationView.shouldRender ? (
                           <div className="result-subsection">
                             <div className="result-subsection-head">
-                              <h3>Validacion oficial en vivo</h3>
+                      <h3>Consulta oficial en vivo</h3>
                               <span>
-                                {resultado.perfilImportacion.validacionOficial.fuente || 'ADUANET'} · {formatDateTime(resultado.perfilImportacion.validacionOficial.actualizado)}
+                      {officialConsultationView.source} / {formatDateTime(officialConsultationView.updatedAt)}
                               </span>
                             </div>
 
@@ -2022,22 +2277,29 @@ function App() {
                               <article className="list-card result-card">
                                 <strong>Resumen oficial por subpartida</strong>
                                 <p>
-                                  {resultado.perfilImportacion.validacionOficial.resumen?.consultadas || resultado.perfilImportacion.validacionOficial.subpartidas.length}
+                        {officialConsultationSummary.consultadas}
                                   {' '}subpartida(s) consultadas,{' '}
-                                  {resultado.perfilImportacion.validacionOficial.resumen?.conveniosDetectados || 0}
+                        {officialConsultationSummary.conveniosDetectados}
                                   {' '}con convenio(s) detectado(s) y{' '}
-                                  {resultado.perfilImportacion.validacionOficial.resumen?.restriccionesDetectadas || 0}
+                        {officialConsultationSummary.restriccionesDetectadas}
                                   {' '}restriccion(es) oficial(es).
                                 </p>
-                                {resultado.perfilImportacion.validacionOficial.truncado ? (
+                                {officialConsultationView.truncated ? (
                                   <p className="muted-line">
                                     Se consulto una muestra prioritaria para no volver lento el calculo. Detectadas:{' '}
-                                    {resultado.perfilImportacion.validacionOficial.totalDetectadas}
+                                    {officialConsultationView.totalDetectadas}
                                   </p>
                                 ) : null}
                               </article>
 
-                              {resultado.perfilImportacion.validacionOficial.subpartidas.map((subpartida) => (
+                      {!officialConsultationView.hasSubpartidas && officialConsultationView.emptyMessage ? (
+                                <article className="list-card result-card medio">
+                                  <strong>Sin detalle por subpartida</strong>
+                          <p>{officialConsultationView.emptyMessage}</p>
+                                </article>
+                              ) : null}
+
+                              {officialConsultationView.subpartidas.map((subpartida) => (
                                 <article key={subpartida.partida} className={`list-card result-card ${subpartida.oficialEnVivo ? 'info' : 'medio'}`}>
                                   <strong>
                                     {subpartida.partida}
@@ -2046,14 +2308,14 @@ function App() {
                                   {subpartida.tipoProducto ? <p>{subpartida.tipoProducto}</p> : null}
                                   {Array.isArray(subpartida.resumenTributos) && subpartida.resumenTributos.length ? (
                                     <p className="muted-line">
-                                      {subpartida.resumenTributos.map((tributo) => `${tributo.etiqueta}: ${tributo.valor}`).join(' · ')}
+                                  {subpartida.resumenTributos.map((tributo) => `${tributo.etiqueta}: ${tributo.valor}`).join(' / ')}
                                     </p>
                                   ) : null}
                                   {subpartida.convenio ? (
                                     <p>
                                       Convenio: {subpartida.convenio.acuerdo} ({subpartida.convenio.pais})
-                                      {subpartida.convenio.arancelBasePreferencial ? ` · ${subpartida.convenio.arancelBasePreferencial}` : ''}
-                                      {subpartida.convenio.porcentajeLiberadoAdv ? ` · liberacion ${subpartida.convenio.porcentajeLiberadoAdv}` : ''}
+                                  {subpartida.convenio.arancelBasePreferencial ? ` / ${subpartida.convenio.arancelBasePreferencial}` : ''}
+                                  {subpartida.convenio.porcentajeLiberadoAdv ? ` / liberacion ${subpartida.convenio.porcentajeLiberadoAdv}` : ''}
                                     </p>
                                   ) : (
                                     <p className="muted-line">Sin convenio preferencial detectado para el pais consultado.</p>
@@ -2062,7 +2324,7 @@ function App() {
                                     <p>
                                       Restricciones: {subpartida.restricciones.total}
                                       {Array.isArray(subpartida.restricciones.entidades) && subpartida.restricciones.entidades.length
-                                        ? ` · control: ${subpartida.restricciones.entidades.join(', ')}`
+                                    ? ` / control: ${subpartida.restricciones.entidades.join(', ')}`
                                         : ''}
                                     </p>
                                   ) : (
@@ -2074,7 +2336,7 @@ function App() {
                                     </p>
                                   ) : null}
                                   <p className="muted-line">
-                                    Fuente: {subpartida.fuente} · {subpartida.oficialEnVivo ? 'oficial en vivo' : 'fallback/cache'} · {formatDateTime(subpartida.actualizado)}
+                                Fuente: {subpartida.fuente} / {subpartida.oficialEnVivo ? 'oficial en vivo' : 'fallback/cache'} / {formatDateTime(subpartida.actualizado)}
                                   </p>
                                   {subpartida.error ? <p className="muted-line">Nota: {subpartida.error}</p> : null}
                                   {Object.values(subpartida.enlaces || {}).filter(Boolean).length ? (
@@ -2111,9 +2373,9 @@ function App() {
                       </>
                     ) : null}
 
-                    {resultado.totales?.totalPEN ? (
+                    {resultAmountSummary.totalPEN ? (
                       <div className="result-pen">
-                        Total referencial en soles: <strong>{formatMoney(resultado.totales.totalPEN, 'PEN')}</strong>
+                        Total referencial en soles: <strong>{resultAmountSummary.totalPEN}</strong>
                       </div>
                     ) : null}
 
@@ -2191,8 +2453,8 @@ function App() {
                 <p>Aprueba, suspende, cambia roles y resetea credenciales sin salir de la plataforma.</p>
               </div>
 
-              <button type="button" className="ghost-button" onClick={loadAdminUsers} disabled={adminLoading}>
-                {adminLoading ? 'Actualizando...' : 'Actualizar lista'}
+              <button type="button" className="ghost-button" onClick={loadAdminUsers} disabled={adminListLoading}>
+                {adminListLoading ? 'Actualizando...' : 'Actualizar lista'}
               </button>
             </div>
 
@@ -2284,7 +2546,7 @@ function App() {
                 </div>
 
                 <div className="admin-user-list">
-                  {adminUsers.length ? adminUsers.map((user) => (
+                  {adminUsersView.hasUsers ? adminUsersView.users.map((user) => (
                     <article key={user.id} className="admin-user-card">
                       <div className="admin-user-head">
                         <div>
@@ -2344,7 +2606,13 @@ function App() {
                     </article>
                   )) : (
                     <div className="empty-card">
-                      <p>Todavia no hay mas miembros registrados. Usa el formulario para crear la primera cuenta manual.</p>
+                      <p>
+                        {adminUsersView.showLoadingState
+                          ? adminUsersView.loadingMessage
+                          : adminUsersView.showErrorState
+                            ? adminUsersView.errorMessage
+                            : adminUsersView.emptyMessage}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -2372,27 +2640,32 @@ function App() {
             <div className="kpi-grid">
               <div className="kpi-card">
                 <span>Total cotizaciones</span>
-                <strong>{dashboard?.kpis?.totalCotizaciones?.valor || 0}</strong>
-                <small>{formatMetricDelta(dashboard?.kpis?.totalCotizaciones)}</small>
+                <strong>{totalCotizacionesMetric.value}</strong>
+                <small>{totalCotizacionesMetric.delta}</small>
               </div>
               <div className="kpi-card">
                 <span>Total dolares</span>
-                <strong>{formatMoney(dashboard?.kpis?.totalDolares?.valor)}</strong>
-                <small>{formatMetricDelta(dashboard?.kpis?.totalDolares)}</small>
+                <strong>{totalDolaresMetric.value}</strong>
+                <small>{totalDolaresMetric.delta}</small>
               </div>
               <div className="kpi-card">
                 <span>Ticket promedio</span>
-                <strong>{formatMoney(dashboard?.kpis?.ticketPromedio?.valor)}</strong>
-                <small>{formatMetricDelta(dashboard?.kpis?.ticketPromedio)}</small>
+                <strong>{ticketPromedioMetric.value}</strong>
+                <small>{ticketPromedioMetric.delta}</small>
               </div>
               <div className="kpi-card">
                 <span>Paises activos</span>
-                <strong>{dashboard?.kpis?.paisesActivos?.valor || 0}</strong>
-                <small>{formatMetricDelta(dashboard?.kpis?.paisesActivos, 'count')}</small>
+                <strong>{paisesActivosMetric.value}</strong>
+                <small>{paisesActivosMetric.delta}</small>
               </div>
             </div>
 
-            {dashboard?.meta?.hayDatos ? (
+            {dashboardError ? (
+              <div className="empty-dashboard">
+                <h3>No pude cargar el dashboard</h3>
+                <p>{dashboardError}</p>
+              </div>
+            ) : dashboard?.meta?.hayDatos ? (
               <div className="dashboard-stack">
                 <div className="chart-grid">
                   <DashboardLineChart
@@ -2423,31 +2696,38 @@ function App() {
                     </div>
 
                     <div className="analysis-grid">
-                      {Array.isArray(dashboardAnalysis?.insights) ? dashboardAnalysis.insights.map((item, index) => (
+                      {dashboardAnalysisView.insights.map((item, index) => (
                         <article key={`insight-${index}`} className="list-card">
                           <strong>Insight {index + 1}</strong>
                           <p>{item}</p>
                         </article>
-                      )) : null}
+                      ))}
 
-                      {Array.isArray(dashboardAnalysis?.oportunidades) ? dashboardAnalysis.oportunidades.map((item, index) => (
+                      {dashboardAnalysisView.oportunidades.map((item, index) => (
                         <article key={`op-${index}`} className="list-card">
                           <strong>Oportunidad {index + 1}</strong>
                           <p>{item}</p>
                         </article>
-                      )) : null}
+                      ))}
 
-                      {dashboardAnalysis?.alerta ? (
+                      {dashboardAnalysisView.alerta ? (
                         <article className="list-card">
                           <strong>Alerta IA</strong>
-                          <p>{dashboardAnalysis.alerta}</p>
+                          <p>{dashboardAnalysisView.alerta}</p>
                         </article>
                       ) : null}
 
-                      {dashboardAnalysis?.recomendacion ? (
+                      {dashboardAnalysisView.recomendacion ? (
                         <article className="list-card">
                           <strong>Recomendacion</strong>
-                          <p>{dashboardAnalysis.recomendacion}</p>
+                          <p>{dashboardAnalysisView.recomendacion}</p>
+                        </article>
+                      ) : null}
+
+                      {!dashboardAnalysisView.hasContent ? (
+                        <article className="list-card">
+                          <strong>Analisis no disponible</strong>
+                          <p>La lectura ejecutiva todavia no devolvio contenido util para este dashboard.</p>
                         </article>
                       ) : null}
                     </div>
@@ -2462,19 +2742,26 @@ function App() {
                     </div>
 
                     <div className="simple-list">
-                      {(dashboard?.tendencias || []).map((item) => (
+                      {dashboardAttentionView.tendencias.map((item) => (
                         <article key={item.titulo} className="list-card">
                           <strong>{item.titulo}</strong>
                           <p>{item.descripcion}</p>
                         </article>
                       ))}
 
-                      {(dashboard?.alertas || []).map((item) => (
+                      {dashboardAttentionView.alertas.map((item) => (
                         <article key={item.id || item.titulo} className="list-card">
                           <strong>{item.titulo}</strong>
                           <p>{item.mensaje}</p>
                         </article>
                       ))}
+
+                      {!dashboardAttentionView.hasContent ? (
+                        <article className="list-card">
+                          <strong>Sin novedades destacadas</strong>
+                          <p>No hay tendencias ni alertas relevantes para mostrar en este momento.</p>
+                        </article>
+                      ) : null}
                     </div>
                   </section>
                 </div>
@@ -2484,8 +2771,8 @@ function App() {
                 <h3>Sin historial todavia</h3>
                 <p>
                   {isAdmin
-                    ? 'El panel de comunidad se activara cuando existan cotizaciones reales guardadas por tus miembros.'
-                    : 'Tu panel personal se activara cuando guardes tus primeras cotizaciones reales.'}
+                    ? 'El panel de comunidad empezara a mostrar actividad cuando existan cotizaciones reales guardadas por tus miembros.'
+                    : 'Tu panel personal empezara a mostrar actividad cuando guardes tus primeras cotizaciones reales.'}
                 </p>
               </div>
             )}
@@ -2493,34 +2780,34 @@ function App() {
         )}
       </main>
 
-      {adminConfirm ? (
-        <div className="admin-confirm-overlay" role="presentation" onClick={closeAdminConfirm}>
+      {adminReview ? (
+        <div className="admin-review-overlay" role="presentation" onClick={closeAdminReview}>
           <section
-            className={`admin-confirm-dialog ${ADMIN_CONFIRM_COPY[adminConfirm.type]?.tone || 'info'}`}
+            className={`admin-review-dialog ${ADMIN_REVIEW_COPY[adminReview.type]?.tone || 'info'}`}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="admin-confirm-title"
+            aria-labelledby="admin-review-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <p className="panel-kicker">Confirmacion requerida</p>
-            <h2 id="admin-confirm-title">
-              {ADMIN_CONFIRM_COPY[adminConfirm.type]?.title || 'Confirmar accion'}
+            <p className="panel-kicker">Revision requerida</p>
+            <h2 id="admin-review-title">
+              {ADMIN_REVIEW_COPY[adminReview.type]?.title || 'Revisar accion'}
             </h2>
-            <p>{adminConfirm.message}</p>
+            <p>{adminReview.message}</p>
 
-            <div className="admin-confirm-target">
-              <strong>{adminConfirm.user?.name || adminConfirm.user?.email}</strong>
-              <span>{adminConfirm.user?.email}</span>
+            <div className="admin-review-target">
+              <strong>{adminReview.user?.name || adminReview.user?.email}</strong>
+              <span>{adminReview.user?.email}</span>
             </div>
 
-            {adminConfirm.type === 'reset_password' ? (
-              <label className="admin-confirm-field">
+            {adminReview.type === 'reset_password' ? (
+              <label className="admin-review-field">
                 <span>Nueva contrasena temporal</span>
                 <input
                   type="text"
-                  value={adminConfirm.password || ''}
+                  value={adminReview.password || ''}
                   onChange={(event) =>
-                    setAdminConfirm((current) => (current ? { ...current, password: event.target.value } : current))
+                    setAdminReview((current) => (current ? { ...current, password: event.target.value } : current))
                   }
                   placeholder="Minimo 6 caracteres"
                   autoFocus
@@ -2528,12 +2815,12 @@ function App() {
               </label>
             ) : null}
 
-            <div className="admin-confirm-actions">
-              <button type="button" className="ghost-button" onClick={closeAdminConfirm} disabled={adminLoading}>
+            <div className="admin-review-actions">
+              <button type="button" className="ghost-button" onClick={closeAdminReview} disabled={adminLoading}>
                 Cancelar
               </button>
-              <button type="button" className="primary-button" onClick={handleAdminConfirmAction} disabled={adminLoading}>
-                {adminLoading ? 'Procesando...' : (ADMIN_CONFIRM_COPY[adminConfirm.type]?.confirmLabel || 'Confirmar')}
+              <button type="button" className="primary-button" onClick={handleAdminReviewAction} disabled={adminLoading}>
+                {adminLoading ? 'Procesando...' : (ADMIN_REVIEW_COPY[adminReview.type]?.actionLabel || 'Revisar')}
               </button>
             </div>
           </section>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cotizador Perú Ultimate v3.0</title>
+  <title>ImportAIAgent Cotizador - Dashboard operativo</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -40,9 +40,15 @@
       font-weight: bold;
       margin-top: 10px;
     }
-    .status.healthy {
-      background: #4ade80;
-      color: #155724;
+    .status.available {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border: 1px solid #93c5fd;
+    }
+    .status.demo {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #f59e0b;
     }
     .kpi-grid {
       display: grid;
@@ -73,6 +79,7 @@
     }
     .variation.up { color: #4ade80; }
     .variation.down { color: #ef4444; }
+    .variation.na { color: #666; }
     .content {
       background: white;
       padding: 20px;
@@ -107,13 +114,24 @@
       border-radius: 5px;
       margin-bottom: 20px;
     }
+    .notice {
+      background: #fef3c7;
+      color: #92400e;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #f59e0b;
+    }
+    .kpi-empty {
+      grid-column: 1 / -1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>🚀 Cotizador Perú Ultimate v3.0</h1>
-      <p>Cotizador de Importación - Enterprise Grade</p>
+      <h1>ImportAIAgent Cotizador</h1>
+      <p>Dashboard operativo local para salud, membresias y payload de KPIs.</p>
       <div id="status" class="status">Cargando...</div>
     </div>
 
@@ -124,31 +142,28 @@
     </div>
 
     <div id="content" style="display: none;">
-      <!-- KPIs -->
+      <div id="dashboardNotice" class="notice" style="display: none;"></div>
       <div class="kpi-grid" id="kpiGrid"></div>
 
-      <!-- Dashboard Data -->
       <div class="content">
-        <h2>📊 Datos del Dashboard</h2>
+        <h2>Datos del dashboard</h2>
         <pre id="dashboardData"></pre>
       </div>
 
-      <!-- Membresías -->
       <div class="content">
-        <h2>👥 Estadísticas de Membresías</h2>
+        <h2>Estadisticas de membresias</h2>
         <pre id="membresiasData"></pre>
       </div>
 
-      <!-- Health -->
       <div class="content">
-        <h2>💚 Salud del Sistema</h2>
+        <h2>Salud del sistema</h2>
         <pre id="healthData"></pre>
       </div>
     </div>
   </div>
 
-    <script>
-      const API_BASE = `${window.location.origin}/api`;
+  <script>
+    const API_BASE = `${window.location.origin}/api`;
 
     async function fetchData(endpoint) {
       try {
@@ -162,25 +177,20 @@
 
     async function loadDashboard() {
       try {
-        // Cargar health
         const health = await fetchData('/health');
-        document.getElementById('status').className = 'status healthy';
-        document.getElementById('status').textContent = '✅ SERVIDOR EN LÍNEA';
         document.getElementById('healthData').textContent = JSON.stringify(health, null, 2);
 
-        // Cargar dashboard
         const dashboard = await fetchData('/dashboard');
-        renderKPIs(dashboard.kpis);
+        renderStatus({ health, dashboard });
+        renderDashboardNotice(dashboard);
+        renderKPIs(dashboard);
         document.getElementById('dashboardData').textContent = JSON.stringify(dashboard, null, 2);
 
-        // Cargar membresías
         const membresias = await fetchData('/membresias/estadisticas');
         document.getElementById('membresiasData').textContent = JSON.stringify(membresias, null, 2);
 
-        // Mostrar contenido
         document.getElementById('loading').style.display = 'none';
         document.getElementById('content').style.display = 'block';
-
       } catch (error) {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error').style.display = 'block';
@@ -189,18 +199,62 @@
       }
     }
 
-    function renderKPIs(kpis) {
+    function renderStatus({ health, dashboard }) {
+      const status = document.getElementById('status');
+      const isDemo = health?.source === 'demo_local'
+        || health?.status === 'demo_local'
+        || dashboard?.source === 'demo_local';
+
+      status.className = `status ${isDemo ? 'demo' : 'available'}`;
+      status.textContent = isDemo ? 'DEMO LOCAL' : 'API RESPONDIENDO';
+    }
+
+    function renderDashboardNotice(dashboard) {
+      const notice = document.getElementById('dashboardNotice');
+      const noteText = dashboard?.nota || '';
+      const isDemo = dashboard?.source === 'demo_local';
+
+      if (!isDemo && !noteText) {
+        notice.style.display = 'none';
+        notice.textContent = '';
+        return;
+      }
+
+      notice.style.display = 'block';
+      notice.textContent = noteText || 'Dashboard local no conectado a datos reales.';
+    }
+
+    function renderKPIs(dashboard) {
+      const kpis = dashboard?.kpis;
       const grid = document.getElementById('kpiGrid');
       grid.innerHTML = '';
 
-      for (const [key, data] of Object.entries(kpis)) {
+      if (!Object.keys(kpis || {}).length) {
+        const isDemo = dashboard?.source === 'demo_local';
         const card = document.createElement('div');
+        card.className = 'kpi-card kpi-empty';
+        card.innerHTML = `
+          <h3>${isDemo ? 'Dashboard local' : 'Dashboard operativo'}</h3>
+          <div class="value">${isDemo ? 'Sin KPIs reales' : 'Sin KPIs disponibles'}</div>
+          <div class="variation na">
+            ${isDemo
+              ? 'Sin KPIs reales disponibles en este dashboard local.'
+              : 'El dashboard no devolvio KPIs utilizables en esta carga.'}
+          </div>
+        `;
+        grid.appendChild(card);
+        return;
+      }
+
+      for (const [key, data] of Object.entries(kpis || {})) {
+        const card = document.createElement('div');
+        const variation = formatVariation(data);
         card.className = 'kpi-card';
         card.innerHTML = `
           <h3>${formatLabel(key)}</h3>
-          <div class="value">${formatValue(data.valor)}</div>
-          <div class="variation ${data.tendencia}">
-            ${data.tendencia === 'up' ? '📈' : '📉'} ${data.variación}%
+          <div class="value">${formatValue(key, data?.valor)}</div>
+          <div class="${variation.className}">
+            ${variation.text}
           </div>
         `;
         grid.appendChild(card);
@@ -209,27 +263,59 @@
 
     function formatLabel(key) {
       const labels = {
-        totalCotizaciones: 'Total Cotizaciones',
-        totalDolares: 'Total Dólares',
-        ticketPromedio: 'Ticket Promedio',
-        paisesActivos: 'Países Activos'
+        totalCotizaciones: 'Total cotizaciones',
+        totalDolares: 'Total dolares',
+        ticketPromedio: 'Ticket promedio',
+        paisesActivos: 'Paises activos',
       };
       return labels[key] || key;
     }
 
-    function formatValue(value) {
+    function isCurrencyMetric(key) {
+      return key === 'totalDolares' || key === 'ticketPromedio';
+    }
+
+    function formatValue(key, value) {
+      if (value === null || value === undefined || value === '') {
+        return 'N/D';
+      }
       if (typeof value === 'number') {
-        if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-        if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-        return value.toString();
+        if (isCurrencyMetric(key)) {
+          if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+          if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+        }
+        return Number.isInteger(value) ? value.toString() : value.toFixed(2);
       }
       return value;
     }
 
-    // Cargar datos al iniciar
-    loadDashboard();
+    function formatVariation(metric) {
+      const variation = Number(metric?.variacion);
 
-    // Recargar cada 30 segundos
+      if (!Number.isFinite(variation)) {
+        return {
+          className: 'variation na',
+          text: 'No disponible',
+        };
+      }
+
+      if (variation === 0) {
+        return {
+          className: 'variation na',
+          text: 'Sin variacion',
+        };
+      }
+
+      const direction = metric?.tendencia === 'down' || variation < 0 ? 'down' : 'up';
+      const symbol = variation > 0 ? '+' : '-';
+
+      return {
+        className: `variation ${direction}`,
+        text: `${symbol} ${Math.abs(variation)}%`,
+      };
+    }
+
+    loadDashboard();
     setInterval(loadDashboard, 30000);
   </script>
 </body>

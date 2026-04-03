@@ -12,13 +12,27 @@ const AUTH_AGENT_DESCRIPTOR = {
 
 const ALLOWED_ROLES = new Set(['user', 'admin']);
 const TOKEN_TTL = 86400000 * 7; // 7 days
+const DEFAULT_DATA_DIR = path.resolve(__dirname, '..', 'data');
+
+function resolveDataDir() {
+  if (!process.env.DATA_DIR) {
+    return DEFAULT_DATA_DIR;
+  }
+
+  return path.isAbsolute(process.env.DATA_DIR)
+    ? process.env.DATA_DIR
+    : path.resolve(__dirname, '..', process.env.DATA_DIR);
+}
 
 function getOrCreateSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  const secretFile = path.join(process.env.DATA_DIR || './data', '.jwt_secret');
+  const secretFile = path.join(resolveDataDir(), '.jwt_secret');
 
   try {
-    if (fs.existsSync(secretFile)) return fs.readFileSync(secretFile, 'utf8').trim();
+    if (fs.existsSync(secretFile)) {
+      const persistedSecret = fs.readFileSync(secretFile, 'utf8').trim();
+      if (persistedSecret) return persistedSecret;
+    }
   } catch (error) {
     // Secret file unavailable; continue with generated secret.
   }
@@ -77,10 +91,37 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeRole(role) {
+  return String(role || '').trim().toLowerCase();
+}
+
 function asBool(value, fallback = true) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
-  return Number(value) !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  return fallback;
+}
+
+function parseBooleanInput(value, fieldName, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'si', 'sí', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  }
+
+  throw createError(`${fieldName} debe ser booleano`);
 }
 
 function createError(message, statusCode = 400) {
@@ -118,13 +159,16 @@ function getUserByEmail(email) {
   return db.get('SELECT * FROM users WHERE email=?', [normalizedEmail]);
 }
 
-function validateRole(role) {
-  if (!ALLOWED_ROLES.has(role)) {
-    throw createError('Rol invalido');
+function assertAllowedRole(role) {
+  const normalizedRole = normalizeRole(role);
+  if (!ALLOWED_ROLES.has(normalizedRole)) {
+    throw createError('Rol fuera de catalogo');
   }
+
+  return normalizedRole;
 }
 
-function validatePassword(password) {
+function assertPasswordStrength(password) {
   if (!password) throw createError('Contrasena requerida');
   if (String(password).length < 6) throw createError('Contrasena minimo 6 caracteres');
 }
@@ -142,8 +186,8 @@ function assertUserHasAccess(user) {
 function insertUserRecord({ email, password, name, company, ruc, role = 'user', active = true, approved = true }) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) throw createError('Email requerido');
-  validatePassword(password);
-  validateRole(role);
+  assertPasswordStrength(password);
+  const normalizedRole = assertAllowedRole(role);
 
   if (getUserByEmail(normalizedEmail)) {
     throw createError('Email ya registrado');
@@ -160,7 +204,7 @@ function insertUserRecord({ email, password, name, company, ruc, role = 'user', 
       name || '',
       hash,
       salt,
-      role,
+      normalizedRole,
       company || '',
       ruc || '',
       active ? 1 : 0,
@@ -192,7 +236,7 @@ module.exports = {
   AUTH_AGENT_DESCRIPTOR,
   initUsersTable,
 
-  validateCommunityAccessCode(code) {
+  checkCommunityAccessCode(code) {
     const configuredCode = normalizeCommunityCode(process.env.COMMUNITY_ACCESS_CODE);
     const incomingCode = normalizeCommunityCode(code);
 
@@ -200,7 +244,7 @@ module.exports = {
       if (process.env.NODE_ENV === 'production') {
         return {
           ok: false,
-          error: 'Registro cerrado temporalmente. Configura COMMUNITY_ACCESS_CODE para habilitar el alta privada.',
+          error: 'El alta privada no esta disponible. Configura COMMUNITY_ACCESS_CODE para permitirla.',
         };
       }
 
@@ -212,7 +256,7 @@ module.exports = {
     }
 
     if (incomingCode !== configuredCode) {
-      return { ok: false, error: 'Codigo de comunidad invalido' };
+      return { ok: false, error: 'Codigo de comunidad incorrecto' };
     }
 
     return { ok: true, enforced: true };
@@ -223,7 +267,7 @@ module.exports = {
     if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Token requerido' });
 
     const payload = verify(header.slice(7));
-    if (!payload) return res.status(401).json({ error: 'Token invalido o expirado' });
+    if (!payload) return res.status(401).json({ error: 'Token no interpretable o expirado' });
 
     try {
       const user = getUserById(payload.id);
@@ -288,8 +332,8 @@ module.exports = {
       company: payload.company,
       ruc: payload.ruc,
       role: payload.role || 'user',
-      active: payload.active !== false,
-      approved: payload.approved !== false,
+      active: parseBooleanInput(payload.active, 'active', true),
+      approved: parseBooleanInput(payload.approved, 'approved', true),
     });
 
     return sanitizeUser(user);
@@ -299,11 +343,13 @@ module.exports = {
     const user = getUserById(id);
     if (!user) throw createError('Usuario no encontrado', 404);
 
-    const nextRole = updates.role ?? user.role ?? 'user';
-    const nextActive = updates.active !== undefined ? asBool(updates.active) : asBool(user.active, true);
-    const nextApproved = updates.approved !== undefined ? asBool(updates.approved) : asBool(user.approved, true);
-
-    validateRole(nextRole);
+    const nextRole = assertAllowedRole(updates.role ?? user.role ?? 'user');
+    const nextActive = updates.active !== undefined
+      ? parseBooleanInput(updates.active, 'active', true)
+      : asBool(user.active, true);
+    const nextApproved = updates.approved !== undefined
+      ? parseBooleanInput(updates.approved, 'approved', true)
+      : asBool(user.approved, true);
 
     if (actorId && actorId === user.id) {
       if (nextRole !== 'admin') throw createError('No puedes quitarte el rol admin a ti mismo.', 400);
@@ -328,7 +374,7 @@ module.exports = {
   },
 
   resetUserPassword(id, password) {
-    validatePassword(password);
+    assertPasswordStrength(password);
     const user = getUserById(id);
     if (!user) throw createError('Usuario no encontrado', 404);
 
@@ -343,4 +389,8 @@ module.exports = {
 
   sanitizeUser,
   resolveAuthenticatedUser,
+  _private: {
+    asBool,
+    parseBooleanInput,
+  },
 };

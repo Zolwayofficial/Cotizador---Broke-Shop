@@ -1,7 +1,7 @@
 {
-  "name": "cotizador-peru-ultimate",
+  "name": "importaiagent-cotizador",
   "version": "3.0.0",
-  "description": "Cotizador de Importación Perú - Ultimate v3.0",
+  "description": "ImportAIAgent Cotizador - plataforma privada de cotizacion y gestion",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -24,7 +24,7 @@
     "client:build": "cd client && npm run build",
     "warmup": "node -e \"require('./server/embeddings').precalentarModelo()\"",
     "update-nandina": "node scripts/update-nandina.js",
-    "setup": "bash scripts/setup.sh",
+    "setup": "node scripts/setup.js",
     "build-client": "cd client && npm run build"
   },
   "dependencies": {

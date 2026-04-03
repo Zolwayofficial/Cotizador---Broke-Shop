@@ -1,149 +1,111 @@
-// server-listo.js - Versión completa FUNCIONAL
+// server-listo.js - Version completa funcional para pruebas locales simples
 
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const path = require('path');
-const fs = require('fs');
+const express = require('express')
+const cors = require('cors')
+const helmet = require('helmet')
+const compression = require('compression')
+const fs = require('fs')
+const { parsePort, resolveRepoFile } = require('./scripts/runtime-script-helpers.cjs')
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+const app = express()
+const PORT = parsePort(process.env.PORT, 3000)
 
-// Servir archivos estáticos (dashboard.html)
-const dashboardPath = path.join(__dirname, '..', 'dashboard.html');
+// Servir archivos estaticos (dashboard.html)
+const dashboardPath = resolveRepoFile(__dirname, 'dashboard.html')
 if (fs.existsSync(dashboardPath)) {
   app.get('/dashboard.html', (req, res) => {
-    res.sendFile(dashboardPath);
-  });
+    res.sendFile(dashboardPath)
+  })
   app.get('/', (req, res) => {
-    res.sendFile(dashboardPath);
-  });
-  console.log('✅ Dashboard HTML disponible en http://localhost:' + PORT);
+    res.sendFile(dashboardPath)
+  })
+  console.log(`Dashboard HTML disponible en http://localhost:${PORT}`)
 }
 
-console.log("\n╔════════════════════════════════════════════════════════════╗");
-console.log("║  COTIZADOR PERÚ ULTIMATE v3.0 - INICIANDO               ║");
-console.log("╚════════════════════════════════════════════════════════════╝\n");
+console.log('\n============================================================')
+console.log('  Servidor local de referencia - iniciando')
+console.log('============================================================\n')
 
 // Middleware
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(compression());
-app.use(cors());
-app.use(express.json());
+app.use(helmet({ contentSecurityPolicy: false }))
+app.use(compression())
+app.use(cors())
+app.use(express.json())
 
-// ═══════════════════════════════════════════════════
-// ENDPOINTS BÁSICOS
-// ═══════════════════════════════════════════════════
-
-// Health check
+// Endpoints basicos
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'healthy',
-    server: 'Cotizador Perú Ultimate v3.0',
-    version: '3.0.0',
+    source: 'demo_local',
+    nota: 'Servidor de referencia: health local sin chequeos de dependencias reales.',
+    status: 'demo_local',
+    server: 'ImportAIAgent Cotizador - servidor de referencia',
+    version: 'local-reference',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
-  });
-});
+  })
+})
 
-// Dashboard data
 app.get('/api/dashboard', (req, res) => {
   res.json({
-    kpis: {
-      totalCotizaciones: { valor: 156, variacion: 12.5, tendencia: 'up' },
-      totalDolares: { valor: 2450000, variacion: 8.3, tendencia: 'up' },
-      ticketPromedio: { valor: 1960, variacion: -3.2, tendencia: 'down' },
-      paisesActivos: { valor: 15, variacion: 2, tendencia: 'up' }
-    },
-    graficos: {
-      evolucionMensual: {
-        tipo: 'line',
-        titulo: 'Evolución de Cotizaciones',
-        datos: [
-          { mes: 'Ene', cotizaciones: 180, dolares: 350000 },
-          { mes: 'Feb', cotizaciones: 220, dolares: 420000 },
-          { mes: 'Mar', cotizaciones: 195, dolares: 380000 },
-          { mes: 'Abr', cotizaciones: 240, dolares: 480000 },
-          { mes: 'May', cotizaciones: 210, dolares: 410000 },
-          { mes: 'Jun', cotizaciones: 205, dolares: 410000 }
-        ]
-      },
-      distribucionPaises: {
-        tipo: 'pie',
-        titulo: 'Distribución por País',
-        datos: [
-          { pais: 'China 🇨🇳', valor: 45 },
-          { pais: 'USA 🇺🇸', valor: 28 },
-          { pais: 'Brasil 🇧🇷', valor: 15 },
-          { pais: 'Chile 🇨🇱', valor: 8 },
-          { pais: 'Otros', valor: 4 }
-        ]
-      },
-      topProductos: {
-        tipo: 'bar',
-        titulo: 'Top Productos',
-        datos: [
-          { producto: 'Laptops', valor: 156 },
-          { producto: 'Celulares', valor: 142 },
-          { producto: 'Camisetas', valor: 128 },
-          { producto: 'Zapatos', valor: 95 },
-          { producto: 'Bolsos', valor: 82 }
-        ]
-      }
-    }
-  });
-});
+    source: 'demo_local',
+    nota: 'Servidor de referencia: dashboard no conectado a datos reales.',
+    kpis: {},
+    graficos: {}
+  })
+})
 
-// Membresías
 app.get('/api/membresias/estadisticas', (req, res) => {
   res.json({
-    total: 150,
-    porNivel: {
-      gratis: 100,
-      premium: 40,
-      vip: 10
-    },
-    ingresosMes: 1599.60
-  });
-});
+    source: 'demo_local',
+    total: null,
+    porNivel: {},
+    ingresosMes: null,
+    nota: 'Servidor de referencia: estadisticas de membresias no conectadas a datos reales.'
+  })
+})
 
-// Monitor health
 app.get('/api/monitor/health', (req, res) => {
   res.json({
-    status: 'saludable',
+    source: 'demo_local',
+    nota: 'Servidor de referencia: monitor local sin instrumentacion real de requests y latencia.',
+    status: 'demo_local',
     uptime: process.uptime(),
-    requests: { total: 0, errors: 0, errorRate: '0.00' },
-    performance: { avgResponseTime: '0.00ms', requestsPerSecond: '0.00' },
+    requests: { total: null, errors: null, errorRate: null },
+    performance: { avgResponseTime: null, requestsPerSecond: null },
     resources: {
       memory: {
         rss: `${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB`,
         heapUsed: `${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB`
       }
     }
-  });
-});
+  })
+})
 
-// Monitor metrics
 app.get('/api/monitor/metricas', (req, res) => {
   res.json({
-    requests: 0,
-    errors: 0,
-    avgResponseTime: 0,
+    source: 'demo_local',
+    nota: 'Servidor de referencia: metricas locales sin instrumentacion real.',
+    requests: null,
+    errors: null,
+    avgResponseTime: null,
     memoryHistory: [],
     cpuHistory: [],
     alerts: []
-  });
-});
+  })
+})
 
-// Monitor alerts
 app.get('/api/monitor/alertas', (req, res) => {
-  res.json([]);
-});
+  res.json({
+    source: 'demo_local',
+    nota: 'Servidor de referencia: alertas locales no conectadas a datos reales.',
+    alertas: []
+  })
+})
 
-// Logística
 app.get('/api/logistica/empresas', (req, res) => {
   res.json({
+    source: 'demo_local',
+    nota: 'Servidor de referencia: catalogo logistico referencial, no conectado a configuracion real.',
     couriers: [
       { nombre: 'DHL', tipo: 'courier' },
       { nombre: 'FedEx', tipo: 'courier' },
@@ -153,31 +115,25 @@ app.get('/api/logistica/empresas', (req, res) => {
       { nombre: 'Maersk', tipo: 'naviera' },
       { nombre: 'MSC', tipo: 'naviera' }
     ]
-  });
-});
+  })
+})
 
 app.get('/api/logistica/contingencia', (req, res) => {
   res.json({
-    total: 0,
-    noLeidas: 0,
-    criticas: 0,
+    source: 'demo_local',
+    nota: 'Servidor de referencia: alertas logisticas no conectadas a datos reales.',
+    total: null,
+    noLeidas: null,
+    criticas: null,
     alertas: []
-  });
-});
-
-// ═══════════════════════════════════════════════════
-// INICIAR SERVIDOR
-// ═══════════════════════════════════════════════════
+  })
+})
 
 app.listen(PORT, () => {
-  console.log(`\n✅ Servidor escuchando en http://localhost:${PORT}`);
-  console.log(`✅ API: http://localhost:${PORT}/api`);
-  console.log(`✅ Health: http://localhost:${PORT}/api/health`);
-  console.log(`✅ Dashboard: http://localhost:${PORT}/api/dashboard`);
-  console.log(`✅ Monitor: http://localhost:${PORT}/api/monitor/health`);
-  console.log("\n╔════════════════════════════════════════════════════════════╗");
-  console.log("║  ✅ SERVIDOR LISTO PARA USAR                              ║");
-  console.log("╚════════════════════════════════════════════════════════════╝\n");
-  console.log("Abre tu navegador en: http://localhost:" + PORT);
-  console.log("O prueba: curl http://localhost:" + PORT + "/api/health\n");
-});
+  console.log(`\nServidor demo_local de referencia escuchando en http://localhost:${PORT}`)
+  console.log(`API demo: http://localhost:${PORT}/api`)
+  console.log(`Health demo: http://localhost:${PORT}/api/health`)
+  console.log(`Dashboard demo: http://localhost:${PORT}/api/dashboard`)
+  console.log(`Monitor demo: http://localhost:${PORT}/api/monitor/health`)
+  console.log(`\nAbre el dashboard demo local en: http://localhost:${PORT}`)
+})

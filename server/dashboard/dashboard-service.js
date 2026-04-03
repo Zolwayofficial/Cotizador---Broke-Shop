@@ -145,10 +145,10 @@ function fallbackAnalysis(hayDatos) {
       ],
     alerta: hayDatos
       ? 'Revisa cotizaciones sin pais o sin total para no distorsionar el analisis.'
-      : 'Sin datos historicos todavia; el dashboard esta en estado vacio.',
+      : 'Sin cotizaciones guardadas todavia; el dashboard esta en estado vacio.',
     recomendacion: hayDatos
       ? 'Usa el historial guardado para comparar tickets y paises antes de desplegar.'
-      : 'Empieza con una cotizacion real y valida el flujo completo antes de produccion.',
+      : 'Empieza con una cotizacion real y revisa el flujo completo antes de produccion.',
   };
 }
 

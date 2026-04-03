@@ -1,95 +1,87 @@
-// test-endpoints-agentes.js — Prueba de TODOS los endpoints de agentes
+const {
+  buildRequestHeaders,
+  classifyManualHttpStatus,
+  normalizeBaseUrl,
+  normalizeToken,
+  requestJson,
+} = require('./scripts/manual-smoke-helpers.cjs');
 
-console.log("🔍 PRUEBA DE ENDPOINTS HTTP DE AGENTES\n");
-console.log("═".repeat(60));
+const BASE_URL = `${normalizeBaseUrl(process.env.BASE_URL)}/api/agentes`;
+const AUTH_TOKEN = normalizeToken(process.env.AUTH_TOKEN);
+const ADMIN_TOKEN = normalizeToken(process.env.ADMIN_TOKEN);
 
-const http = require('http');
-
-const BASE_URL = 'http://localhost:3000/api/agentes';
-
-// Lista de endpoints a probar
 const endpoints = [
-  { nombre: 'Stats Generales', path: '/stats' },
-  { nombre: 'SUNAT Tipo Cambio', path: '/sunat/tipo-cambio' },
-  { nombre: 'SUNAT Arancel', path: '/sunat/arancel/8471300000' },
-  { nombre: 'SUNAT Stats', path: '/sunat/stats' },
-  { nombre: 'ADUANET Arancel', path: '/aduanet/arancel/8471300000' },
-  { nombre: 'VUCE Restricciones', path: '/vuce/restricciones/8471300000?pais=CN' },
-  { nombre: 'INDECOPI Antidumping', path: '/indecopi/antidumping?producto=camisetas&pais=CN' },
-  { nombre: 'MTC Homologacion', path: '/mtc/homologacion?producto=router&marca=Cisco&modelo=E4200' },
-  { nombre: 'DIGESA Registro', path: '/digesa/registro?producto=paracetamol&laboratorio=Bayer' },
-  { nombre: 'SENASA Permiso', path: '/senasa/permiso?producto=manzanas&pais=US' },
-  { nombre: 'MINAM Permiso', path: '/minam/permiso?producto=quimicos' },
-  { nombre: 'PRODUCE Permiso', path: '/produce/permiso?producto=atun' }
+  { nombre: 'Stats Generales', path: '/stats', requiresAuth: true, requiresAdmin: true },
+  { nombre: 'SUNAT Tipo Cambio', path: '/sunat/tipo-cambio', requiresAuth: true },
+  { nombre: 'SUNAT Arancel', path: '/sunat/arancel/8471300000', requiresAuth: true },
+  { nombre: 'SUNAT Stats', path: '/sunat/stats', requiresAuth: true, requiresAdmin: true },
+  { nombre: 'ADUANET Arancel', path: '/aduanet/arancel/8471300000', requiresAuth: true },
+  { nombre: 'VUCE Restricciones', path: '/vuce/restricciones/8471300000?pais=CN', requiresAuth: true },
+  { nombre: 'INDECOPI Antidumping', path: '/indecopi/antidumping?producto=camisetas&pais=CN', requiresAuth: true },
+  { nombre: 'MTC Homologacion', path: '/mtc/homologacion?producto=router&marca=Cisco&modelo=E4200', requiresAuth: true },
+  { nombre: 'DIGESA Registro', path: '/digesa/registro?producto=paracetamol&laboratorio=Bayer', requiresAuth: true },
+  { nombre: 'SENASA Permiso', path: '/senasa/permiso?producto=manzanas&pais=US', requiresAuth: true },
+  { nombre: 'MINAM Permiso', path: '/minam/permiso?producto=quimicos', requiresAuth: true },
+  { nombre: 'PRODUCE Permiso', path: '/produce/permiso?producto=atun', requiresAuth: true },
 ];
 
-async function hacerRequest(path) {
-  return new Promise((resolve, reject) => {
-    http.get(`${BASE_URL}${path}`, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          resolve({ statusCode: res.statusCode, data: JSON.parse(data) });
-        } catch {
-          resolve({ statusCode: res.statusCode, data });
-        }
-      });
-      res.on('error', reject);
-    }).on('error', reject);
-  });
-}
+async function main() {
+  console.log('PRUEBA DE ENDPOINTS HTTP DE AGENTES\n');
+  console.log('='.repeat(60));
+  console.log(`Base URL: ${BASE_URL}`);
 
-async function ejecutarPruebas() {
-  let exitosas = 0;
+  let respondieron = 0;
+  let omitidas = 0;
   let fallidas = 0;
-  let errores = 0;
-
-  console.log(`\n📊 Total de endpoints a probar: ${endpoints.length}\n`);
 
   for (const endpoint of endpoints) {
-    console.log(`🏛️  PRUEBA: ${endpoint.nombre}`);
-    console.log(`   GET ${BASE_URL}${endpoint.path}`);
-    
+    const token = endpoint.requiresAdmin ? ADMIN_TOKEN : AUTH_TOKEN;
+    const headers = buildRequestHeaders(token);
+    const url = `${BASE_URL}${endpoint.path}`;
+
+    console.log(`\nPRUEBA: ${endpoint.nombre}`);
+    console.log(`GET ${url}`);
+
     try {
-      const result = await hacerRequest(endpoint.path);
-      
-      if (result.statusCode === 200 || result.statusCode === 400) {
-        console.log(`   ✅ EXITOSA (${result.statusCode})`);
-        exitosas++;
+      const result = await requestJson(url, headers);
+      const status = classifyManualHttpStatus(result.statusCode, {
+        requiresAuth: endpoint.requiresAuth,
+        requiresAdmin: endpoint.requiresAdmin,
+        hasToken: Boolean(token),
+      });
+
+      if (status.bucket === 'success') {
+        console.log(`RESPUESTA ${status.label}`);
+        respondieron += 1;
+      } else if (status.bucket === 'skipped') {
+        console.log(`SKIP ${status.label}: ${status.reason}`);
+        omitidas += 1;
       } else {
-        console.log(`   ⚠️  PARCIAL (${result.statusCode})`);
-        fallidas++;
+        console.log(`FAIL ${status.reason}`);
+        fallidas += 1;
       }
-    } catch (e) {
-      console.log(`   ❌ FALLIDA: ${e.message}`);
-      errores++;
+    } catch (error) {
+      console.log(`FAIL ${error.message}`);
+      fallidas += 1;
     }
-    
-    console.log('');
   }
 
-  // RESULTADOS
-  console.log("═".repeat(60));
-  console.log(`\n📊 RESULTADOS:`);
-  console.log(`   ✅ Exitosas: ${exitosas}/${endpoints.length}`);
-  console.log(`   ⚠️  Parciales: ${fallidas}/${endpoints.length}`);
-  console.log(`   ❌ Errores: ${errores}/${endpoints.length}`);
-  console.log(`   📈 Éxito: ${((exitosas/endpoints.length)*100).toFixed(1)}%`);
-  console.log("\n" + "═".repeat(60));
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('RESULTADOS');
+  console.log(`RESPONDIERON: ${respondieron}/${endpoints.length}`);
+  console.log(`SKIP: ${omitidas}/${endpoints.length}`);
+  console.log(`FAIL: ${fallidas}/${endpoints.length}`);
 
-  if (exitosas >= endpoints.length - 2) {
-    console.log("\n🎉 ¡MAYORÍA DE ENDPOINTS FUNCIONAN!\n");
-    console.log("⚠️  Algunos pueden fallar si el servidor no está corriendo\n");
-  } else {
-    console.log("\n⚠️  Varios endpoints fallaron.\n");
-    console.log("💡 Asegúrate de que el servidor esté corriendo:");
-    console.log("   npm start\n");
+  if (!AUTH_TOKEN) {
+    console.log('\nNota: define AUTH_TOKEN para probar endpoints protegidos.');
+  }
+  if (!ADMIN_TOKEN) {
+    console.log('Nota: define ADMIN_TOKEN para probar endpoints admin.');
   }
 }
 
-// Ejecutar pruebas
-ejecutarPruebas().catch(e => {
-  console.error("\n❌ ERROR FATAL:", e.message);
-  console.error("\n💡 ¿Está el servidor corriendo en http://localhost:3000?");
+main().catch((error) => {
+  console.error(`\nERROR FATAL: ${error.message}`);
+  console.error('Nota: asegurate de que el servidor este corriendo y que BASE_URL sea correcta.');
+  process.exit(1);
 });

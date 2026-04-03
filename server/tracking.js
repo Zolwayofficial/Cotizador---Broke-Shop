@@ -1,80 +1,71 @@
-// server/tracking.js — Seguimiento de embarques
-// Usa APIs públicas y gratuitas para tracking
+// server/tracking.js - Seguimiento de embarques
+// Usa APIs publicas y gratuitas para tracking cuando estan configuradas.
 const https = require('https');
 
 const CACHE = {};
 const CACHE_TTL = 3600000; // 1 hour
 const CACHE_MAX = 200;
 
+function normalizeTrackingNumber(trackingNumber) {
+  return String(trackingNumber || '').trim();
+}
+
 function pruneTrackingCache() {
   const now = Date.now();
   const keys = Object.keys(CACHE);
 
-  // Primero eliminar expirados
-  for (const k of keys) {
-    if (now - CACHE[k].ts > CACHE_TTL) {
-      delete CACHE[k];
+  // Primero eliminar expirados.
+  for (const key of keys) {
+    if (now - CACHE[key].ts > CACHE_TTL) {
+      delete CACHE[key];
     }
   }
 
-  // Si aún excede el máximo, eliminar los más antiguos
+  // Si aun excede el maximo, eliminar los mas antiguos.
   const remaining = Object.entries(CACHE).sort((a, b) => a[1].ts - b[1].ts);
   while (remaining.length > CACHE_MAX) {
-    const oldest = remaining.shift()[0];
-    delete CACHE[oldest];
+    const oldest = remaining.shift();
+    if (!oldest) break;
+    delete CACHE[oldest[0]];
   }
 }
 
-// Limpieza automática cada hora
+// Limpieza automatica cada hora.
 const trackingCacheCleanupInterval = setInterval(() => {
   const before = Object.keys(CACHE).length;
   pruneTrackingCache();
   const after = Object.keys(CACHE).length;
   if (before > after) {
-    console.log(`[TRACKING] Limpieza: ${before - after} entries eliminados, ${after} restantes`);
+    console.log(`[TRACKING] Limpieza: ${before - after} entradas eliminadas, ${after} restantes`);
   }
 }, 3600000);
 
 trackingCacheCleanupInterval.unref?.();
 
-// Detect carrier from tracking number format
 function detectCarrier(trackingNumber) {
-  const tn = (trackingNumber || '').trim().toUpperCase();
-  // DHL
+  const tn = normalizeTrackingNumber(trackingNumber).toUpperCase();
+
   if (/^\d{10,11}$/.test(tn)) return { carrier: 'dhl', name: 'DHL Express' };
-  // FedEx
   if (/^\d{12,22}$/.test(tn) && tn.length >= 12) return { carrier: 'fedex', name: 'FedEx' };
-  // UPS
   if (/^1Z/.test(tn)) return { carrier: 'ups', name: 'UPS' };
-  // USPS
   if (/^(94|93|92|91|90|9[2-5]\d{2})/.test(tn) && tn.length >= 20) return { carrier: 'usps', name: 'USPS' };
-  // Maersk container (MAEU, MSKU, etc.)
   if (/^(MAEU|MSKU|MRKU|MRSU)\d{7}$/.test(tn)) return { carrier: 'maersk', name: 'Maersk' };
-  // MSC
   if (/^MSCU\d{7}$/.test(tn)) return { carrier: 'msc', name: 'MSC' };
-  // Hapag Lloyd
   if (/^HLCU\d{7}$/.test(tn)) return { carrier: 'hapag', name: 'Hapag-Lloyd' };
-  // CMA CGM
   if (/^(CMAU|CGMU)\d{7}$/.test(tn)) return { carrier: 'cmacgm', name: 'CMA CGM' };
-  // Evergreen
   if (/^EGLV\d{7}$/.test(tn)) return { carrier: 'evergreen', name: 'Evergreen' };
-  // Generic container (4 letters + 7 digits)
   if (/^[A-Z]{4}\d{7}$/.test(tn)) return { carrier: 'container', name: 'Container shipment' };
-  // Amazon / China sellers
   if (/^(SF|YT|LP|LB)\d+/.test(tn)) return { carrier: 'china_post', name: 'China Post/SF Express' };
 
   return { carrier: 'unknown', name: 'Transportista no identificado' };
 }
 
-// Generate tracking URLs for known carriers
 function getTrackingUrls(trackingNumber) {
-  const tn = encodeURIComponent(trackingNumber.trim());
+  const tn = encodeURIComponent(normalizeTrackingNumber(trackingNumber));
   const carrier = detectCarrier(trackingNumber);
   const urls = {
-    // Universal trackers
     '17track': `https://t.17track.net/en#nums=${tn}`,
-    'aftership': `https://track.aftership.com/${tn}`,
-    // Carrier-specific
+    aftership: `https://track.aftership.com/${tn}`,
     dhl: `https://www.dhl.com/pe-es/home/tracking.html?tracking-id=${tn}`,
     fedex: `https://www.fedex.com/fedextrack/?trknbr=${tn}`,
     ups: `https://www.ups.com/track?tracknum=${tn}`,
@@ -88,45 +79,68 @@ function getTrackingUrls(trackingNumber) {
   return { carrier, urls, recommended: urls['17track'] };
 }
 
-// Try to get tracking info via 17track free tier (if API key available)
 async function track17(trackingNumber) {
   const key = process.env.TRACK17_API_KEY;
   if (!key) return null;
 
-  const cacheKey = trackingNumber.trim().toUpperCase();
-  if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].ts < CACHE_TTL) return CACHE[cacheKey].data;
+  const cacheKey = normalizeTrackingNumber(trackingNumber).toUpperCase();
+  if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].ts < CACHE_TTL) {
+    return CACHE[cacheKey].data;
+  }
 
   try {
-    // 17track register endpoint
     await new Promise((resolve, reject) => {
       const data = JSON.stringify([{ number: trackingNumber }]);
       const req = https.request({
-        hostname: 'api.17track.net', path: '/track/v2.2/register',
+        hostname: 'api.17track.net',
+        path: '/track/v2.2/register',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', '17token': key, 'Content-Length': Buffer.byteLength(data) },
+        headers: {
+          'Content-Type': 'application/json',
+          '17token': key,
+          'Content-Length': Buffer.byteLength(data),
+        },
         timeout: 10000,
-      }, res => {
-        const c = []; res.on('data', d => c.push(d));
-        res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(c).toString())); } catch { resolve(null); } });
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString()));
+          } catch {
+            resolve(null);
+          }
+        });
       });
       req.on('error', reject);
       req.write(data);
       req.end();
     });
 
-    // Wait a moment then get status
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     const statusResp = await new Promise((resolve, reject) => {
       const data = JSON.stringify([{ number: trackingNumber }]);
       const req = https.request({
-        hostname: 'api.17track.net', path: '/track/v2.2/gettrackinfo',
+        hostname: 'api.17track.net',
+        path: '/track/v2.2/gettrackinfo',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', '17token': key, 'Content-Length': Buffer.byteLength(data) },
+        headers: {
+          'Content-Type': 'application/json',
+          '17token': key,
+          'Content-Length': Buffer.byteLength(data),
+        },
         timeout: 10000,
-      }, res => {
-        const c = []; res.on('data', d => c.push(d));
-        res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(c).toString())); } catch { resolve(null); } });
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString()));
+          } catch {
+            resolve(null);
+          }
+        });
       });
       req.on('error', reject);
       req.write(data);
@@ -140,11 +154,11 @@ async function track17(trackingNumber) {
         carrier: info.carrier,
         status: info.track_info?.latest_status || 'unknown',
         lastEvent: info.track_info?.latest_event || null,
-        events: (info.track_info?.tracking?.providers?.[0]?.events || []).map(e => ({
-          date: e.time_iso,
-          location: e.location,
-          description: e.description,
-          status: e.status,
+        events: (info.track_info?.tracking?.providers?.[0]?.events || []).map((event) => ({
+          date: event.time_iso,
+          location: event.location,
+          description: event.description,
+          status: event.status,
         })),
         estimatedDelivery: info.track_info?.time_metrics?.estimated_delivery_date || null,
       };
@@ -152,31 +166,34 @@ async function track17(trackingNumber) {
       pruneTrackingCache();
       return result;
     }
+
     return null;
-  } catch (e) {
-    console.error(`[TRACKING] 17track error: ${e.message}`);
+  } catch (error) {
+    console.error(`[TRACKING] 17track error: ${error.message}`);
     return null;
   }
 }
 
-// Main function
 async function rastrear(trackingNumber) {
-  const carrier = detectCarrier(trackingNumber);
-  const urls = getTrackingUrls(trackingNumber);
-
-  // Try 17track API if available
-  const apiResult = await track17(trackingNumber);
+  const normalized = normalizeTrackingNumber(trackingNumber);
+  const carrier = detectCarrier(normalized);
+  const urls = getTrackingUrls(normalized);
+  const apiResult = await track17(normalized);
 
   return {
-    trackingNumber: trackingNumber.trim(),
+    trackingNumber: normalized,
     carrier,
     urls: urls.urls,
     recommended: urls.recommended,
     tracking: apiResult || null,
     mensaje: apiResult
-      ? `📦 Estado: ${apiResult.status}`
+      ? `Estado reportado: ${apiResult.status}`
       : 'Tracking disponible en los links. Recomendado: 17track',
   };
 }
 
-module.exports = { rastrear, detectCarrier, getTrackingUrls };
+module.exports = {
+  rastrear,
+  detectCarrier,
+  getTrackingUrls,
+};
