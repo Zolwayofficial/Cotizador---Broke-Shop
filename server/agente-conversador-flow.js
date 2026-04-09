@@ -448,11 +448,17 @@ function requierePaso(stepKey, datosPrevios = {}) {
   case 'bien_usado':
     return datosPrevios.bien_usado === undefined;
   case 'flete':
-    return datosPrevios.flete === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
+    return datosPrevios.flete === undefined
+      && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal)
+      && !['CIF', 'CFR', 'CIP', 'DDP', 'DAP'].includes(datosPrevios.incoterm);
   case 'seguro':
-    return datosPrevios.seguro === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
+    return datosPrevios.seguro === undefined
+      && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal)
+      && !['CIF', 'CIP', 'DDP', 'DAP'].includes(datosPrevios.incoterm);
   case 'peso_total':
-    return datosPrevios.peso_total === undefined && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal);
+    return datosPrevios.peso_total === undefined
+      && !['POSTAL', 'POSTAL_FRANQUICIA'].includes(datosPrevios.canal)
+      && !['CIF', 'CFR', 'CIP', 'DDP', 'DAP'].includes(datosPrevios.incoterm);
   case 'tipo_cambio':
     return datosPrevios.tipo_cambio === undefined;
   case 'margen_venta':
@@ -500,13 +506,19 @@ function crearPreguntaPaso(stepKey, datosPrevios = {}) {
       paso: 'tipo_sujeto',
       tipo: 'opciones'
     };
-  case 'canal':
+  case 'canal': {
+    const precioUnit = datosPrevios.precio_unitario;
+    const cantTotal = (datosPrevios.productos || []).reduce((s, p) => s + (p.cantidad || 1), 0) || 1;
+    const valorTotal = precioUnit ? precioUnit * cantTotal : null;
+    const contextoValor = valorTotal ? ` (valor aprox. USD ${valorTotal.toFixed(0)})` : '';
     return {
-      pregunta: `Que canal usaras para importar desde ${datosPrevios.pais_origen}?`,
+      pregunta: `Que canal usaras para importar desde ${datosPrevios.pais_origen}${contextoValor}?`,
       opciones: FLOW_CHANNEL_OPTIONS,
       paso: 'canal',
-      tipo: 'opciones'
+      tipo: 'opciones',
+      hint: 'Postal con franquicia aplica solo si el valor total de la mercancia es menor a USD 200.'
     };
+  }
   case 'objetivo_calculo':
     return {
       pregunta: 'Que quieres obtener con esta cotizacion?',
@@ -515,19 +527,22 @@ function crearPreguntaPaso(stepKey, datosPrevios = {}) {
       tipo: 'opciones',
       hint: 'Puedes enfocarte solo en el landed cost o pedir una salida comercial.'
     };
-  case 'precio_unitario':
+  case 'precio_unitario': {
+    const inco = datosPrevios.incoterm || 'FOB';
     return {
-      pregunta: 'Cual es el precio unitario en USD?',
+      pregunta: `Cual es el precio unitario en USD (${inco})?`,
       paso: 'precio_unitario',
       tipo: 'numero',
-      hint: 'Ej: 3.50'
+      hint: `Ingresa el precio tal como te lo cotizo el proveedor en terminos ${inco}.`
     };
+  }
   case 'incoterm':
     return {
       pregunta: 'Que incoterm usa el proveedor?',
       opciones: FLOW_INCOTERM_OPTIONS,
       paso: 'incoterm',
-      tipo: 'opciones'
+      tipo: 'opciones',
+      hint: 'El incoterm define que incluye el precio. FOB: solo hasta el puerto de origen. CIF: incluye flete y seguro internacional. DDP: precio todo incluido.'
     };
   case 'tipo_importador':
     return {
@@ -586,12 +601,21 @@ function crearPreguntaPaso(stepKey, datosPrevios = {}) {
       tipo: 'numero',
       hint: 'Puedes escribir otro porcentaje si quieres.'
     };
-  case 'calcular':
+  case 'calcular': {
+    const precioCalc = datosPrevios.precio_unitario || 0;
+    const cantCalc = (datosPrevios.productos || []).reduce((s, p) => s + (p.cantidad || 1), 0) || 1;
+    const valorCalc = precioCalc * cantCalc;
+    const esPostalFranquicia = datosPrevios.canal === 'POSTAL_FRANQUICIA';
+    const superaLimite = esPostalFranquicia && valorCalc > 200;
+    const advertencia = superaLimite
+      ? ` ATENCION: el valor declarado (USD ${valorCalc.toFixed(0)}) supera el limite de USD 200 para postal con franquicia. Considera cambiar el canal antes de calcular.`
+      : '';
     return {
-      pregunta: 'Perfecto. Ya tengo la informacion principal. Calculamos el costo total de importacion?',
+      pregunta: `Perfecto. Ya tengo la informacion principal. Calculamos el costo total de importacion?${advertencia}`,
       paso: 'calcular',
       tipo: 'datos_suficientes_para_calculo'
     };
+  }
   default:
     return null;
   }
@@ -757,20 +781,20 @@ function generarPregunta(contexto = {}) {
     return crearPreguntaPaso('tipo_sujeto', datosPrevios);
   }
 
-  if (requierePaso('canal', datosPrevios)) {
-    return crearPreguntaPaso('canal', datosPrevios);
-  }
-
-  if (requierePaso('objetivo_calculo', datosPrevios)) {
-    return crearPreguntaPaso('objetivo_calculo', datosPrevios);
+  if (requierePaso('incoterm', datosPrevios)) {
+    return crearPreguntaPaso('incoterm', datosPrevios);
   }
 
   if (requierePaso('precio_unitario', datosPrevios)) {
     return crearPreguntaPaso('precio_unitario', datosPrevios);
   }
 
-  if (requierePaso('incoterm', datosPrevios)) {
-    return crearPreguntaPaso('incoterm', datosPrevios);
+  if (requierePaso('canal', datosPrevios)) {
+    return crearPreguntaPaso('canal', datosPrevios);
+  }
+
+  if (requierePaso('objetivo_calculo', datosPrevios)) {
+    return crearPreguntaPaso('objetivo_calculo', datosPrevios);
   }
 
   if (requierePaso('tipo_importador', datosPrevios)) {
@@ -781,16 +805,16 @@ function generarPregunta(contexto = {}) {
     return crearPreguntaPaso('bien_usado', datosPrevios);
   }
 
+  if (requierePaso('peso_total', datosPrevios)) {
+    return crearPreguntaPaso('peso_total', datosPrevios);
+  }
+
   if (requierePaso('flete', datosPrevios)) {
     return crearPreguntaPaso('flete', datosPrevios);
   }
 
   if (requierePaso('seguro', datosPrevios)) {
     return crearPreguntaPaso('seguro', datosPrevios);
-  }
-
-  if (requierePaso('peso_total', datosPrevios)) {
-    return crearPreguntaPaso('peso_total', datosPrevios);
   }
 
   if (requierePaso('tipo_cambio', datosPrevios)) {
