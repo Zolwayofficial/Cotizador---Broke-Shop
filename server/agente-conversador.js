@@ -390,6 +390,7 @@ const CORRECTION_REVIEW_OPTIONS = [
 const CORRECTION_FIELD_LABELS = {
   productos: 'productos',
   pais_origen: 'pais de origen',
+  partida_arancelaria: 'codigo arancelario',
   tipo_sujeto: 'tipo de sujeto',
   canal: 'canal',
   objetivo_calculo: 'objetivo del calculo',
@@ -407,6 +408,7 @@ const CORRECTION_FIELD_LABELS = {
 const CORRECTION_FIELD_ALIASES = {
   productos: ['producto', 'productos', 'cantidad', 'unidades', 'quiero importar', 'quiero traer', 'quise decir'],
   pais_origen: ['pais', 'origen', 'desde'],
+  partida_arancelaria: ['partida', 'arancelario', 'arancel', 'hs', 'subpartida', 'codigo arancelario'],
   tipo_sujeto: ['persona natural', 'empresa', 'ruc', 'juridica'],
   canal: ['canal', 'courier', 'postal', 'maritimo', 'aereo'],
   objetivo_calculo: ['objetivo', 'precio de venta', 'costo de importacion', 'cotizacion cliente'],
@@ -731,6 +733,8 @@ function formatearValorCampo(field, value) {
     };
     return labels[value] || String(value || 'sin definir');
   }
+  case 'partida_arancelaria':
+    return value ? String(value) : 'auto-detectar';
   case 'bien_usado':
     return value ? 'usado' : 'nuevo';
   case 'peso_total':

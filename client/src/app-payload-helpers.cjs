@@ -88,13 +88,15 @@ function buildCalculationPayload(contexto) {
   const objetivoCalculo = datos.objetivo_calculo || 'precio_sugerido'
   const seguroModo = datos.seguro_modo || (toNumber(datos.seguro) > 0 ? 'REAL' : 'ESTIMADO')
   const precioUnitarioGlobal = toNumber(datos.precio_unitario)
+  const hsCode = datos.partida_arancelaria || null
 
   return {
     items: productos.map((producto, index) => ({
       desc: producto.descripcion || producto.producto || `Producto ${index + 1}`,
       qty: ensureQuantity(producto.cantidad ?? producto.qty ?? 1),
       unit: toNumber(producto.unit ?? producto.precio_unitario ?? precioUnitarioGlobal),
-      bienUsado
+      bienUsado,
+      ...(hsCode ? { hs: hsCode } : {})
     })),
     pais: datos.pais_origen || '',
     canal: datos.canal || 'MARITIMO',

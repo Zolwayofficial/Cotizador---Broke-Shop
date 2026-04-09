@@ -56,6 +56,10 @@ const FLOW_INSURANCE_OPTIONS = [
   { value: 'OMITIR', label: 'No lo tengo' }
 ];
 
+const FLOW_HS_SKIP_OPTIONS = [
+  { value: 'OMITIR', label: 'No lo tengo / Omitir' }
+];
+
 const FLOW_MARGIN_OPTIONS = [
   { value: '20', label: '20% - conservador' },
   { value: '30', label: '30% - recomendado' },
@@ -67,6 +71,7 @@ const QUESTIONS_TREE = {
   nivel1: [
     { key: 'productos', pregunta: 'Que productos quieres importar?', tipo: 'lista', required: true, hint: 'Ej: 500 camisetas de algodon, 100 laptops, etc.' },
     { key: 'pais_origen', pregunta: 'Desde que pais importaras?', tipo: 'texto', required: true, hint: 'Ej: China, USA, Brasil, etc.' },
+    { key: 'partida_arancelaria', pregunta: 'Conoces la subpartida arancelaria del producto?', tipo: 'texto', required: false, hint: 'Ej: 8517.12.00. Si no la tienes, puedes omitirla.', opciones: FLOW_HS_SKIP_OPTIONS },
     { key: 'tipo_sujeto', pregunta: 'Importas como persona natural o empresa?', tipo: 'opciones', opciones: FLOW_SUBJECT_OPTIONS, required: true },
     { key: 'canal', pregunta: 'Que canal de importacion usaras?', tipo: 'opciones', opciones: FLOW_CHANNEL_OPTIONS, required: true },
     { key: 'objetivo_calculo', pregunta: 'Que quieres obtener con esta cotizacion?', tipo: 'opciones', opciones: FLOW_OBJECTIVE_OPTIONS, required: true }
@@ -388,6 +393,15 @@ function normalizarModoSeguro(valor) {
   return null;
 }
 
+function normalizarPartidaArancelaria(valor) {
+  const texto = normalizarTexto(valor);
+  if (!texto) return null;
+  if (esRespuestaOmitida(texto) || texto.toLowerCase() === 'omitir') return 'OMITIR';
+  const digits = texto.replace(/[\s.\-]/g, '');
+  if (/^\d{6,10}$/.test(digits)) return digits.padEnd(10, '0');
+  return null;
+}
+
 function obtenerOpcionesTipoImportador(datosPrevios = {}) {
   return FLOW_IMPORTER_OPTIONS[datosPrevios.tipo_sujeto] || FLOW_IMPORTER_OPTIONS.empresa;
 }
@@ -417,6 +431,8 @@ function requierePaso(stepKey, datosPrevios = {}) {
     return !tieneProductosCapturados(datosPrevios);
   case 'pais_origen':
     return !datosPrevios.pais_origen;
+  case 'partida_arancelaria':
+    return datosPrevios.partida_arancelaria === undefined;
   case 'tipo_sujeto':
     return !datosPrevios.tipo_sujeto;
   case 'canal':
@@ -467,6 +483,16 @@ function crearPreguntaPaso(stepKey, datosPrevios = {}) {
       tipo: 'texto',
       hint: 'Ej: China, USA, Brasil, etc.'
     };
+  case 'partida_arancelaria': {
+    const producto = resumirProductosCapturados(productos);
+    return {
+      pregunta: `Conoces la subpartida arancelaria de ${producto}?`,
+      paso: 'partida_arancelaria',
+      tipo: 'texto',
+      opciones: FLOW_HS_SKIP_OPTIONS,
+      hint: 'Ej: 8517.12.00. Si la tienes, el calculo usa el arancel exacto. Si no, el sistema la detecta automaticamente.'
+    };
+  }
   case 'tipo_sujeto':
     return {
       pregunta: 'Importas como persona natural o empresa?',
@@ -647,6 +673,11 @@ function interpretarRespuestaPorPaso(mensaje, pasoActual) {
     const pais = normalizarPais(texto, true);
     return pais ? { pais_origen: pais } : {};
   }
+  case 'partida_arancelaria': {
+    const hs = normalizarPartidaArancelaria(texto);
+    if (hs === 'OMITIR') return { partida_arancelaria: null };
+    return hs ? { partida_arancelaria: hs } : {};
+  }
   case 'tipo_sujeto': {
     const tipoSujeto = normalizarTipoSujeto(texto);
     return tipoSujeto ? { tipo_sujeto: tipoSujeto } : {};
@@ -718,6 +749,10 @@ function generarPregunta(contexto = {}) {
     return crearPreguntaPaso('pais_origen', datosPrevios);
   }
 
+  if (requierePaso('partida_arancelaria', datosPrevios)) {
+    return crearPreguntaPaso('partida_arancelaria', datosPrevios);
+  }
+
   if (requierePaso('tipo_sujeto', datosPrevios)) {
     return crearPreguntaPaso('tipo_sujeto', datosPrevios);
   }
@@ -784,6 +819,7 @@ module.exports = {
   FLOW_INCOTERM_OPTIONS,
   FLOW_PRODUCT_CONDITION_OPTIONS,
   FLOW_OBJECTIVE_OPTIONS,
-  FLOW_INSURANCE_OPTIONS
+  FLOW_INSURANCE_OPTIONS,
+  FLOW_HS_SKIP_OPTIONS
 };
 
