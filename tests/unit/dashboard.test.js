@@ -117,7 +117,7 @@ describe("Dashboard Service", () => {
     });
   });
 
-  it("usa revision del flujo en el fallback del dashboard y no revive wording anterior", () => {
+  it("usa revision del flujo en el fallback del dashboard y no revive fraseo anterior", () => {
     const content = fs.readFileSync(
       path.join(__dirname, "..", "..", "server", "dashboard", "dashboard-service.js"),
       "utf8"

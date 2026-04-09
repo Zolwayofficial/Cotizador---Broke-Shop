@@ -1,6 +1,6 @@
 const helpers = require('../../client/src/workspace-view-helpers.cjs')
 
-describe('workspace view helpers', () => {
+describe('utilidades de vista del espacio', () => {
   it('normaliza items del draft documental y descarta entradas no interpretables', () => {
     const items = helpers.normalizeDocumentDraftItems([
       null,

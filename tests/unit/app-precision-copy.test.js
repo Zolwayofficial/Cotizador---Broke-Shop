@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-describe('app precision copy', () => {
-  it('evita wording absoluto de exactitud en etiquetas visibles de App.jsx', () => {
+describe('app precision texto visible', () => {
+it('evita fraseo exagerado de exactitud en etiquetas visibles de App.jsx', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'client', 'src', 'App.jsx'),
       'utf8'

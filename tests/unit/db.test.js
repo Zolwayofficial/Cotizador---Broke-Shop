@@ -93,7 +93,7 @@ describe('db module', () => {
     db.shutdown();
   });
 
-  test('db source describe sql.js sin sobreafirmar "100% JavaScript"', () => {
+test('el codigo fuente de db describe sql.js sin sobreafirmar "100% JavaScript"', () => {
     const content = fs.readFileSync(path.join(projectRoot, 'server', 'db.js'), 'utf8');
 
     expect(content).toContain('sin compilacion nativa obligatoria');

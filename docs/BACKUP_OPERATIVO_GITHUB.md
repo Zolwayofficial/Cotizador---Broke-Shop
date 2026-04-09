@@ -47,7 +47,7 @@ Para restaurar:
 $env:BACKUP_PASSPHRASE="la-misma-frase-usada-en-el-respaldo"
 $repoRoot = "C:\\ruta\\al\\repo"
 Set-Location $repoRoot
-npm run backup:restore -- --input backups\ops-snapshot-AAAA-MM-DDTHH-MM-SS.enc
+npm run backup:restore -- --input backups\ops-instantanea-AAAA-MM-DDTHH-MM-SS.enc
 ```
 
 La restauracion se deja en `restored-backups/`.

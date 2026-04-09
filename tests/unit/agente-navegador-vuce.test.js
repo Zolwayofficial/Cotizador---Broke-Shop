@@ -85,7 +85,7 @@ describe('AgenteNavegadorVUCE', () => {
     expect(agent.obtenerEstadisticas()).toEqual({});
   });
 
-  test('source vivo protege el cache con copias serializables', () => {
+test('el codigo fuente actual protege el cache con copias serializables', () => {
     const fs = require('fs');
     const path = require('path');
     const content = fs.readFileSync(

@@ -42,7 +42,7 @@ Si cambia el numero de agentes, este documento no deberia quedar obsoleto por es
 - separacion razonable por dominios
 - conectores gubernamentales desacoplados del conversador
 - memoria y auto-repair compartiendo persistencia comun
-- dashboard y cliente con helpers extraidos para no concentrar toda la logica en `App.jsx`
+- dashboard y cliente con utilidades extraidas para no concentrar toda la logica en `App.jsx`
 
 ## Riesgos Reales
 
@@ -64,7 +64,7 @@ curl $env:BASE_URL/api/agentes/stats
 Si este archivo vuelve a contener:
 
 - versionado desactualizado como contrato vivo
-- rankings tratados como senal unica frente a terceros
+- rankings tratados como senal aislada frente a terceros
 - conteos desactualizados de agentes
 - porcentajes de superioridad frente a terceros
 

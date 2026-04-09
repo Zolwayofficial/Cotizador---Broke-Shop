@@ -149,7 +149,7 @@ describe("agente.orquestar", () => {
     expect(resultado.tipoCambio.referenciaSunat.venta).toBeCloseTo(3.71, 4);
   });
 
-  it("no revive alertas ni logs absolutos en el source vivo de compliance y valoracion", () => {
+  it("no revive alertas ni logs exagerados en el codigo fuente de compliance y valoracion", () => {
     const content = fs.readFileSync(
       path.join(__dirname, "..", "..", "server", "agente.js"),
       "utf8",
@@ -233,7 +233,7 @@ describe("agente.orquestar", () => {
     expect(content).not.toContain("\u00e2");
   });
 
-  it("mantiene alertas regulatorias y legales sin emoji ni copy duro", () => {
+  it("mantiene alertas regulatorias y legales sin emoji ni texto duro", () => {
     const legales = agente.agenteLegal.generarAlertas([
       {
         desc: "camisetas",

@@ -111,7 +111,7 @@ describe('cotizacion-insights', () => {
     );
   });
 
-  it('usa revision previa en permisos y no revive wording anterior en el source', () => {
+it('usa revision previa en permisos y no revive fraseo anterior en el codigo fuente', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'cotizacion-insights.js'),
       'utf8'
@@ -121,7 +121,7 @@ describe('cotizacion-insights', () => {
     expect(content).not.toContain('permiso(s) o validacion(es) previas.');
   });
 
-  it('deja el source de insights en ASCII limpio y sin default emoji', () => {
+it('deja el codigo fuente de insights en ASCII limpio y sin emoji por defecto', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'cotizacion-insights.js'),
       'utf8'

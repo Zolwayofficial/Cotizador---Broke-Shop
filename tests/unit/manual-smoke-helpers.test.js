@@ -11,7 +11,7 @@ const {
   requestJson,
 } = require('../../scripts/manual-smoke-helpers.cjs');
 
-describe('manual smoke helpers', () => {
+describe('utilidades de prueba manual', () => {
   it('normaliza BASE_URL y quita slash final', () => {
     expect(normalizeBaseUrl(' http://localhost:3000/ ')).toBe('http://localhost:3000');
     expect(normalizeBaseUrl('')).toBe(DEFAULT_BASE_URL);

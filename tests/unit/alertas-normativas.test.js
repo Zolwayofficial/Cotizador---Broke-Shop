@@ -80,7 +80,7 @@ describe('alertas-normativas', () => {
     expect(alertas._private.normalizeDays(-5, 90)).toBe(90);
   });
 
-  it('mantiene el source con wording honesto de inicializacion', () => {
+it('mantiene el codigo fuente con fraseo honesto de inicializacion', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'alertas-normativas.js'), 'utf8');
 
     expect(content).toContain('[ALERTAS] Tablas preparadas');

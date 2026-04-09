@@ -56,7 +56,7 @@ describe('agentes-navegacion/index', () => {
     agentesNavegacion.SUNAT.obtenerEstadisticas = original;
   });
 
-  test('no sobreafirma el cierre de inicializacion en el source vivo', () => {
+test('no sobreafirma el cierre de inicializacion en el codigo fuente actual', () => {
     const fs = require('fs');
     const path = require('path');
     const content = fs.readFileSync(

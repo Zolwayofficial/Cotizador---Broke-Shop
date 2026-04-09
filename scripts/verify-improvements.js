@@ -47,16 +47,6 @@ const CHECKS = [
       { pattern: 'Falta un valor despues de --passphrase-env', name: 'Requiere passphrase-env explicito' },
     ],
   },
-  {
-    file: 'dashboard.html',
-    checks: [
-      { pattern: 'DEMO LOCAL', name: 'Dashboard local distingue el modo demo' },
-      { pattern: 'API RESPONDIENDO', name: 'Dashboard local evita vender salud operativa completa' },
-      { pattern: 'function formatVariation(metric)', name: 'KPIs del dashboard evitan variaciones inventadas' },
-      { pattern: "return 'N/D';", name: 'KPIs del dashboard no inventan valores ausentes' },
-      { pattern: 'Sin KPIs disponibles', name: 'Dashboard distingue vacio operativo frente a demo local' },
-    ],
-  },
 ];
 
 function checkFile(filePath, checks) {

@@ -58,7 +58,7 @@ describe('regimenes', () => {
     expect(recomendaciones.some((item) => item.regimen.codigo === '21')).toBe(false);
   });
 
-  test('evita wording absoluto de ahorro en regimenes condicionados', () => {
+test('evita fraseo exagerado de ahorro en regimenes condicionados', () => {
     const temporal = recomendarRegimen({ esTemporalMeses: 6, vaATransformar: false });
     const activo = recomendarRegimen({ vaATransformar: true, fobExport: 1000, insumosImport: 400 });
     const devolucion = recomendarRegimen({ esDevolucion: true });

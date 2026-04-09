@@ -140,7 +140,7 @@ describe("sistemaAgentes.obtenerRegistroAgentes", () => {
     expect(result.error).toBeUndefined();
   });
 
-  it("mantiene el runtime de inicializacion con wording honesto", () => {
+it("mantiene el runtime de inicializacion con fraseo honesto", () => {
     const content = fs.readFileSync(
       path.join(__dirname, "..", "..", "server", "sistema-agentes.js"),
       "utf8"

@@ -88,7 +88,7 @@ function execHelper(pythonBin, args, timeoutMs) {
       try {
         resolve(JSON.parse(stdout));
       } catch (parseError) {
-        reject(new Error(`Respuesta no interpretable del helper oficial: ${parseError.message}`));
+        reject(new Error(`Respuesta no interpretable del modulo oficial resistente: ${parseError.message}`));
       }
     });
   });

@@ -158,7 +158,7 @@ it('expone el bloque oficial estructurado cuando el resultado lo trae', () => {
     ).toBe(true);
   });
 
-it('describe el tipo de cambio oficial como consulta en vivo y no como lectura parcial', () => {
+it('describe el tipo de cambio oficial como consulta en vivo y no como lectura incompleta', () => {
     const profile = buildImportProfile({
       canal: 'MARITIMO',
       tipoSujeto: 'empresa',
@@ -227,7 +227,7 @@ it('describe el tipo de cambio oficial como consulta en vivo y no como lectura p
     ).toBe(true);
   });
 
-it('mantiene el wording de tipo de cambio como consulta y no como lectura parcial', () => {
+it('mantiene el fraseo de tipo de cambio como consulta y no como lectura incompleta', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'importacion-profile.js'),
       'utf8'

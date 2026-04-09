@@ -28,7 +28,7 @@ describe('tracking', () => {
     expect(resultado.mensaje).toBe('Tracking disponible en los links. Recomendado: 17track');
   });
 
-  it('mantiene el source de tracking en ASCII limpio y sin emoji visible', () => {
+it('mantiene el codigo fuente de tracking en ASCII limpio y sin emoji visible', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'tracking.js'),
       'utf8'

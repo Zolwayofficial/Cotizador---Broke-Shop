@@ -40,7 +40,7 @@ describe('embeddings', () => {
     expect(pipeline).toHaveBeenCalledTimes(2);
   });
 
-  test('source queda ascii y sin aleatoriedad en fallback', () => {
+test('el codigo fuente queda ASCII y sin aleatoriedad en fallback', () => {
     const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
     expect(source).toMatch(/^[\x00-\x7F]*$/);

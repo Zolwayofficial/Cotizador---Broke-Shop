@@ -198,7 +198,7 @@ describe('agentes regulatorios', () => {
     expect(second.estado).toBe('pendiente_verificacion');
   });
 
-  test('INDECOPI source no usa redondeo que produzca alertas de 0 dias', () => {
+test('el codigo fuente de INDECOPI no usa redondeo que produzca alertas de 0 dias', () => {
     const fs = require('fs');
     const path = require('path');
     const content = fs.readFileSync(
@@ -215,7 +215,7 @@ describe('agentes regulatorios', () => {
     expect(content).not.toContain('return cached.valor;');
   });
 
-  test('MTC source protege cache y aprendizaje con copias serializables', () => {
+test('el codigo fuente de MTC protege cache y aprendizaje con copias serializables', () => {
     const fs = require('fs');
     const path = require('path');
     const content = fs.readFileSync(

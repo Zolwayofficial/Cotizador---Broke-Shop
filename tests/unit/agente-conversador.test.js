@@ -192,7 +192,7 @@ describe('agente-conversador', () => {
     expect(mantenida.mensaje).not.toMatch(/^perfecto/i);
   });
 
-  it('usa wording de revision en el subflujo de correccion y no revive copy anterior del paso previo', async () => {
+  it('usa fraseo de revision en el subflujo de correccion y no revive texto anterior del paso previo', async () => {
     const propuesta = await conversador.agenteConversador('150 vinos, no uno', {
       datos_previos: {
         productos: [{ cantidad: 1, producto: 'vinos espanoles', descripcion: 'vinos espanoles' }],
@@ -536,7 +536,7 @@ describe('agente-conversador', () => {
     expect(respuesta.mensaje).toBe('Datos recibidos. Voy a revisarlos antes del calculo.');
   });
 
-  it('no revive el copy fuerte ni el check emoji en agente-conversador.js', () => {
+  it('no revive el texto enfatico ni el check emoji en agente-conversador.js', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
 
     expect(content).not.toContain('Listo, actualice');
@@ -623,7 +623,7 @@ describe('agente-conversador', () => {
     expect(content).not.toContain('Nuevo — Es mi primera importación');
   });
 
-  it('mantiene encabezados y secciones del source sin mojibake ni separadores Unicode fragiles', () => {
+  it('mantiene encabezados y secciones del codigo fuente sin mojibake ni separadores Unicode fragiles', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador.js'), 'utf8');
 
     expect(content).toContain('// server/agente-conversador.js - Agente 0: El que interactua con el usuario');

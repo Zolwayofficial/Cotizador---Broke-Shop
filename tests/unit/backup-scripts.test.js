@@ -57,4 +57,11 @@ describe('backup scripts', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Falta un valor despues de --passphrase-env');
   });
+
+  it('create-secure-backup usa un prefijo de artefacto en español', () => {
+    const content = require('fs').readFileSync(path.join(root, 'scripts', 'create-secure-backup.js'), 'utf8');
+
+    expect(content).toContain('ops-instantanea-');
+    expect(content).not.toContain('ops-snapshot-');
+  });
 });

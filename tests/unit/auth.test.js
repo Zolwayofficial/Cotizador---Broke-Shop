@@ -259,7 +259,7 @@ describe('auth module', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test('membresias-service rechaza codigos de invitacion no disponibles con wording mas preciso', async () => {
+  test('membresias-service rechaza codigos de invitacion no disponibles con fraseo mas preciso', async () => {
     const tempDbPath = path.join(projectRoot, 'tmp', `membresias-invalid-code-${Date.now()}.sqlite`);
     cleanupPaths.push(tempDbPath);
     fs.mkdirSync(path.dirname(tempDbPath), { recursive: true });
@@ -302,7 +302,7 @@ describe('auth module', () => {
     db.shutdown();
   });
 
-test('membresias-service no revive wording anterior en comentarios operativos', () => {
+test('membresias-service no revive fraseo anterior en comentarios operativos', () => {
     const source = fs.readFileSync(
       path.resolve(__dirname, '../../server/membresias/membresias-service.js'),
       'utf8'

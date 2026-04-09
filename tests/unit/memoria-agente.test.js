@@ -89,7 +89,7 @@ describe('MemoriaAgente', () => {
     expect(alertas[0].datos).toEqual({ url: 'https://ejemplo.pe' });
   });
 
-  test('expone helpers json seguros', () => {
+  test('expone utilidades JSON seguras', () => {
     const { moduleUnderTest } = setupModule();
 
     expect(moduleUnderTest._private.safeJsonParse('no-json', { ok: false })).toEqual({ ok: false });
@@ -116,7 +116,7 @@ describe('MemoriaAgente', () => {
     expect(estadisticas.tiempo_promedio_ms).toBeNull();
   });
 
-  test('mantiene wording honesto de inicializacion en el source vivo', () => {
+test('mantiene fraseo honesto de inicializacion en el codigo fuente actual', () => {
     const fs = require('fs');
     const path = require('path');
     const content = fs.readFileSync(

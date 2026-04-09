@@ -97,7 +97,7 @@ describe("Flete API", () => {
     expect(result.nota).toBe("Tarifa referencial de mercado. Solicitar cotizacion formal a freight forwarder.");
   });
 
-  test("el source no debe vender TrackingMore como gratis 100/day ni congelar 100/100", () => {
+test("el codigo fuente no debe vender TrackingMore como gratis 100/day ni congelar 100/100", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../../server/flete-api.js"),
       "utf8"

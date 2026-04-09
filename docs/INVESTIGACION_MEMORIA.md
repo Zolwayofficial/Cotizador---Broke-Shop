@@ -61,6 +61,6 @@ npm test -- --runInBand tests/integration/api.test.js
 Este documento necesita revision si vuelve a prometer:
 
 - comparativas desactualizadas
-- porcentajes tratados como senal unica de valor
+- porcentajes tratados como senal aislada de valor
 - una prohibicion total de memoria semantica
 - o coberturas totales que el codigo no garantiza

@@ -1,7 +1,7 @@
 const helpers = require('../../client/src/workspace-summary-helpers.cjs');
 const { toNumber } = require('../../client/src/app-payload-helpers.cjs');
 
-describe('workspace summary helpers', () => {
+describe('utilidades de resumen del espacio', () => {
   const options = {
     toNumber,
     formatMoney: (value) => `USD ${Number(value).toFixed(2)}`,

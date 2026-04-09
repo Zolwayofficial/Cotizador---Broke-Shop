@@ -145,7 +145,7 @@ describe('AgenteNavegadorADUANET', () => {
     expect(second.fuente).toBe('cache_aprendizaje');
   });
 
-  test('source vivo protege cache con copias serializables y ya no arrastra mojibake', () => {
+test('el codigo fuente actual protege cache con copias serializables y ya no arrastra mojibake', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'agentes-navegacion', 'AgenteNavegadorADUANET.js'),
       'utf8',

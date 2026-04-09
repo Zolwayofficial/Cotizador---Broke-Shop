@@ -2,7 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const helpers = require('../../client/src/app-view-helpers.cjs')
 
-describe('app view helpers', () => {
+describe('utilidades de vista de app', () => {
   it('conserva aclaracion y siguiente pregunta cuando ambas llegan en la respuesta del asistente', () => {
     expect(
       helpers.buildAssistantMessageText({
@@ -42,7 +42,7 @@ it('presenta saludable como ausencia de alertas, no como estado momentaneo', () 
     })
   })
 
-  it('App usa el helper de salud y ya no capitaliza el status crudo', () => {
+  it('App usa la utilidad de salud y ya no capitaliza el status crudo', () => {
     const appSource = fs.readFileSync(
       path.resolve(__dirname, '../../client/src/App.jsx'),
       'utf8'
@@ -54,7 +54,7 @@ it('presenta saludable como ausencia de alertas, no como estado momentaneo', () 
     expect(appSource).not.toContain('function healthLabel(status)')
   })
 
-it('App rotula el bloque oficial como consulta y ya no como lectura parcial', () => {
+it('App rotula el bloque oficial como consulta y ya no como lectura incompleta', () => {
     const appSource = fs.readFileSync(
       path.resolve(__dirname, '../../client/src/App.jsx'),
       'utf8'
@@ -73,7 +73,7 @@ it('App rotula el bloque oficial como consulta y ya no como lectura parcial', ()
     expect(appSource).not.toContain('{(officialConsultation?.subpartidas || []).map((subpartida) => (')
   })
 
-  it('App usa copy visible de espacio y ya no arrastra ese anglicismo en la interfaz', () => {
+it('App usa texto visible de espacio y ya no arrastra ese anglicismo en la interfaz', () => {
     const appSource = fs.readFileSync(
       path.resolve(__dirname, '../../client/src/App.jsx'),
       'utf8'

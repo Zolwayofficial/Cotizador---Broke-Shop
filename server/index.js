@@ -356,8 +356,20 @@ function resolveRuntimePort(rawValue, fallbackPort, envName) {
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Configurar cuando se tenga frontend estable
-  crossOriginEmbedderPolicy: false
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
 }));
 app.use(compression());
 
@@ -374,6 +386,35 @@ app.use(express.json({ limit: '10mb' }));
 // --------------------------------------------------
 // AUTH: Registro, login, proteccion de rutas
 // --------------------------------------------------
+
+// Rate limiting para login: max 5 intentos cada 15 minutos por IP
+const _loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+const LOGIN_MAX_ATTEMPTS = 5;
+
+function checkLoginRate(ip) {
+  if (process.env.NODE_ENV === 'test') return true;
+  const now = Date.now();
+  const entry = _loginAttempts.get(ip) || { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+  if (now > entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + LOGIN_WINDOW_MS;
+  }
+  if (entry.count >= LOGIN_MAX_ATTEMPTS) return false;
+  entry.count++;
+  _loginAttempts.set(ip, entry);
+  return true;
+}
+
+// Limpieza periodica del Map de intentos de login
+const loginRateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of _loginAttempts) {
+    if (now > entry.resetAt) _loginAttempts.delete(ip);
+  }
+}, LOGIN_WINDOW_MS);
+loginRateLimitCleanup.unref?.();
+
 app.post('/api/auth/register', (req, res) => {
   try {
     if (process.env.NODE_ENV === 'production') {
@@ -395,6 +436,9 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
+  if (!checkLoginRate(req.ip)) {
+    return res.status(429).json({ error: 'Demasiados intentos. Espera 15 minutos.' });
+  }
   try {
     const { email, password } = req.body;
     const user = auth.login(email, password);

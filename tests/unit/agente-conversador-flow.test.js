@@ -4,7 +4,7 @@ const { describe, expect, it } = require('@jest/globals');
 
 const flow = require('../../server/agente-conversador-flow');
 
-describe('agente-conversador-flow', () => {
+describe('flujo del agente conversador', () => {
   it('no arranca con BOM invisible en agente-conversador-flow.js', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'agente-conversador-flow.js'), 'utf8');
 

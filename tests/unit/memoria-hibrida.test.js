@@ -195,7 +195,7 @@ describe('MemoriaHibrida', () => {
     expect(memoria.obtenerContexto('user-4').productos_frecuentes).toEqual(['router gamer', 'switch']);
   });
 
-  it('mantiene el source con wording honesto de inicializacion', () => {
+it('mantiene el codigo fuente con fraseo honesto de inicializacion', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'memoria-hibrida.js'), 'utf8');
 
     expect(content).toContain('[MEMORIA] Tablas preparadas');

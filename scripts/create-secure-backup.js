@@ -128,7 +128,7 @@ function copyRecursive(source, destination) {
   fs.cpSync(source, destination, { recursive: true, force: true });
 }
 
-function collectSnapshot(items, stageDir) {
+function collectBackupPayload(items, stageDir) {
   const included = [];
   const skipped = [];
 
@@ -203,17 +203,17 @@ function main() {
 
   const tarCommand = ensureTarAvailable();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const snapshotName = `ops-snapshot-${timestamp}`;
+  const backupName = `ops-instantanea-${timestamp}`;
   const outputDir = args.outputDir;
   const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cotizador-backup-'));
-  const archivePath = path.join(os.tmpdir(), `${snapshotName}.tar.gz`);
-  const encryptedPath = path.join(outputDir, `${snapshotName}.tar.gz.enc`);
-  const manifestPath = path.join(outputDir, `${snapshotName}.manifest.json`);
+  const archivePath = path.join(os.tmpdir(), `${backupName}.tar.gz`);
+  const encryptedPath = path.join(outputDir, `${backupName}.tar.gz.enc`);
+  const manifestPath = path.join(outputDir, `${backupName}.manifest.json`);
 
   try {
-    const snapshotDir = path.join(stageDir, 'snapshot');
-    fs.mkdirSync(snapshotDir, { recursive: true });
-    const collected = collectSnapshot(items, snapshotDir);
+    const payloadDir = path.join(stageDir, 'payload');
+    fs.mkdirSync(payloadDir, { recursive: true });
+    const collected = collectBackupPayload(items, payloadDir);
 
     const preview = {
       dryRun: args.dryRun,
@@ -233,7 +233,7 @@ function main() {
     fs.mkdirSync(outputDir, { recursive: true });
 
     fs.writeFileSync(
-      path.join(snapshotDir, 'backup-metadata.json'),
+      path.join(payloadDir, 'backup-metadata.json'),
       JSON.stringify(
         {
           createdAt: new Date().toISOString(),
@@ -249,7 +249,7 @@ function main() {
       )
     );
 
-    runTarCreate(tarCommand, snapshotDir, archivePath);
+    runTarCreate(tarCommand, payloadDir, archivePath);
     const encryption = encryptFile(archivePath, encryptedPath, passphrase);
     const manifest = {
       createdAt: new Date().toISOString(),

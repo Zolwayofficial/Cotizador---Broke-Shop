@@ -105,7 +105,7 @@ describe('cotizacion-precision', () => {
     expect(precision.motivos.some((motivo) => motivo.codigo === 'hs_no_contrastado')).toBe(true);
   });
 
-it('no revive el contrato anterior de lectura parcial NANDINA en el source de precision', () => {
+it('no revive el contrato anterior de lectura incompleta NANDINA en el codigo fuente de precision', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'cotizacion-precision.js'), 'utf8');
 
     expect(content).toContain('contrastadoNandina');
@@ -122,7 +122,7 @@ it('no revive el contrato anterior de lectura parcial NANDINA en el source de pr
     expect(content).not.toContain('Cotizacion de alta precision: la base tributaria es solida, pero aun conviene validar manualmente algunos supuestos.');
   });
 
-it('evita wording de certeza cerrada cuando la cotizacion sale consistente', () => {
+it('evita fraseo de certeza cerrada cuando la cotizacion sale consistente', () => {
     const precision = evaluarPrecisionCotizacion({
       items: [{ desc: 'laptop', hs: '8471300000', metodo: 'manual', confianza: 100 }],
       trazabilidad: {
@@ -200,7 +200,7 @@ it('evita wording de certeza cerrada cuando la cotizacion sale consistente', () 
     expect(JSON.stringify(precision)).not.toContain('partida HS confirmada');
   });
 
-  it('evita wording de exactitud absoluta al desglosar DDP en agente y auto-cotizar', async () => {
+it('evita fraseo de exactitud exagerado al desglosar DDP en agente y auto-cotizar', async () => {
     const payload = {
       items: [{ desc: 'tablet', qty: 5, unit: 200, hs: '8471300000' }],
       pais: 'China',

@@ -35,7 +35,7 @@ La respuesta incluye `registro_agentes`, `resumen` y `total_agentes`.
 
 - `Agente conversador`: interpreta la intencion, decide el siguiente paso y
   coordina aclaraciones o correcciones dentro del flujo.
-- `Flow helpers`: mantienen opciones, orden de preguntas y revisiones del
+- `Utilidades del flujo`: mantienen opciones, orden de preguntas y revisiones del
   arbol conversacional.
 
 ### Agentes Base De Negocio

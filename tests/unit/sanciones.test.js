@@ -130,7 +130,7 @@ describe('sanciones', () => {
       .toBe('1 coincidencia(s) en listas de sanciones. Revisar antes de continuar.');
   });
 
-  test('source queda ascii y sin copy duro anterior', () => {
+test('el codigo fuente queda ASCII y sin texto duro anterior', () => {
     const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
     expect(source).toMatch(/^[\x00-\x7F]*$/);

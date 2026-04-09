@@ -9,7 +9,7 @@ const {
   buildRegimenView
 } = require('../../client/src/result-view-helpers.cjs')
 
-describe('result-view-helpers', () => {
+describe('utilidades de vista de resultados', () => {
   const helperPath = path.join(__dirname, '..', '..', 'client', 'src', 'result-view-helpers.cjs')
   const labels = {
     objectiveLabels: {
@@ -130,7 +130,7 @@ describe('result-view-helpers', () => {
     })
   })
 
-  it('expone truncado y subpartidas desde el helper de vista para no leer el payload crudo en App', () => {
+it('expone truncado y subpartidas desde la utilidad de vista para no leer el payload crudo en App', () => {
     const view = buildOfficialConsultationView({
       fuente: 'ADUANET',
       actualizado: '2026-04-02T10:00:00Z',
@@ -149,7 +149,7 @@ describe('result-view-helpers', () => {
     expect(view.subpartidas).toEqual([{ partida: '850440', descripcion: 'Cargadores' }])
   })
 
-it('ya no presenta el bloque oficial como lectura parcial cuando falta detalle utilizable', () => {
+it('ya no presenta el bloque oficial como lectura incompleta cuando falta detalle utilizable', () => {
     const source = fs.readFileSync(helperPath, 'utf8')
 
     expect(source).toContain('La consulta oficial no devolvio subpartidas utilizables para esta cotizacion.')
@@ -190,7 +190,7 @@ it('ya no presenta el bloque oficial como lectura parcial cuando falta detalle u
     })
   })
 
-it('ya no arrastra aliases antiguos exacta/exacto ni detalle residual de lectura parcial', () => {
+it('ya no arrastra aliases antiguos exacta/exacto ni detalle residual de lectura incompleta', () => {
     const content = fs.readFileSync(helperPath, 'utf8')
 
     expect(content).not.toContain("if (normalized === 'exacta') return 'consistente'")

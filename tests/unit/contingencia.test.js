@@ -45,7 +45,7 @@ describe("contingencia de logistica", () => {
     );
   });
 
-it("mantiene el source limpio de mojibake y wording absoluto", () => {
+it("mantiene el codigo fuente limpio de mojibake y fraseo exagerado", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../../server/couriers/contingencia-api.js"),
       "utf8"

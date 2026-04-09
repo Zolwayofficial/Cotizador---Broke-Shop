@@ -250,7 +250,7 @@ describe('Integrador Logistica', () => {
       expect(resultado.couriers[0].courier).toBe('Referencial (Fallback)');
     });
 
-it('no deja mojibake residual ni wording absoluto en integrador-logistica.js', () => {
+it('no deja mojibake residual ni fraseo exagerado en integrador-logistica.js', () => {
       const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 
       expect(source).not.toMatch(/\u00C3|\u00E2\u20AC\u00A2|\uFFFD/);

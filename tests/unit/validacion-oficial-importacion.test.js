@@ -77,7 +77,7 @@ describe('validacion-oficial-importacion', () => {
     ]);
   });
 
-  test('no revive el wording anterior del bloque oficial en el fallback del source', () => {
+test('no revive el fraseo anterior del bloque oficial en el fallback del codigo fuente', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'validacion-oficial-importacion.js'),
       'utf8'

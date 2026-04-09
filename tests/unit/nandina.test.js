@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { describe, it, expect } = require("@jest/globals");
 
-describe("nandina runtime wording", () => {
+describe("nandina fraseo de runtime", () => {
   it("mantiene los mensajes de carga y descarga sin sobreafirmar con OK", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "../../server/nandina.js"),

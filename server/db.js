@@ -293,36 +293,9 @@ module.exports = {
   },
 
   // Funciones para consultar
-  get(sql, params = []) {
-    if (!db) return null;
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    if (stmt.step()) {
-      const row = stmt.getAsObject();
-      stmt.free();
-      return row;
-    }
-    stmt.free();
-    return null;
-  },
-
-  run(sql, params = []) {
-    if (!db) return { changes: 0, lastInsertRowid: 0 };
-    db.run(sql, params);
-    return getWriteMetadata(sql);
-  },
-
-  all(sql, params = []) {
-    if (!db) return [];
-    const stmt = db.prepare(sql);
-    stmt.bind(params);
-    const results = [];
-    while (stmt.step()) {
-      results.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return results;
-  },
+  get,
+  run,
+  all,
 
   prepare(sql) {
     return {

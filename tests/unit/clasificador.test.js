@@ -36,7 +36,7 @@ describe('Clasificador fallback', () => {
     expect(result.consenso.hs).toBe('6109.10.00.10');
   });
 
-test('expone contraste con NANDINA sin venderlo como lectura parcial', async () => {
+test('expone contraste con NANDINA sin venderlo como lectura incompleta', async () => {
     const nandina = require('../../server/nandina');
     await nandina.init();
 
@@ -159,7 +159,7 @@ test('expone contraste con NANDINA sin venderlo como lectura parcial', async () 
     expect(clasificador._private.normalizeConfidence('1.200,75', 0)).toBe(1200.75);
   });
 
-test('no revive el contrato anterior de lectura parcial NANDINA en el source del clasificador', () => {
+test('no revive el contrato anterior de lectura incompleta NANDINA en el codigo fuente del clasificador', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'clasificador.js'), 'utf8');
 
     expect(content).toContain('contrastadoNandina');

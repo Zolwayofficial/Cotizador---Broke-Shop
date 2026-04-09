@@ -26,7 +26,7 @@ describe('exportar-cotizacion', () => {
     expect(documentos.some((doc) => doc.nombre.includes('No Produccion Forzada'))).toBe(true);
   });
 
-  test('usa wording aplicable en sanidad y antidumping del exportador', () => {
+test('usa fraseo aplicable en sanidad y antidumping del exportador', () => {
     const content = require('fs').readFileSync(
       require('path').join(__dirname, '..', '..', 'server', 'exportar-cotizacion.js'),
       'utf8'

@@ -124,7 +124,7 @@ describe('cotizador personalizado', () => {
     expect(cotizador.transporter).toBe(transporter);
   });
 
-  test('usa fallback de puerto y deja helpers visibles en source', () => {
+  test('usa fallback de puerto y deja utilidades visibles en el codigo fuente', () => {
     const cotizador = require('../../server/couriers/cotizador-personalizado');
     const source = fs.readFileSync(SOURCE_PATH, 'utf8');
 

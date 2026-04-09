@@ -2,7 +2,7 @@
 
 ## Nota
 
-El nombre de este archivo conserva un nombre anterior. No debe usarse como prueba unica de que "todo esta resuelto".
+El nombre de este archivo conserva un nombre anterior. No debe usarse como prueba aislada de que "todo esta resuelto".
 
 ## Decision Actual
 

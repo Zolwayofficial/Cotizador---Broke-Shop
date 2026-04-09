@@ -11,7 +11,7 @@ const AUTH_AGENT_DESCRIPTOR = {
 };
 
 const ALLOWED_ROLES = new Set(['user', 'admin']);
-const TOKEN_TTL = 86400000 * 7; // 7 days
+const TOKEN_TTL = 86400000 * (parseInt(process.env.JWT_TTL_DAYS, 10) || 7);
 const DEFAULT_DATA_DIR = path.resolve(__dirname, '..', 'data');
 
 function resolveDataDir() {
@@ -67,7 +67,9 @@ function verify(token) {
   try {
     const [header, body, signature] = token.split('.');
     const expected = crypto.createHmac('sha256', SECRET).update(`${header}.${body}`).digest('base64url');
-    if (expected !== signature) return null;
+    const expectedBuf = Buffer.from(expected);
+    const sigBuf = Buffer.from(signature);
+    if (expectedBuf.length !== sigBuf.length || !crypto.timingSafeEqual(expectedBuf, sigBuf)) return null;
 
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
     if (payload.exp < Date.now()) return null;
@@ -95,18 +97,24 @@ function normalizeRole(role) {
   return String(role || '').trim().toLowerCase();
 }
 
+const TRUTHY_VALUES = ['true', '1', 'si', 'sí', 'yes', 'y', 'on'];
+const FALSY_VALUES = ['false', '0', 'no', 'n', 'off'];
+
+function parseStringToBool(str) {
+  const normalized = str.trim().toLowerCase();
+  if (TRUTHY_VALUES.includes(normalized)) return true;
+  if (FALSY_VALUES.includes(normalized)) return false;
+  return undefined;
+}
+
 function asBool(value, fallback = true) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'si', 'sí', 'yes', 'y', 'on'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+    const result = parseStringToBool(value);
+    if (result !== undefined) return result;
   }
-  if (typeof value === 'number') {
-    return value !== 0;
-  }
-
   return fallback;
 }
 
@@ -114,13 +122,10 @@ function parseBooleanInput(value, fieldName, fallback = true) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value !== 0;
-
   if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'si', 'sí', 'yes', 'y', 'on'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+    const result = parseStringToBool(value);
+    if (result !== undefined) return result;
   }
-
   throw createError(`${fieldName} debe ser booleano`);
 }
 
@@ -306,7 +311,11 @@ module.exports = {
     if (!user) throw createError('Email no encontrado', 401);
 
     const { hash } = hashPw(password, user.password_salt);
-    if (hash !== user.password_hash) throw createError('Contrasena incorrecta', 401);
+    const hashBuf = Buffer.from(hash, 'hex');
+    const storedBuf = Buffer.from(user.password_hash, 'hex');
+    if (hashBuf.length !== storedBuf.length || !crypto.timingSafeEqual(hashBuf, storedBuf)) {
+      throw createError('Contrasena incorrecta', 401);
+    }
 
     assertUserHasAccess(user);
     db.run('UPDATE users SET last_login=datetime(\'now\'), updated_at=datetime(\'now\') WHERE id=?', [user.id]);

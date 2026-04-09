@@ -80,7 +80,7 @@ describe("tipo-cambio-operativo", () => {
     expect(alerta.mensaje).toMatch(/referencia automatica externa/i);
   });
 
-it("mantiene el wording de tipo de cambio como consulta y ya no como lectura parcial", () => {
+it("mantiene el fraseo de tipo de cambio como consulta y ya no como lectura incompleta", () => {
     const source = fs.readFileSync(
       path.join(__dirname, "..", "..", "server", "tipo-cambio-operativo.js"),
       "utf8"

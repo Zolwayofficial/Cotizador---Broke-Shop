@@ -2,7 +2,7 @@ const { describe, it, expect } = require('@jest/globals')
 
 const helpers = require('../../client/src/app-payload-helpers.cjs')
 
-describe('app payload helpers', () => {
+describe('utilidades de payload de app', () => {
   it('convierte comas decimales a numeros utilizables', () => {
     expect(helpers.toNumber('3,58')).toBeCloseTo(3.58, 5)
     expect(helpers.toNumber(' 1 234,50 ')).toBeCloseTo(1234.5, 5)

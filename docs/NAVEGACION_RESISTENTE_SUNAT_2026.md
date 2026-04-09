@@ -22,9 +22,9 @@ script HTTP simple.
 - `server/sunat-proxy.js`
   Orquestador principal del tipo de cambio.
 - `server/tipo-cambio-oficial-resistente.js`
-  Wrapper Node que invoca el helper Python solo cuando hace falta.
+  Wrapper Node que invoca el modulo Python solo cuando hace falta.
 - `scripts/fetch_official_fx.py`
-  Helper opcional con `Camoufox` o `Playwright` cuando la ruta ligera no basta.
+  Modulo opcional con `Camoufox` o `Playwright` cuando la ruta ligera no basta.
 
 ## Fuente oficial prioritaria
 
@@ -58,7 +58,7 @@ Se conservan estos nombres por compatibilidad con el runtime actual:
 - `OFFICIAL_FX_PYTHON_BIN`
 - `OFFICIAL_FX_CACHE_TTL_MS`
 
-## Dependencias opcionales del helper
+## Dependencias opcionales del modulo Python/browser
 
 Instalar solo si quieres la via resistente:
 

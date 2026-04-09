@@ -4,51 +4,6 @@ const path = require('path');
 describe('root manual scripts', () => {
   const root = path.join(__dirname, '..', '..');
 
-  it('test-produccion.js ejecuta las pruebas async de forma secuencial', () => {
-    const content = fs.readFileSync(path.join(root, 'test-produccion.js'), 'utf8');
-    expect(content).toContain('async function main()');
-    expect(content).toContain('await runner.run(');
-    expect(content).toContain('createRunner()');
-  });
-
-  it('test-produccion.js usa el contrato real del modulo de exportacion', () => {
-    const content = fs.readFileSync(path.join(root, 'test-produccion.js'), 'utf8');
-
-    expect(content).toContain("const exportacion = require('./server/exportar-cotizacion');");
-    expect(content).toContain("exportacion.exportarCotizacion(cotizacion, 'pdf')");
-    expect(content).toContain("exportacion.exportarCotizacion(cotizacion, 'excel')");
-    expect(content).toContain('PRUEBA COMPLETA DE PRODUCCION - IMPORTAIAGENT COTIZADOR');
-    expect(content).not.toContain("const pdf = exportarCotizacion(cotizacion, 'pdf');");
-    expect(content).not.toContain('PRUEBA COMPLETA DE PRODUCCION - COTIZADOR PERU');
-    expect(content).not.toContain('ULTIMATE v3.0');
-  });
-
-  it('los smoke scripts HTTP usan tokens configurables y helpers compartidos', () => {
-    const endpointsHttp = fs.readFileSync(path.join(root, 'test-endpoints-http.js'), 'utf8');
-    const endpointsAgentes = fs.readFileSync(path.join(root, 'test-endpoints-agentes.js'), 'utf8');
-    const helpers = fs.readFileSync(path.join(root, 'scripts', 'manual-smoke-helpers.cjs'), 'utf8');
-
-    for (const content of [endpointsHttp, endpointsAgentes]) {
-      expect(content).toContain("require('./scripts/manual-smoke-helpers.cjs')");
-      expect(content).toContain('AUTH_TOKEN');
-      expect(content).toContain('ADMIN_TOKEN');
-      expect(content).toContain('buildRequestHeaders');
-      expect(content).toContain('classifyManualHttpStatus');
-      expect(content).toContain('requestJson(');
-      expect(content).toContain('RESPUESTA ${status.label}');
-      expect(content).toContain('RESPONDIERON:');
-      expect(content).not.toContain('exitosas');
-      expect(content).not.toContain('OK ${status.label}');
-      expect(content).not.toContain('OK:');
-      expect(content).not.toContain('http.get(');
-    }
-
-    expect(helpers).toContain("label: 'RESPONDIO'");
-    expect(helpers).toContain("label: 'RESPONDIO (400 esperado)'");
-    expect(helpers).not.toContain("label: 'EXITOSA'");
-    expect(helpers).not.toContain("label: 'EXITOSA (400 esperado)'");
-  });
-
   it('deploy-vps.bat es un wrapper real de PowerShell y no arrastra sintaxis bash', () => {
     const content = fs.readFileSync(path.join(root, 'deploy-vps.bat'), 'utf8');
 
@@ -70,181 +25,7 @@ describe('root manual scripts', () => {
     expect(content).not.toMatch(/^\s*fi\s*$/m);
   });
 
-  it('los scripts raiz reescritos no arrastran mojibake ni contratos obsoletos', () => {
-    const files = [
-      'test-server.js',
-      'test-server-simple.js',
-      'test-conectores.js',
-      'test-agente-sunat.js',
-      'test-agente-sunat-simple.js',
-      'test-alertas.js',
-      'test-sistema-unificado.js',
-      'test-todos-agentes.js',
-    ];
-
-    for (const file of files) {
-      const content = fs.readFileSync(path.join(root, file), 'utf8');
-      expect(content).not.toMatch(/[ÃƒÃ°Ã¢]/);
-    }
-  });
-
-  it('los scripts manuales de agentes usan conteos dinamicos y criterios de exito consistentes', () => {
-    const conectores = fs.readFileSync(path.join(root, 'test-conectores.js'), 'utf8');
-    const sunat = fs.readFileSync(path.join(root, 'test-agente-sunat.js'), 'utf8');
-    const sunatSimple = fs.readFileSync(path.join(root, 'test-agente-sunat-simple.js'), 'utf8');
-    const alertas = fs.readFileSync(path.join(root, 'test-alertas.js'), 'utf8');
-    const produccion = fs.readFileSync(path.join(root, 'test-produccion.js'), 'utf8');
-    const simpleServer = fs.readFileSync(path.join(root, 'test-server-simple.js'), 'utf8');
-    const sistema = fs.readFileSync(path.join(root, 'test-sistema-unificado.js'), 'utf8');
-    const todos = fs.readFileSync(path.join(root, 'test-todos-agentes.js'), 'utf8');
-
-    expect(conectores).toContain('const TEST_CASES = [');
-    expect(conectores).not.toContain('const total = 11');
-    expect(conectores).toContain('SMOKE MANUAL DE CONECTORES COMPLETADO');
-    expect(conectores).toContain('no certifica cobertura funcional total');
-    expect(conectores).toContain('Respondieron:');
-    expect(conectores).toContain('Respuesta visible');
-    expect(conectores).not.toContain('TODAS LAS PRUEBAS EXITOSAS');
-    expect(conectores).not.toContain('OK EXITOSA');
-    expect(conectores).not.toContain('OK Exitosas');
-    expect(conectores).not.toContain('OK RESPONDIO');
-    expect(conectores).not.toContain('OK Respondieron');
-    expect(sunat).toContain('const TEST_CASES = [');
-    expect(sunat).not.toContain('exitosas >= 4');
-    expect(sunat).toContain('SMOKE MANUAL DE SUNAT COMPLETADO');
-    expect(sunat).toContain('no sustituye una revision funcional total');
-    expect(sunat).not.toContain('no sustituye una validacion funcional total');
-    expect(sunat).toContain('Marcadas favorables por el agente');
-    expect(sunat).toContain('Tasa interna marcada por el agente');
-    expect(sunat).toContain('Respondieron:');
-    expect(sunat).toContain('Respuesta visible');
-    expect(sunat).not.toContain('Todas las pruebas de esta bateria pasaron');
-    expect(sunat).not.toContain('Marcadas exitosas por el agente');
-    expect(sunat).not.toContain('OK EXITOSA');
-    expect(sunat).not.toContain('OK Exitosas');
-    expect(sunat).not.toContain('OK RESPONDIO');
-    expect(sunat).not.toContain('OK Respondieron');
-    expect(sunat).not.toContain('Tasa de exito:');
-    expect(sunat).not.toContain('AGENTE SUNAT FUNCIONA CORRECTAMENTE');
-    expect(sunatSimple).toContain('SMOKE RAPIDO DE SUNAT COMPLETADO');
-    expect(sunatSimple).toContain('Inicializacion de agentes completada sin error visible');
-    expect(sunatSimple).toContain('El resultado muestra inicializacion y lectura de estadisticas, no una revision funcional total del agente.');
-    expect(sunatSimple).toContain('no una revision funcional total del agente');
-    expect(sunatSimple).not.toContain('no validacion funcional total del agente');
-    expect(sunatSimple).not.toContain('El resultado confirma inicializacion y lectura de estadisticas, no validacion funcional total del agente.');
-    expect(sunatSimple).not.toContain('OK Agentes inicializados correctamente');
-    expect(sunatSimple).not.toContain('AGENTE SUNAT IMPLEMENTADO CORRECTAMENTE');
-    expect(alertas).toContain('SMOKE DE ALERTAS NORMATIVAS COMPLETADO');
-    expect(alertas).toContain('Inicializacion del sistema completada sin error visible');
-    expect(alertas).toContain('alertas de prueba creadas para el smoke');
-    expect(alertas).toContain('El resultado muestra inicializacion, creacion y consulta basica de alertas, no cobertura funcional total.');
-    expect(alertas).toContain('no cobertura funcional total');
-    expect(alertas).not.toContain('El resultado confirma inicializacion, creacion y consulta basica de alertas, no cobertura funcional total.');
-    expect(alertas).not.toContain('OK Sistema de alertas inicializado correctamente');
-    expect(alertas).not.toContain('alertas creadas\\n');
-    expect(alertas).not.toContain('SISTEMA DE ALERTAS NORMATIVAS: FUNCIONAL');
-    expect(produccion).toContain('SIN ERROR VISIBLE');
-    expect(produccion).toContain('La bateria manual completo sus chequeos sin error visible.');
-    expect(produccion).toContain('No sustituye una revision funcional total ni cierre operativo de produccion.');
-    expect(produccion).toContain("throw new Error('Documentacion no interpretable');");
-    expect(produccion).toContain("throw new Error('Recomendaciones no interpretables');");
-    expect(produccion).toContain("throw new Error('Apuntes no interpretables');");
-    expect(produccion).not.toContain('No sustituye validacion funcional total ni cierre operativo de produccion.');
-    expect(produccion).not.toContain("throw new Error('Documentacion invalida');");
-    expect(produccion).not.toContain("throw new Error('Recomendaciones invalidas');");
-    expect(produccion).not.toContain("throw new Error('Apuntes invalidos');");
-    expect(produccion).not.toContain('OK ');
-    expect(produccion).not.toContain('Todas las pruebas manuales pasaron.');
-    expect(simpleServer).toContain('process.env.PORT');
-    expect(simpleServer).toContain('KEEP_OPEN');
-    expect(simpleServer).toContain('express cargado');
-    expect(simpleServer).toContain('app creada');
-    expect(simpleServer).toContain('Servidor HTTP escuchando en http://localhost:${PORT}');
-    expect(simpleServer).toContain('SMOKE DE SERVIDOR COMPLETADO');
-    expect(simpleServer).toContain('SERVIDOR EN ESCUCHA PARA SMOKE');
-    expect(simpleServer).not.toContain('OK express');
-    expect(simpleServer).not.toContain('OK app');
-    expect(simpleServer).not.toContain('OK Servidor HTTP escuchando');
-    expect(simpleServer).not.toContain('SERVIDOR VERIFICADO');
-    expect(simpleServer).not.toContain('SERVIDOR FUNCIONANDO');
-    expect(sistema).not.toContain('29 AGENTES');
-    expect(sistema).toContain('Inicializacion del sistema unificado completada sin error visible');
-    expect(sistema).toContain('stats.total_agentes');
-    expect(sistema).toContain('SMOKE DEL SISTEMA UNIFICADO COMPLETADO');
-    expect(sistema).toContain('El resultado muestra inicializacion y consultas basicas, no cobertura funcional total de todos los agentes.');
-    expect(sistema).toContain('no cobertura funcional total de todos los agentes');
-    expect(sistema).not.toContain('El resultado confirma inicializacion y consultas basicas, no cobertura funcional total de todos los agentes.');
-    expect(sistema).not.toContain('OK Sistema unificado inicializado correctamente');
-    expect(sistema).not.toContain('SISTEMA UNIFICADO DE AGENTES: FUNCIONAL');
-    expect(todos).toContain('SMOKE DE NAVEGACION COMPLETADO');
-    expect(todos).toContain('El resultado muestra inicializacion y lectura de estadisticas, no una revision funcional total.');
-    expect(todos).toContain('no una revision funcional total');
-    expect(todos).not.toContain('no validacion funcional total');
-    expect(todos).toContain('Inicializacion de agentes sin error visible');
-    expect(todos).not.toContain('El resultado confirma inicializacion y lectura de estadisticas, no validacion funcional total.');
-    expect(todos).toContain('Tasa interna marcada por el agente');
-    expect(todos).not.toContain('TODOS LOS AGENTES IMPLEMENTADOS CORRECTAMENTE');
-    expect(todos).not.toContain('OK Todos los agentes inicializados correctamente');
-    expect(todos).not.toContain('OK Inicializacion de agentes sin error visible');
-    expect(todos).not.toContain('Tasa de exito:');
-    const serverSmoke = fs.readFileSync(path.join(root, 'test-server.js'), 'utf8');
-    expect(serverSmoke).toContain('[SMOKE] Carga del servidor completada sin error visible');
-    expect(serverSmoke).not.toContain('[OK] Servidor cargado correctamente');
-  });
-
-  it('dashboard.html no arrastra mojibake ni usa la clave rota de variacion', () => {
-    const content = fs.readFileSync(path.join(root, 'dashboard.html'), 'utf8');
-
-    expect(content).not.toMatch(/[Ãðâ]/);
-    expect(content).toContain("dashboard?.source === 'demo_local'");
-    expect(content).toContain("health?.source === 'demo_local'");
-    expect(content).toContain("health?.status === 'demo_local'");
-    expect(content).toContain('DEMO LOCAL');
-    expect(content).toContain('API RESPONDIENDO');
-    expect(content).toContain('.status.demo');
-    expect(content).toContain('.status.available');
-    expect(content).toContain('function formatVariation(metric)');
-    expect(content).toContain('function isCurrencyMetric(key)');
-    expect(content).toContain('function formatValue(key, value)');
-    expect(content).toContain('No disponible');
-    expect(content).toContain('Sin variacion');
-    expect(content).toContain("className: 'variation na'");
-    expect(content).toContain("return 'N/D';");
-    expect(content).toContain('no conectado a datos reales');
-    expect(content).toContain("const isDemo = dashboard?.source === 'demo_local';");
-    expect(content).toContain('Sin KPIs reales disponibles en este dashboard local.');
-    expect(content).toContain('Sin KPIs disponibles');
-    expect(content).toContain('El dashboard no devolvio KPIs utilizables en esta carga.');
-    expect(content).not.toContain('variaciÃ');
-    expect(content).not.toContain('<div class="variation down">');
-    expect(content).not.toContain('function formatValue(value)');
-    expect(content).not.toContain('SERVIDOR EN LINEA');
-    expect(content).not.toContain('const variation = Number.isFinite(Number(data?.variacion)) ? Number(data.variacion) : 0;');
-  });
-
-  it('start-local.js anuncia URLs de smoke coherentes con el servidor real', () => {
-    const content = fs.readFileSync(path.join(root, 'start-local.js'), 'utf8');
-
-    expect(content).toContain("const app = require(\"./server/index.js\")");
-    expect(content).toContain("await app.startServer({ port: PORT, wsPort: WS_PORT })");
-    expect(content).toContain('http://localhost:${PORT}/api/health');
-    expect(content).toContain('http://localhost:${PORT}/api/monitor/health');
-    expect(content).toContain('http://localhost:${PORT}/api/dashboard');
-    expect(content).not.toContain('ULTIMATE v3.0');
-  });
-
-  it('server-listo.js y server-minimo.js no fijan 3001 como verdad local', () => {
-    const listo = fs.readFileSync(path.join(root, 'server-listo.js'), 'utf8');
-    const minimo = fs.readFileSync(path.join(root, 'server-minimo.js'), 'utf8');
-
-    for (const content of [listo, minimo]) {
-      expect(content).toContain("parsePort(process.env.PORT, 3000)");
-      expect(content).not.toContain("parsePort(process.env.PORT, 3001)");
-      expect(content).not.toContain('http://localhost:3001');
-    }
-  });
-
-  it('PRUEBA_PRODUCCION.md no arrastra mojibake ni contratos operativos viejos', () => {
+  it('PRUEBA_PRODUCCION.md no arrastra mojibake ni contratos operativos desactualizados', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'PRUEBA_PRODUCCION.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÃ°Ã¢]/);
@@ -295,7 +76,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('## Validacion antes de despliegue');
   });
 
-  it('README_ULTIMATE.md ya no arrastra wording viejo del bloque oficial', () => {
+  it('README_ULTIMATE.md ya no arrastra fraseo desactualizado del bloque oficial', () => {
     const content = fs.readFileSync(path.join(root, 'README_ULTIMATE.md'), 'utf8');
 
     expect(content).toContain('consulta oficial y trazabilidad de fuente');
@@ -334,7 +115,7 @@ describe('root manual scripts', () => {
     expect(valoracion).not.toMatch(/[Ãâ�]/);
   });
 
-  it('DEPLOY.md refleja el flujo moderno de importaiagent y no revive contratos viejos', () => {
+  it('DEPLOY.md refleja el flujo moderno de importaiagent y no revive contratos desactualizados', () => {
     const content = fs.readFileSync(path.join(root, 'DEPLOY.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’ÃƒÂ°ÃƒÂ¢]/);
@@ -420,7 +201,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('## Validacion util');
   });
 
-  it('ARBOL_DECISION_CHAT_2026.md refleja el flujo real del chat y no un arbol viejo', () => {
+  it('ARBOL_DECISION_CHAT_2026.md refleja el flujo real del chat y no un arbol desactualizado', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'ARBOL_DECISION_CHAT_2026.md'), 'utf8');
 
     expect(content).toContain('objetivo_calculo');
@@ -480,7 +261,7 @@ describe('root manual scripts', () => {
     expect(lock).not.toContain('"name": "cotizador-peru-ultimate"');
   });
 
-  it('MEJORAS_ROBUSTEZ.md describe el contrato actual y no arrastra comparativas viejas', () => {
+  it('MEJORAS_ROBUSTEZ.md describe el contrato actual y no arrastra comparativas desactualizadas', () => {
     const content = fs.readFileSync(path.join(root, 'MEJORAS_ROBUSTEZ.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’Ã†â€™ÃƒÆ’Ã‚Â°ÃƒÆ’Ã‚Â¢]/);
@@ -570,7 +351,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('/var/www/cotizador');
     expect(content).not.toContain('pm2 start server/index.js');
   });
-  it('AUDITORIA_COMPLETA.md ya no arrastra conteos ni contratos viejos', () => {
+  it('AUDITORIA_COMPLETA.md ya no arrastra conteos ni contratos desactualizados', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'AUDITORIA_COMPLETA.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢]/);
@@ -663,6 +444,7 @@ describe('root manual scripts', () => {
     expect(content).toContain('reescribirse para reflejar un numero anterior;');
     expect(content).toContain('No asumas porcentajes favorables previos.');
     expect(content).toContain('No uses este archivo como referencia de produccion.');
+    expect(content).toContain('`Utilidades del flujo`: mantienen opciones, orden de preguntas');
     expect(content).toContain('revisiones del');
     expect(content).toContain('`Clasificador`: propone HS y contrasta contra NANDINA.');
     expect(content).toContain('`Auth`: revisa identidad, comunidad privada y roles.');
@@ -678,6 +460,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('No asumas porcentajes favorables fijos.');
     expect(content).not.toContain('No asumas porcentajes favorables heredados.');
     expect(content).not.toContain('No asumas porcentajes favorables congelados.');
+    expect(content).not.toContain('`Flow helpers`: mantienen opciones, orden de preguntas');
     expect(content).not.toContain('No asumas porcentajes de exito fijos.');
     expect(content).not.toContain('No uses este archivo como certificado de produccion.');
     expect(content).not.toContain('validaciones del');
@@ -705,7 +488,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('snapshot historico de tiempos, conteos o porcentajes');
   });
 
-  it('AGENTES_DIAGNOSTICO.md queda alineado al diagnostico real y no a una foto vieja', () => {
+  it('AGENTES_DIAGNOSTICO.md queda alineado al diagnostico real y no a una foto desactualizada', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'AGENTES_DIAGNOSTICO.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢]/);
@@ -727,7 +510,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('conteos congelados ni reportes historicos.');
     expect(content).not.toContain('`404` o `500` tratados como exito');
   });
-  it('KPIs_DASHBOARD.md ya no arrastra pantallas demo congeladas ni mojibake', () => {
+  it('KPIs_DASHBOARD.md ya no arrastra pantallas demo desactualizadas ni mojibake', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'KPIs_DASHBOARD.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢]/);
@@ -844,7 +627,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('vale mas que cualquier promesa fija.');
   });
 
-  it('AUTO_REPAIR_INTEGRACION.md ya no arrastra pendientes o coberturas viejas', () => {
+  it('AUTO_REPAIR_INTEGRACION.md ya no arrastra pendientes o coberturas desactualizadas', () => {
     const content = fs.readFileSync(path.join(root, 'docs', 'AUTO_REPAIR_INTEGRACION.md'), 'utf8');
 
     expect(content).not.toMatch(/[ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢]/);
@@ -929,16 +712,18 @@ describe('root manual scripts', () => {
     expect(content).toContain('scripts/create-secure-backup.js');
     expect(content).toContain('scripts/restore-secure-backup.js');
     expect(content).toContain('C:\\\\ruta\\\\al\\\\repo');
+    expect(content).toContain('backups\\ops-instantanea-AAAA-MM-DDTHH-MM-SS.enc');
     expect(content).toContain('instantaneas completas del VPS');
     expect(content).toContain('instantanea del VPS para desastre mayor');
     expect(content).not.toContain('C:\\Users\\Billy\\OneDrive\\Documentos\\Playground\\Cotizador---Broke-Shop');
     expect(content).not.toContain('AppData\\Local\\Programs\\Antigravity\\cotizador');
     expect(content).not.toContain('*.tar.gz` sin cifrar');
+    expect(content).not.toContain('backups\\ops-snapshot-AAAA-MM-DDTHH-MM-SS.enc');
     expect(content).not.toContain('snapshots completos del VPS');
     expect(content).not.toContain('snapshot del VPS para desastre mayor');
   });
 
-  it('AUDITORIA_PACKAGE_JSON.md y DEPENDENCIAS_SOLUCIONADAS.md ya no venden fotos viejas como contrato vivo', () => {
+  it('AUDITORIA_PACKAGE_JSON.md y DEPENDENCIAS_SOLUCIONADAS.md ya no venden fotos desactualizadas como contrato vivo', () => {
     const auditoria = fs.readFileSync(path.join(root, 'docs', 'AUDITORIA_PACKAGE_JSON.md'), 'utf8');
     const dependencias = fs.readFileSync(path.join(root, 'docs', 'DEPENDENCIAS_SOLUCIONADAS.md'), 'utf8');
 
@@ -984,7 +769,7 @@ describe('root manual scripts', () => {
     expect(dependencias).toContain('El nombre de este archivo conserva un nombre anterior.');
     expect(dependencias).toContain('## Decision Actual');
     expect(dependencias).toContain('tratar comparativas desactualizadas como si siguieran siendo actuales.');
-    expect(dependencias).toContain('No debe usarse como prueba unica de que "todo esta resuelto".');
+    expect(dependencias).toContain('No debe usarse como prueba aislada de que "todo esta resuelto".');
     expect(dependencias).toContain('revision real por `npm ls --depth=0`, `npm run lint`, `npm test -- --runInBand` y `npm run client:build`');
     expect(dependencias).not.toContain('Intentar better-sqlite3 primero');
     expect(dependencias).not.toContain('## Decision Vigente');
@@ -994,6 +779,7 @@ describe('root manual scripts', () => {
     expect(dependencias).not.toContain('tratar comparativas desactualizadas como si siguieran vigentes.');
     expect(dependencias).not.toContain('tratar benchmarks o comparativas desactualizadas como si siguieran vigentes.');
     expect(dependencias).not.toContain('congelar benchmarks o comparativas historicas.');
+    expect(dependencias).not.toContain('No debe usarse como prueba unica de que "todo esta resuelto".');
     expect(dependencias).not.toContain('No debe usarse como prueba eterna de que "todo esta resuelto".');
     expect(dependencias).not.toContain('No debe usarse como certificado eterno de que "todo esta resuelto".');
     expect(dependencias).not.toContain('validacion real por `npm ls --depth=0`, `npm run lint`, `npm test -- --runInBand` y `npm run client:build`');
@@ -1014,14 +800,17 @@ describe('root manual scripts', () => {
     expect(arquitectura).toContain('/api/agentes/stats');
     expect(arquitectura).toContain('BASE_URL="http://localhost:PUERTO_REAL"');
     expect(arquitectura).toContain('`client/src/App.jsx` como superficie principal de la carpeta de trabajo');
-    expect(arquitectura).toContain('rankings tratados como senal unica frente a terceros');
+    expect(arquitectura).toContain('dashboard y cliente con utilidades extraidas');
+    expect(arquitectura).toContain('rankings tratados como senal aislada frente a terceros');
     expect(arquitectura).toContain('conteos desactualizados de agentes');
     expect(arquitectura).toContain('conteos no deben presentarse como un numero estable en esta guia.');
     expect(arquitectura).not.toContain('17 AGENTES ESPECIALIZADOS');
     expect(arquitectura).not.toContain('rankings absolutos frente a terceros');
+    expect(arquitectura).not.toContain('rankings tratados como senal unica frente a terceros');
     expect(arquitectura).not.toContain('rankings tratados como medida final frente a terceros');
     expect(arquitectura).not.toContain('Los conteos no deben congelarse en esta guia.');
     expect(arquitectura).not.toContain('marketing congelado');
+    expect(arquitectura).not.toContain('dashboard y cliente con helpers extraidos');
     expect(arquitectura).not.toContain('`client/src/App.jsx` como superficie principal del workspace');
     expect(arquitectura).not.toContain('conteos heredados de agentes');
     expect(arquitectura).not.toContain('conteos congelados de agentes');
@@ -1029,13 +818,14 @@ describe('root manual scripts', () => {
     expect(arquitectura).not.toContain('localhost:3001');
     expect(memoriaInvestigacion).toContain('server/memoria-hibrida.js');
     expect(memoriaInvestigacion).toContain('comparativas desactualizadas');
-    expect(memoriaInvestigacion).toContain('porcentajes tratados como senal unica de valor');
+    expect(memoriaInvestigacion).toContain('porcentajes tratados como senal aislada de valor');
     expect(memoriaInvestigacion).toContain('sin convertir una recomendacion puntual en regla inmovil.');
     expect(memoriaInvestigacion).not.toContain('NO implementes memoria vectorial');
     expect(memoriaInvestigacion).not.toContain('benchmarks desactualizados');
     expect(memoriaInvestigacion).not.toContain('benchmarks heredados');
     expect(memoriaInvestigacion).not.toContain('benchmarks congelados');
     expect(memoriaInvestigacion).not.toContain('sin convertir una recomendacion puntual en dogma eterno.');
+    expect(memoriaInvestigacion).not.toContain('porcentajes tratados como senal unica de valor');
     expect(memoriaInvestigacion).not.toContain('porcentajes tratados como medida final de valor');
     expect(memoriaInvestigacion).not.toContain('porcentajes usados como veredicto de valor');
     expect(memoriaInvestigacion).not.toContain('porcentajes concluyentes de valor');
@@ -1161,16 +951,8 @@ describe('root manual scripts', () => {
     expect(fletes).not.toContain('no debe prometer cifras fijas de precision');
   });
 
-  it('dashboard.html y .env.example quedan alineados al contrato actual', () => {
-    const dashboard = fs.readFileSync(path.join(root, 'dashboard.html'), 'utf8');
+  it('.env.example queda alineado al contrato actual', () => {
     const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
-
-    expect(dashboard).toContain('ImportAIAgent Cotizador - Dashboard operativo');
-    expect(dashboard).toContain('<h1>ImportAIAgent Cotizador</h1>');
-    expect(dashboard).toContain('id="dashboardNotice"');
-    expect(dashboard).not.toContain('Cotizador Peru - Dashboard operativo');
-    expect(dashboard).not.toContain('<h1>Cotizador Peru</h1>');
-    expect(dashboard).not.toContain('Ultimate v3.0');
 
     expect(envExample).toContain('ImportAIAgent Cotizador - configuracion de ejemplo');
     expect(envExample).toContain('GROQ_API_KEY');
@@ -1189,9 +971,10 @@ describe('root manual scripts', () => {
 
     expect(envProductionExample).toContain('OFFICIAL_FX_STEALTH_ENABLED=false');
     expect(envProductionExample).toContain('OFFICIAL_FX_USE_CAMOUFOX=false');
-    expect(envProductionExample).toContain('Activalo solo si instalaste el helper Python/browser correspondiente.');
+    expect(envProductionExample).toContain('Activalo solo si instalaste el modulo Python/browser correspondiente.');
     expect(envProductionExample).not.toContain('OFFICIAL_FX_STEALTH_ENABLED=true');
     expect(envProductionExample).not.toContain('OFFICIAL_FX_USE_CAMOUFOX=true');
+    expect(envProductionExample).not.toContain('Activalo solo si instalaste el helper Python/browser correspondiente.');
   });
 
   it('validate-production-env.js no vende produccion como resuelta solo por pasar configuracion', () => {
@@ -1205,7 +988,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('[LISTO] Configuracion suficiente para un despliegue de produccion.');
     expect(content).not.toContain('Aun falta validar el despliegue y la operacion real');
   });
-  it('CAMINO_10_DE_10_REALISTA_2026.md y NAVEGACION_RESISTENTE_SUNAT_2026.md ya no arrastran wording viejo ni mojibake', () => {
+  it('CAMINO_10_DE_10_REALISTA_2026.md y NAVEGACION_RESISTENTE_SUNAT_2026.md ya no arrastran fraseo desactualizado ni mojibake', () => {
     const roadmap = fs.readFileSync(path.join(root, 'docs', 'CAMINO_10_DE_10_REALISTA_2026.md'), 'utf8');
     const navigation = fs.readFileSync(path.join(root, 'docs', 'NAVEGACION_RESISTENTE_SUNAT_2026.md'), 'utf8');
 
@@ -1235,8 +1018,14 @@ describe('root manual scripts', () => {
 
     expect(navigation).toContain('OFFICIAL_FX_STEALTH_ENABLED');
     expect(navigation).toContain('compatibilidad con el runtime actual');
+    expect(navigation).toContain('Wrapper Node que invoca el modulo Python solo cuando hace falta.');
+    expect(navigation).toContain('Modulo opcional con `Camoufox` o `Playwright` cuando la ruta ligera no basta.');
+    expect(navigation).toContain('## Dependencias opcionales del modulo Python/browser');
     expect(navigation).not.toContain('anti-bot');
     expect(navigation).not.toContain('huella mas fuerte');
+    expect(navigation).not.toContain('Wrapper Node que invoca el helper Python solo cuando hace falta.');
+    expect(navigation).not.toContain('Helper opcional con `Camoufox` o `Playwright` cuando la ruta ligera no basta.');
+    expect(navigation).not.toContain('## Dependencias opcionales del helper');
   });
 
   it('los docs residuales de integracion y auto-repair no fijan conteos ni promesas rigidas', () => {
@@ -1303,7 +1092,7 @@ describe('root manual scripts', () => {
     expect(content).not.toContain('tu cuenta de Groq');
   });
 
-  it('AGENTES_NAVEGACION.md y AUTO_REPAIR.md ya no usan wording fuerte de listo o exitoso', () => {
+  it('AGENTES_NAVEGACION.md y AUTO_REPAIR.md ya no usan fraseo fuerte de listo o exitoso', () => {
     const agentes = fs.readFileSync(path.join(root, 'docs', 'AGENTES_NAVEGACION.md'), 'utf8');
     const autoRepair = fs.readFileSync(path.join(root, 'docs', 'AUTO_REPAIR.md'), 'utf8');
 

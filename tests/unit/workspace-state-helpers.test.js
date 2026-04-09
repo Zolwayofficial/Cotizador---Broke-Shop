@@ -7,7 +7,7 @@ const {
   emptyConversationContext,
 } = workspaceStateHelpers
 
-describe('workspace-state-helpers', () => {
+describe('utilidades de estado del espacio', () => {
   it('limpia dashboard analysis y la conversacion cuando la inicializacion falla', () => {
     const state = buildInitializationPatch({
       healthResult: { status: 'rejected', reason: new Error('sin salud') },

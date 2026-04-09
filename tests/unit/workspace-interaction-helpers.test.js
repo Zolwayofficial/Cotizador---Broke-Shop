@@ -1,6 +1,6 @@
 const helpers = require('../../client/src/workspace-interaction-helpers.cjs');
 
-describe('workspace interaction helpers', () => {
+describe('utilidades de interaccion del espacio', () => {
   it('detecta respuestas anteriores por request o por version del espacio de trabajo', () => {
     expect(
       helpers.isStaleWorkspaceResponse({

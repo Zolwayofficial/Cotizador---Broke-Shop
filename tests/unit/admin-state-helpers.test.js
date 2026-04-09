@@ -1,6 +1,6 @@
 const helpers = require('../../client/src/admin-state-helpers.cjs');
 
-describe('admin state helpers', () => {
+describe('utilidades de estado admin', () => {
   it('normaliza el formulario admin antes de enviarlo al backend', () => {
     const payload = helpers.normalizeAdminFormPayload({
       email: '  MIXED@Example.COM ',

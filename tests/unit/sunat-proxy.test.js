@@ -92,7 +92,7 @@ describe('sunat-proxy', () => {
     expect(content).not.toContain('CotizadorPeru/3.0');
   });
 
-  it('usa el helper stealth oficial cuando la API oficial y la pagina publica fallan', async () => {
+  it('usa la ruta stealth oficial cuando la API oficial y la pagina publica fallan', async () => {
     mockHttpsQueue.push({
       status: 500,
       body: '{"error":"api down"}',

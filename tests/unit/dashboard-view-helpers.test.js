@@ -1,7 +1,7 @@
 const helpers = require('../../client/src/dashboard-view-helpers.cjs')
 const { toNumber } = require('../../client/src/app-payload-helpers.cjs')
 
-describe('dashboard view helpers', () => {
+describe('utilidades de vista de dashboard', () => {
   it('normaliza la lectura IA y evita paneles vacios cuando el analisis no trae contenido util', () => {
     expect(
       helpers.buildDashboardAnalysisView({

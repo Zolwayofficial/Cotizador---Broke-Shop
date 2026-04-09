@@ -170,7 +170,7 @@ describe('auto-repair', () => {
     expect(stats.tasa_exito).toBeNull();
   });
 
-  test('no sobreafirma la preparacion del runtime en el source vivo', () => {
+test('no sobreafirma la preparacion del runtime en el codigo fuente actual', () => {
     const content = fs.readFileSync(AUTO_REPAIR_SOURCE_PATH, 'utf8');
 
     expect(content).toContain("[AUTO-REPAIR] Base de datos preparada");

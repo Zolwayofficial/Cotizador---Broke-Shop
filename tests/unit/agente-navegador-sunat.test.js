@@ -62,7 +62,7 @@ describe('AgenteNavegadorSUNAT', () => {
     expect(agente.navegar).toHaveBeenCalledTimes(1);
   });
 
-  test('source vivo protege cache con copias serializables y no revive cached.valor directo', () => {
+test('el codigo fuente actual protege cache con copias serializables y no revive cached.valor directo', () => {
     const content = fs.readFileSync(
       path.join(__dirname, '..', '..', 'server', 'agentes-navegacion', 'AgenteNavegadorSUNAT.js'),
       'utf8',

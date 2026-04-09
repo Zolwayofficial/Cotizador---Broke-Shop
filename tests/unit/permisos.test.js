@@ -91,7 +91,7 @@ describe('permisos', () => {
     expect(iconos.join(' ')).not.toMatch(/[🔫💊🍽🌿🌳🏛📡🐟⚗☢🦐🌍]/u);
   });
 
-  test('no revive emojis en el source vivo de permisos', () => {
+test('no revive emojis en el codigo fuente actual de permisos', () => {
     const content = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'permisos.js'), 'utf8');
 
     expect(content).toContain("icon: 'telecom'");

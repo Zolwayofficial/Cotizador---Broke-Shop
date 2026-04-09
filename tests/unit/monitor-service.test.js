@@ -122,7 +122,7 @@ describe('monitor service', () => {
     expect(alerta.id).toBe(13);
   });
 
-test('no deja wording absoluto ni mojibake residual en monitor y websocket', () => {
+test('no deja fraseo exagerado ni mojibake residual en monitor y websocket', () => {
     const monitorSource = fs.readFileSync(MONITOR_SOURCE_PATH, 'utf8');
     const websocketSource = fs.readFileSync(WEBSOCKET_SOURCE_PATH, 'utf8');
 
