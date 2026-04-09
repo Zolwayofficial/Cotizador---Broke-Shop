@@ -295,6 +295,11 @@ function normalizarObjetivoCalculo(valor) {
   const texto = sanitizar(valor);
   if (!texto) return null;
 
+  // Match directo por value interno (cuando viene de un boton)
+  if (texto === 'cotizacion_cliente') return 'cotizacion_cliente';
+  if (texto === 'precio_sugerido') return 'precio_sugerido';
+  if (texto === 'costo_importacion') return 'costo_importacion';
+
   if (
     texto.includes('cliente')
     || texto.includes('cotizacion completa')

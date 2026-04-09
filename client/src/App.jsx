@@ -678,6 +678,7 @@ function App() {
   const uploadingDocumentRef = useRef(false)
   const contextoRef = useRef(contexto)
   const messagesEndRef = useRef(null)
+  const messagesContainerRef = useRef(null)
   const isAdmin = currentUser?.role === 'admin'
   const workspaceBusy = isWorkspaceBusy({ loading, sending, calculating, uploadingDocument })
   const documentDraftView = buildDocumentDraftView(documentDraft)
@@ -773,7 +774,10 @@ function App() {
   }, [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }, [messages, resultado])
 
   useEffect(() => {
@@ -1985,7 +1989,7 @@ function App() {
                 )}
               </section>
 
-              <div className="messages">
+              <div className="messages" ref={messagesContainerRef}>
                 {messages.map((message) => (
                   <div key={message.id} className={`message ${message.role}`}>
                     <div className="message-bubble">
